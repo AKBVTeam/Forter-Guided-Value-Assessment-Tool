@@ -1,0 +1,4 @@
+project_id = "xgtoyooewcuyursaysmh"
+
+[functions.fraud-calculator-chat]
+verify_jwt = false

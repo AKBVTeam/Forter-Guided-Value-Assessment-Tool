@@ -1,0 +1,4795 @@
+import { useMemo, useState, useEffect, useRef } from "react";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import type { LucideIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  ArrowUpRight,
+  Ban,
+  Building,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  CreditCard,
+  Download,
+  ExternalLink,
+  FileText,
+  Info,
+  Pencil,
+  Plus,
+  RefreshCcw,
+  Scale,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  ClipboardList,
+  UserCheck,
+  X,
+  Zap,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EditableCalculatorDisplay } from "./EditableCalculatorDisplay";
+import { CalculatorData, CustomCalculation, type StandaloneCalculator } from "@/pages/Index";
+import { ForterKPIs, defaultForterKPIs } from "./ForterKPIConfig";
+import { getChallengeBenefitContent } from "@/lib/challengeBenefitContent";
+import {
+  calculateChallenge1,
+  calculateChallenge245,
+  calculateChallenge3,
+  calculateChallenge7,
+  calculateChallenge8,
+  calculateChallenge9,
+  calculateChallenge10,
+  calculateChallenge12_13,
+  calculateChallenge14_15,
+  Challenge1Inputs,
+  Challenge245Inputs,
+  Challenge3Inputs,
+  Challenge7Inputs,
+  Challenge8Inputs,
+  Challenge9Inputs,
+  Challenge10Inputs,
+  Challenge12_13Inputs,
+  Challenge14_15Inputs,
+  CalculatorRow,
+  ALL_CHALLENGES,
+  SOLUTION_PRODUCTS,
+  DeduplicationAssumptions,
+  defaultDeduplicationAssumptions,
+  DeduplicationBreakdown,
+  createCurrencyFormatter,
+} from "@/lib/calculations";
+import { defaultAbuseBenchmarks } from "./AbuseBenchmarksModal";
+import { getCurrencySymbol } from "@/lib/benchmarkData";
+import { SegmentCalculatorTabs, computeSegmentedAggregateValue, computeSegmentedAggregateDeduplicationBreakdown } from "./SegmentCalculatorTabs";
+import { BenefitSelector, BENEFIT_OPTIONS } from "./BenefitSelector";
+import { CalculatorInputsTab, hasCalculatorMissingInputs, getCalculatorCompletionPercentage, CALCULATOR_REQUIRED_INPUTS } from "./CalculatorInputsTab";
+import { runStandaloneCalculator, STANDALONE_CALC_SECTION } from "@/lib/runStandaloneCalculator";
+import { MarginPromptDialog } from "./MarginPromptDialog";
+import { generateCalculatorSlide } from "@/lib/reportGeneration";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Cell,
+  ReferenceLine,
+  LabelList,
+} from "recharts";
+
+interface PerformanceHighlight {
+  label: string;
+  current: number;
+  target: number;
+  unit: string;
+  percentChange?: number;
+}
+
+interface ValueDriver {
+  id: string;
+  label: string;
+  value: number;
+  enabled: boolean;
+  calculatorTitle?: string;
+  calculatorRows?: CalculatorRow[];
+  performanceHighlight?: PerformanceHighlight;
+  sourceUrl?: string;
+  isTBD?: boolean; // True when challenge is selected but inputs are insufficient
+}
+
+/** Apply custom benefit/calculator names (custom pathway) to standard drivers */
+function applyCustomBenefitNames<T extends { id: string; label: string; calculatorTitle?: string }>(
+  drivers: T[],
+  customNames: Record<string, string> | undefined
+): T[] {
+  if (!customNames || Object.keys(customNames).length === 0) return drivers;
+  return drivers.map((d) => {
+    if (d.id.startsWith("custom-")) return d;
+    const custom = customNames[d.id];
+    if (custom === undefined) return d;
+    return { ...d, label: custom, calculatorTitle: custom };
+  });
+}
+
+export interface ValueTotals {
+  gmvUplift: number;
+  costReduction: number;
+  riskMitigation: number;
+  ebitdaContribution: number;
+  // Breakdowns for ROI tab sub-calculations
+  gmvUpliftBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
+  costReductionBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
+  riskMitigationBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
+}
+
+interface ValueSummaryOptionAProps {
+  formData: CalculatorData;
+  selectedChallenges: { [key: string]: boolean };
+  onFormDataChange?: (field: keyof CalculatorData, value: number | Record<string, string>) => void;
+  onForterKPIChange?: (field: keyof ForterKPIs, value: number) => void;
+  onCustomCalculationsChange?: (calculations: CustomCalculation[]) => void;
+  onSegmentInputChange?: (segmentId: string, field: keyof import("@/lib/segments").SegmentInputs, value: number) => void;
+  onSegmentKPIChange?: (segmentId: string, field: keyof import("@/lib/segments").SegmentKPIs, value: number) => void;
+  showInMillions?: boolean;
+  onShowInMillionsChange?: (value: boolean) => void;
+  onSelectUseCases?: () => void;
+  onTotalsChange?: (totals: ValueTotals) => void;
+  onChallengeChange?: (challengeId: string, checked: boolean) => void;
+  isCustomMode?: boolean;
+  // Investment inputs for fraud coverage sync
+  investmentInputs?: import("@/lib/roiCalculations").InvestmentInputs;
+  onInvestmentInputsChange?: (inputs: import("@/lib/roiCalculations").InvestmentInputs) => void;
+}
+
+export const ValueSummaryOptionA = ({
+  formData,
+  selectedChallenges,
+  onFormDataChange,
+  onForterKPIChange,
+  onCustomCalculationsChange,
+  onSegmentInputChange,
+  onSegmentKPIChange,
+  showInMillions: showInMillionsProp = true,
+  onShowInMillionsChange,
+  onSelectUseCases,
+  onTotalsChange,
+  onChallengeChange,
+  isCustomMode = false,
+  investmentInputs,
+  onInvestmentInputsChange,
+}: ValueSummaryOptionAProps) => {
+  const forterKPIs = formData.forterKPIs || defaultForterKPIs;
+  const [businessGrowthOpen, setBusinessGrowthOpen] = useState(true);
+  const [riskAvoidanceOpen, setRiskAvoidanceOpen] = useState(true);
+  const [riskMitigationOpen, setRiskMitigationOpen] = useState(true);
+  const [selectedCalculatorId, setSelectedCalculatorId] = useState<string | null>(null);
+  const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator'>('summary');
+
+  // Duplicate (standalone) calculator helpers – standard pathway only
+  const isDuplicateCalculator = (id: string) => !!(formData.standaloneCalculators?.[id]);
+  const getSourceCalculatorId = (id: string) => formData.standaloneCalculators?.[id]?.sourceCalculatorId ?? id;
+  const handleDuplicateCalculator = (driver: ValueDriver) => {
+    const sourceId = getSourceCalculatorId(driver.id);
+    const config = CALCULATOR_REQUIRED_INPUTS[sourceId];
+    if (!config || !onFormDataChange) return;
+    const inputs: Partial<CalculatorData> = {};
+    config.requiredInputs.forEach((r) => {
+      const v = formData[r.id as keyof CalculatorData];
+      if (v !== undefined && v !== null) inputs[r.id as keyof CalculatorData] = v as number;
+    });
+    const newId = `${sourceId}-dup-${Date.now()}`;
+    const next: Record<string, StandaloneCalculator> = {
+      ...(formData.standaloneCalculators || {}),
+      [newId]: {
+        sourceCalculatorId: sourceId,
+        customName: `${driver.label} (copy)`,
+        inputs,
+      },
+    };
+    onFormDataChange('standaloneCalculators' as keyof CalculatorData, next as any);
+  };
+  const handleRemoveDuplicateCalculator = (driverId: string) => {
+    if (!formData.standaloneCalculators?.[driverId] || !onFormDataChange) return;
+    const next = { ...formData.standaloneCalculators };
+    delete next[driverId];
+    onFormDataChange('standaloneCalculators' as keyof CalculatorData, next as any);
+  };
+  
+  // Get analysis ID to scope localStorage keys per analysis
+  const analysisId = (formData as any)._analysisId || 'default';
+  
+  // Persist driverStates to localStorage to survive tab navigation
+  // Scope to analysis ID so each analysis has its own driver states
+  // Type: true = enabled, false = disabled but visible, 'removed' = completely removed, undefined = default (enabled)
+  const DRIVER_STATES_KEY = `forter_value_assessment_driver_states_${analysisId}`;
+  const [driverStates, setDriverStates] = useState<{ [key: string]: boolean | 'removed' }>(() => {
+    try {
+      const saved = localStorage.getItem(DRIVER_STATES_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  
+  // Reload driverStates when analysis ID changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRIVER_STATES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { [key: string]: boolean | 'removed' };
+        setDriverStates(parsed);
+      } else {
+        setDriverStates({});
+      }
+    } catch {
+      setDriverStates({});
+    }
+  }, [analysisId]);
+  
+  // Save driverStates to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRIVER_STATES_KEY, JSON.stringify(driverStates));
+    } catch (error) {
+      console.error('Failed to save driver states to localStorage:', error);
+    }
+  }, [driverStates, DRIVER_STATES_KEY]);
+  
+  // Track specifically which benefit IDs were added in custom mode (for benefits that share challenge IDs)
+  // Persist to localStorage to survive component remounts
+  // Scope to analysis ID so each analysis has its own enabled benefits
+  const ENABLED_BENEFIT_IDS_KEY = `forter_value_assessment_enabled_benefit_ids_${analysisId}`;
+  const [enabledBenefitIds, setEnabledBenefitIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(ENABLED_BENEFIT_IDS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return new Set(Array.isArray(parsed) ? parsed : []);
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return new Set();
+  });
+  
+  // Reload enabledBenefitIds when analysis ID changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(ENABLED_BENEFIT_IDS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const newSet = new Set(Array.isArray(parsed) ? parsed : []);
+        setEnabledBenefitIds(newSet);
+      } else {
+        setEnabledBenefitIds(new Set());
+      }
+    } catch {
+      setEnabledBenefitIds(new Set());
+    }
+  }, [analysisId]);
+  
+  // Save enabledBenefitIds to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(ENABLED_BENEFIT_IDS_KEY, JSON.stringify(Array.from(enabledBenefitIds)));
+    } catch (error) {
+      console.error('Failed to save enabled benefit IDs to localStorage:', error);
+    }
+  }, [enabledBenefitIds, ENABLED_BENEFIT_IDS_KEY]);
+
+  // In custom mode: edit standard benefit/calculator display name
+  const [editingBenefitId, setEditingBenefitId] = useState<string | null>(null);
+  const [editingBenefitName, setEditingBenefitName] = useState("");
+  const saveCustomBenefitName = (driverId: string, newName: string) => {
+    const trimmed = newName.trim();
+    const prev = formData.customBenefitNames || {};
+    const next = { ...prev };
+    if (trimmed) next[driverId] = trimmed;
+    else delete next[driverId];
+    onFormDataChange?.("customBenefitNames", next);
+    setEditingBenefitId(null);
+  };
+
+  // Protect c1-revenue from being removed if c1 benefit is enabled
+  // This ensures c1-revenue stays visible even if something tries to mark it as removed
+  useEffect(() => {
+    if (enabledBenefitIds.has('c1') && driverStates['c1-revenue'] === 'removed') {
+      console.log('[useEffect] PROTECTING c1-revenue - c1 benefit is enabled but driver is marked as removed, clearing removed state');
+      setDriverStates(prev => {
+        const next = { ...prev };
+        delete next['c1-revenue'];
+        return next;
+      });
+    }
+  }, [enabledBenefitIds, driverStates]);
+  const [deduplicationEnabled, setDeduplicationEnabled] = useState(true);
+  const [deduplicationRetryRate, setDeduplicationRetryRate] = useState(50);
+  const [deduplicationSuccessRate, setDeduplicationSuccessRate] = useState(75);
+  const [showDeduplicationInfo, setShowDeduplicationInfo] = useState(false);
+  
+  // Fraud chargeback coverage state - synced with investment modal bidirectionally
+  const fraudCBCoverageEnabled = investmentInputs?.fraudManagement?.includesFraudCBCoverage ?? false;
+  
+  const setFraudCBCoverageEnabled = (enabled: boolean) => {
+    if (onInvestmentInputsChange && investmentInputs) {
+      onInvestmentInputsChange({
+        ...investmentInputs,
+        fraudManagement: {
+          ...investmentInputs.fraudManagement,
+          includesFraudCBCoverage: enabled,
+        },
+      });
+    }
+  };
+  
+  // Margin prompt state for GMV calculators
+  const [showMarginPrompt, setShowMarginPrompt] = useState(false);
+  const [pendingCalculatorId, setPendingCalculatorId] = useState<string | null>(null);
+  
+  // Custom calculation dialog state
+  const [showCustomCalcDialog, setShowCustomCalcDialog] = useState(false);
+  const [editingCustomCalcId, setEditingCustomCalcId] = useState<string | null>(null);
+  const [customCalcName, setCustomCalcName] = useState('');
+  const [customCalcValue, setCustomCalcValue] = useState('');
+  const [customCalcCategory, setCustomCalcCategory] = useState<'gmv_uplift' | 'cost_reduction' | 'risk_mitigation'>('gmv_uplift');
+  const [customCalcSourceUrl, setCustomCalcSourceUrl] = useState('');
+  const [customCalcUploadedFile, setCustomCalcUploadedFile] = useState<string | null>(null);
+  const [customCalcFileName, setCustomCalcFileName] = useState<string | null>(null);
+  
+  // Get custom calculations from formData
+  const customCalculations = formData.customCalculations || [];
+  
+  // Use prop if provided, otherwise default to true
+  const showInMillions = showInMillionsProp ?? true;
+  const handleShowInMillionsChange = (checked: boolean) => {
+    if (onShowInMillionsChange) {
+      onShowInMillionsChange(checked);
+    }
+  };
+  
+  // Open dialog for adding new custom calculation
+  const handleOpenAddDialog = () => {
+    setEditingCustomCalcId(null);
+    setCustomCalcName('');
+    setCustomCalcValue('');
+    setCustomCalcCategory('gmv_uplift');
+    setCustomCalcSourceUrl('');
+    setCustomCalcUploadedFile(null);
+    setCustomCalcFileName(null);
+    setShowCustomCalcDialog(true);
+  };
+  
+  // Open dialog for editing existing custom calculation
+  const handleEditCustomCalculation = (id: string) => {
+    const calc = customCalculations.find(c => c.id === id);
+    if (calc) {
+      setEditingCustomCalcId(id);
+      setCustomCalcName(calc.name);
+      setCustomCalcValue(calc.value.toLocaleString());
+      setCustomCalcCategory(calc.category);
+      setCustomCalcSourceUrl(calc.sourceUrl || '');
+      setShowCustomCalcDialog(true);
+    }
+  };
+  
+  // Handle saving (add or update) a custom calculation
+  const handleSaveCustomCalculation = () => {
+    const value = parseFloat(customCalcValue.replace(/,/g, ''));
+    if (!customCalcName.trim() || isNaN(value) || value <= 0) {
+      return;
+    }
+    
+    // In custom mode, require either a URL or uploaded file
+    const hasSourceLink = customCalcSourceUrl.trim().length > 0;
+    const hasUploadedFile = !!customCalcUploadedFile;
+    if (isCustomMode && !hasSourceLink && !hasUploadedFile) {
+      return; // Block save without source
+    }
+    
+    // Build source URL - prefer link, fall back to uploaded file reference
+    const finalSourceUrl = hasSourceLink 
+      ? customCalcSourceUrl.trim() 
+      : customCalcUploadedFile 
+        ? `[Uploaded: ${customCalcFileName}]` 
+        : undefined;
+    
+    if (editingCustomCalcId) {
+      // Update existing
+      const updated = customCalculations.map(c => 
+        c.id === editingCustomCalcId 
+          ? { ...c, name: customCalcName.trim(), value, category: customCalcCategory, sourceUrl: finalSourceUrl }
+          : c
+      );
+      onCustomCalculationsChange?.(updated);
+    } else {
+      // Add new
+      const newCalc: CustomCalculation = {
+        id: `custom-${Date.now()}`,
+        name: customCalcName.trim(),
+        value,
+        category: customCalcCategory,
+        sourceUrl: finalSourceUrl,
+      };
+      const updated = [...customCalculations, newCalc];
+      onCustomCalculationsChange?.(updated);
+    }
+    
+    // Reset form and close
+    setEditingCustomCalcId(null);
+    setCustomCalcName('');
+    setCustomCalcValue('');
+    setCustomCalcCategory('gmv_uplift');
+    setCustomCalcSourceUrl('');
+    setCustomCalcUploadedFile(null);
+    setCustomCalcFileName(null);
+    setShowCustomCalcDialog(false);
+  };
+  
+  // Handle file upload for calculator
+  const handleCalculatorFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Store file reference (we store the file name, in production this would upload to storage)
+      setCustomCalcFileName(file.name);
+      setCustomCalcUploadedFile(file.name);
+    }
+  };
+  
+  // Handle removing a custom calculation
+  const handleRemoveCustomCalculation = (id: string) => {
+    const updated = customCalculations.filter(c => c.id !== id);
+    onCustomCalculationsChange?.(updated);
+  };
+
+  // Handle removing a standard benefit driver (in custom mode)
+  // This hides the specific driver without removing the benefit, so other drivers from the same benefit remain visible
+  const handleRemoveBenefit = (driverId: string) => {
+    
+    // Map driver ID back to challenge IDs
+    const driverToChallenges: Record<string, string[]> = {
+      'c1-revenue': ['1'],
+      'c1-chargeback': ['1'],
+      'c245-revenue': ['2', '4', '5'],
+      'c245-chargeback': ['2', '4', '5'],
+      'c3-review': ['3'],
+      'c7-disputes': ['7'],
+      'c7-opex': ['7'],
+      'c8-returns': ['8'],
+      'c8-inr': ['8'],
+      'c9-cx-uplift': ['9'],
+      'c9-cs-opex': ['9'],
+      'c10-promotions': ['10', '11'],
+      'c12-ato-opex': ['12', '13'],
+      'c13-clv': ['12', '13'],
+      'c14-marketing': ['14', '15'],
+      'c14-reactivation': ['14', '15'], // Reactivation is part of challenge 14/15
+      'c14-kyc': ['14', '15'],
+    };
+    
+    // Map challenge IDs to possible benefit IDs (from BENEFIT_OPTIONS)
+    const challengeToBenefitIds: Record<string, string[]> = {
+      '1': ['c1', 'chargeback'],
+      '2': ['c45', 'chargeback'], // Combined c2 and c45 into c45
+      '3': ['c3'],
+      '4': ['c45', 'chargeback'],
+      '5': ['c45', 'chargeback'],
+      '7': ['c7-revenue', 'c7-opex'],
+      '8': ['c8-returns', 'c8-inr'],
+      '9': ['c9', 'c9-cs-opex'],
+      '10': ['c10'],
+      '11': ['c10'],
+      '12': ['c12', 'c13'],
+      '13': ['c12', 'c13'],
+      '14': ['c14-marketing', 'c14-kyc'],
+      '15': ['c14-marketing', 'c14-kyc'],
+    };
+    
+    // Get challenge IDs for this driver
+    const challengeIds = driverToChallenges[driverId];
+    if (!challengeIds) {
+      return;
+    }
+    
+      // Simply hide this specific driver by setting its state to 'removed'
+      // This allows other drivers from the same benefit to remain visible
+      // Use 'removed' to distinguish from false (disabled but visible from switch)
+      setDriverStates(prev => {
+        const next = { ...prev };
+        next[driverId] = 'removed';
+        return next;
+      });
+    
+    // Check if this was the last visible driver from its benefit
+    // If so, remove the benefit from enabledBenefitIds so it can be added again
+    const driverToSpecificBenefitId: Record<string, string | null> = {
+      'c1-revenue': 'c1',
+      'c1-chargeback': 'chargeback', // Maps to unified chargeback benefit
+      'c245-revenue': 'c45', // Now maps to c45 (combined c2 and c45)
+      'c245-chargeback': 'chargeback', // Maps to unified chargeback benefit
+      'c3-review': 'c3',
+      'c7-disputes': 'c7-revenue',
+      'c7-opex': 'c7-opex',
+      'c8-returns': 'c8-returns',
+      'c8-inr': 'c8-inr',
+      'c9-cx-uplift': 'c9',
+      'c9-cs-opex': 'c9-cs-opex', // Now standalone
+      'c10-promotions': 'c10',
+      'c12-ato-opex': 'c12',
+      'c13-clv': 'c13',
+      'c14-marketing': 'c14-marketing',
+      'c14-reactivation': 'c14-marketing', // Reactivation is part of marketing benefit
+      'c14-kyc': 'c14-kyc',
+    };
+    
+    const benefitId = driverToSpecificBenefitId[driverId];
+    if (benefitId && enabledBenefitIds.has(benefitId)) {
+      // Check if any other drivers from this benefit are still visible
+      // Include TBD drivers in the check - they count as "visible" even if value is 0
+      const allDriversForBenefit = Object.keys(driverToSpecificBenefitId)
+        .filter(did => driverToSpecificBenefitId[did] === benefitId);
+      
+      // Check if any other drivers from this benefit are visible
+      // A driver is visible if it's not explicitly removed (driverStates[did] !== 'removed')
+      // This includes TBD drivers that haven't been hidden
+      const hasVisibleDriver = allDriversForBenefit.some(did => 
+        did !== driverId && driverStates[did] !== 'removed'
+      );
+      
+      // In custom mode, when X button removes the last driver, remove from enabledBenefitIds
+      // This makes the benefit available again in the dropdown
+      // When re-added, handleAddBenefit will clear the 'removed' state
+      if (!hasVisibleDriver) {
+        setEnabledBenefitIds(prev => {
+          const next = new Set(prev);
+          next.delete(benefitId);
+          return next;
+        });
+      }
+    }
+    
+    // Check if this driver was auto-created (not from a benefit in enabledBenefitIds)
+    // If so, we may need to disable the challenges
+    // Reuse the driverToSpecificBenefitId already declared above
+    const specificBenefitId = driverToSpecificBenefitId[driverId];
+    const isFromBenefit = specificBenefitId ? enabledBenefitIds.has(specificBenefitId) : false;
+    
+    // If driver was auto-created (not from a benefit), check if we should disable challenges
+    if (!isFromBenefit && challengeIds && onChallengeChange) {
+      // Check if any other drivers from the same challenges are still visible
+      // Get all drivers that use these challenges
+      const allDriversUsingChallenges: string[] = [];
+      Object.keys(driverToChallenges).forEach(did => {
+        const didChallenges = driverToChallenges[did];
+        if (didChallenges && didChallenges.some(cid => challengeIds.includes(cid))) {
+          allDriversUsingChallenges.push(did);
+        }
+      });
+      
+      // Check if any of these drivers are still enabled (not hidden)
+      const otherDriversStillVisible = allDriversUsingChallenges
+        .filter(did => did !== driverId)
+        .some(did => driverStates[did] !== 'removed');
+      
+      // Also check if any benefits are still using these challenges
+      const benefitsUsingChallenges = Array.from(enabledBenefitIds).some(benefitId => {
+        return challengeIds.some(challengeId => {
+          const benefitIdsForChallenge = challengeToBenefitIds[challengeId] || [];
+          return benefitIdsForChallenge.includes(benefitId);
+        });
+      });
+      
+      // Only disable challenges if no other drivers or benefits are using them
+      if (!otherDriversStillVisible && !benefitsUsingChallenges) {
+        challengeIds.forEach(id => onChallengeChange(id, false));
+      }
+    }
+  };
+
+  const driverIconMap: Record<string, LucideIcon> = {
+    "c1-revenue": TrendingUp,
+    "c245-revenue": CreditCard,
+    "c1-chargeback": ShieldCheck,
+    "c245-chargeback": ShieldAlert,
+    "c3-review": ClipboardList,
+    "c7-disputes": RefreshCcw,
+    "c7-opex": RefreshCcw,
+    "c8-returns": Scale,
+    "c8-inr": ShieldAlert,
+    "c9-cx-uplift": TrendingUp,
+    "c9-cs-opex": Zap,
+    "c10-promotions": Shield,
+    "c12-ato-opex": UserCheck,
+    "c13-clv": UserCheck,
+    "c14-marketing": Shield,
+    "c14-reactivation": Zap,
+    "c14-kyc": ClipboardList,
+  };
+
+  const solutionIconMap: Record<string, LucideIcon> = {
+    Shield,
+    CreditCard,
+    FileText,
+    Ban,
+    UserCheck,
+    Building,
+  };
+
+  const getDriverIcon = (driverId: string) => driverIconMap[driverId] ?? ArrowUpRight;
+  // Use source calculator id for icon so duplicates show the same icon as their source
+  const getIconForDriver = (driver: ValueDriver) =>
+    driver.id.startsWith("custom-") ? Sparkles : getDriverIcon(getSourceCalculatorId(driver.id));
+
+  // Get active solutions from selected challenges (for showing all relevant solutions)
+  const selectedSolutions = useMemo(() => {
+    const solutions = new Set<string>();
+    Object.entries(selectedChallenges).forEach(([challengeId, isSelected]) => {
+      if (isSelected) {
+        const challenge = ALL_CHALLENGES.find(c => c.id === challengeId);
+        if (challenge) {
+          challenge.solutionMapping.forEach(solution => solutions.add(solution));
+        }
+      }
+    });
+    return solutions;
+  }, [selectedChallenges]);
+
+  // Map drivers to their associated solutions
+  const driverToSolutions: Record<string, string[]> = {
+    "c1-revenue": ["fraud-management"],
+    "c1-chargeback": ["fraud-management"],
+    "c245-revenue": ["fraud-management", "payments-optimization"],
+    "c245-chargeback": ["fraud-management", "payments-optimization"],
+    "c3-review": ["fraud-management"],
+    "c7-disputes": ["dispute-management"],
+    "c7-opex": ["dispute-management"],
+    "c8-returns": ["policy-abuse-prevention"],
+    "c8-inr": ["policy-abuse-prevention"],
+    "c9-cx-uplift": ["policy-abuse-prevention"],
+    "c9-cs-opex": ["policy-abuse-prevention"],
+    "c10-promotions": ["policy-abuse-prevention"],
+    "c12-ato-opex": ["account-protection"],
+    "c13-clv": ["account-protection"],
+    "c14-marketing": ["account-protection"],
+    "c14-reactivation": ["account-protection"],
+    "c14-kyc": ["account-protection"],
+  };
+
+  // Get enabled solutions based on which drivers are turned on
+  const enabledSolutions = useMemo(() => {
+    const solutions = new Set<string>();
+    Object.entries(driverStates).forEach(([driverId, isEnabled]) => {
+      if (isEnabled !== false && driverToSolutions[driverId]) {
+        driverToSolutions[driverId].forEach(solution => solutions.add(solution));
+      }
+    });
+    Object.keys(driverToSolutions).forEach(driverId => {
+      if (driverStates[driverId] === undefined) {
+        const isC1Driver = driverId.startsWith("c1-");
+        const isC245Driver = driverId.startsWith("c245-");
+        const isC3Driver = driverId === "c3-review";
+        const isC7Driver = driverId.startsWith("c7-");
+        const isC8Driver = driverId.startsWith("c8-");
+        const isC9Driver = driverId.startsWith("c9-");
+        const isC10Driver = driverId.startsWith("c10-");
+        const isC12Driver = driverId === "c12-ato-opex";
+        const isC13Driver = driverId === "c13-clv";
+        const isC14Driver = driverId.startsWith("c14-");
+        
+        const driverExists = 
+          (isC1Driver && selectedChallenges["1"]) ||
+          (isC245Driver && (selectedChallenges["2"] || selectedChallenges["4"] || selectedChallenges["5"])) ||
+          (isC3Driver && selectedChallenges["3"]) ||
+          (isC7Driver && selectedChallenges["7"]) ||
+          (isC8Driver && selectedChallenges["8"]) ||
+          (isC9Driver && selectedChallenges["9"]) ||
+          (isC10Driver && (selectedChallenges["10"] || selectedChallenges["11"])) ||
+          (isC12Driver && (selectedChallenges["12"] || selectedChallenges["13"])) ||
+          (isC13Driver && (selectedChallenges["12"] || selectedChallenges["13"])) ||
+          (isC14Driver && (selectedChallenges["14"] || selectedChallenges["15"]));
+        
+        if (driverExists) {
+          driverToSolutions[driverId].forEach(solution => solutions.add(solution));
+        }
+      }
+    });
+    return solutions;
+  }, [driverStates, selectedChallenges]);
+
+  const isChallenge1Selected = selectedChallenges["1"] === true;
+  const isChallenge2Selected = selectedChallenges["2"] === true;
+  const isChallenge3Selected = selectedChallenges["3"] === true;
+  const isChallenge4Selected = selectedChallenges["4"] === true;
+  const isChallenge5Selected = selectedChallenges["5"] === true;
+  const isChallenge7Selected = selectedChallenges["7"] === true;
+  const isChallenge8Selected = selectedChallenges["8"] === true;
+  const isChallenge9Selected = selectedChallenges["9"] === true;
+  const isChallenge10Selected = selectedChallenges["10"] === true;
+  const isChallenge11Selected = selectedChallenges["11"] === true;
+  const isChallenge12Selected = selectedChallenges["12"] === true;
+  const isChallenge13Selected = selectedChallenges["13"] === true;
+  const isChallenge14Selected = selectedChallenges["14"] === true;
+  const isChallenge15Selected = selectedChallenges["15"] === true;
+
+  const isChallenge245Selected =
+    isChallenge2Selected || isChallenge4Selected || isChallenge5Selected;
+  const isChallenge10_11Selected = isChallenge10Selected || isChallenge11Selected;
+  const isChallenge12_13Selected = isChallenge12Selected || isChallenge13Selected;
+  const isChallenge14_15Selected = isChallenge14Selected || isChallenge15Selected;
+
+  // Helper to get enabled state: true/undefined = enabled, false = disabled, 'removed' = removed
+  // Must be defined before useMemo hooks that use it
+  const getDriverEnabled = (driverId: string): boolean => {
+    const state = driverStates[driverId];
+    return state === true || state === undefined;
+  };
+
+  // Challenge 1 calculations
+  const challenge1Results = useMemo(() => {
+    if (!isChallenge1Selected || isChallenge245Selected) return null;
+
+    const currentApprovalRate = formData.amerPreAuthApprovalRate ?? 0;
+    const currentCBRate = formData.fraudCBRate ?? 0;
+    
+    let approvalImprovement = forterKPIs.approvalRateImprovement ?? 4;
+    if (forterKPIs.approvalRateIsAbsolute) {
+      const targetApproval = Math.min(100, Math.max(0, forterKPIs.approvalRateImprovement ?? 4));
+      approvalImprovement = Math.max(0, targetApproval - currentApprovalRate);
+    }
+    approvalImprovement = Math.min(approvalImprovement, 100 - currentApprovalRate);
+    
+    let cbReduction = forterKPIs.chargebackReduction ?? 50;
+    if (forterKPIs.chargebackReductionIsAbsolute) {
+      const targetCBRate = Math.max(0, forterKPIs.chargebackReduction ?? 0);
+      if (currentCBRate > 0) {
+        cbReduction = Math.max(0, ((currentCBRate - targetCBRate) / currentCBRate) * 100);
+      } else {
+        cbReduction = 0;
+      }
+    }
+    cbReduction = Math.min(100, Math.max(0, cbReduction));
+
+    const inputs: Challenge1Inputs = {
+      transactionAttempts: formData.amerGrossAttempts ?? 0,
+      transactionAttemptsValue: formData.amerAnnualGMV ?? 0,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      approvalRate: currentApprovalRate,
+      fraudChargebackRate: currentCBRate,
+      isMarketplace: formData.isMarketplace ?? false,
+      commissionRate: formData.commissionRate ?? 100,
+      currencyCode: formData.baseCurrency || 'USD',
+      completedAOV: formData.completedAOV,
+      forterApprovalRateImprovement: approvalImprovement,
+      forterChargebackReduction: cbReduction,
+      deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
+    };
+
+    return calculateChallenge1(inputs);
+  }, [isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate]);
+
+  // Challenge 245 calculations
+  const challenge245Results = useMemo(() => {
+    if (!isChallenge245Selected) return null;
+
+    const currentPreAuthRate = formData.amerPreAuthApprovalRate ?? 0;
+    const currentPostAuthRate = formData.amerPostAuthApprovalRate ?? 0;
+    const current3DSRate = formData.amer3DSChallengeRate ?? 0;
+    const currentCBRate = formData.fraudCBRate ?? 0;
+    
+    let preAuthImprovement = 0;
+    if (forterKPIs.preAuthIncluded !== false) {
+      preAuthImprovement = forterKPIs.preAuthApprovalImprovement ?? 4;
+      if (forterKPIs.preAuthApprovalIsAbsolute) {
+        const targetPreAuth = Math.min(100, Math.max(0, forterKPIs.preAuthApprovalImprovement ?? 4));
+        preAuthImprovement = Math.max(0, targetPreAuth - currentPreAuthRate);
+      }
+      preAuthImprovement = Math.min(preAuthImprovement, 100 - currentPreAuthRate);
+    }
+    
+    let postAuthImprovement = 0;
+    let targetPostAuthRate: number | undefined = undefined;
+    if (forterKPIs.postAuthIncluded !== false) {
+      postAuthImprovement = forterKPIs.postAuthApprovalImprovement ?? 2;
+      if (forterKPIs.postAuthApprovalIsAbsolute) {
+        const targetPostAuth = Math.min(100, Math.max(0, forterKPIs.postAuthApprovalImprovement ?? 2));
+        postAuthImprovement = Math.max(0, targetPostAuth - currentPostAuthRate);
+      }
+      postAuthImprovement = Math.min(postAuthImprovement, 100 - currentPostAuthRate);
+    } else {
+      targetPostAuthRate = 100;
+      postAuthImprovement = 100 - currentPostAuthRate;
+    }
+    
+    let threeDSReduction = forterKPIs.threeDSReduction ?? 20;
+    if (forterKPIs.threeDSReductionIsAbsolute) {
+      const target3DSRate = Math.min(100, Math.max(0, forterKPIs.threeDSReduction ?? 0));
+      threeDSReduction = Math.max(0, current3DSRate - target3DSRate);
+    }
+    threeDSReduction = Math.min(threeDSReduction, current3DSRate);
+    
+    let cbReduction = forterKPIs.chargebackReduction ?? 50;
+    let targetCBRate: number;
+    if (forterKPIs.chargebackReductionIsAbsolute) {
+      targetCBRate = Math.max(0, forterKPIs.chargebackReduction ?? 0);
+      if (currentCBRate > 0) {
+        cbReduction = Math.max(0, ((currentCBRate - targetCBRate) / currentCBRate) * 100);
+      } else {
+        cbReduction = 0;
+      }
+    } else {
+      cbReduction = forterKPIs.chargebackReduction ?? 50;
+      targetCBRate = currentCBRate * (1 - cbReduction / 100);
+    }
+    cbReduction = Math.min(100, Math.max(0, cbReduction));
+
+    const inputs: Challenge245Inputs = {
+      transactionAttempts: formData.amerGrossAttempts ?? 0,
+      transactionAttemptsValue: formData.amerAnnualGMV ?? 0,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      preAuthApprovalRate: currentPreAuthRate,
+      postAuthApprovalRate: currentPostAuthRate,
+      creditCardPct: formData.amerCreditCardPct ?? 0,
+      creditCard3DSPct: current3DSRate,
+      threeDSFailureRate: formData.amer3DSAbandonmentRate ?? 0,
+      issuingBankDeclineRate: formData.amerIssuingBankDeclineRate ?? 0,
+      fraudChargebackRate: currentCBRate,
+      isMarketplace: formData.isMarketplace ?? false,
+      commissionRate: formData.commissionRate ?? 100,
+      currencyCode: formData.baseCurrency || 'USD',
+      completedAOV: formData.completedAOV,
+      forterPreAuthImprovement: preAuthImprovement,
+      forterPostAuthImprovement: postAuthImprovement,
+      forter3DSReduction: threeDSReduction,
+      forterChargebackReduction: cbReduction,
+      forterTargetCBRate: targetCBRate,
+      forterTargetPostAuthRate: targetPostAuthRate,
+      deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
+      includesFraudCBCoverage: fraudCBCoverageEnabled,
+    };
+
+    return calculateChallenge245(inputs);
+  }, [isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  // Segmented aggregate values - use when segmentation is enabled so Value Summary matches Total calculator
+  const isSegmentationEnabled = formData.segmentationEnabled && (formData.segments?.filter(s => s.enabled).length ?? 0) > 0;
+  
+  const segmentedC1RevenueTotal = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge1Selected || isChallenge245Selected) return null;
+    return computeSegmentedAggregateValue(
+      formData, forterKPIs, "c1", "revenue",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+  
+  const segmentedC1ChargebackTotal = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge1Selected || isChallenge245Selected) return null;
+    return computeSegmentedAggregateValue(
+      formData, forterKPIs, "c1", "chargeback",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+  
+  const segmentedC245RevenueTotal = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge245Selected) return null;
+    return computeSegmentedAggregateValue(
+      formData, forterKPIs, "c245", "revenue",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+  
+  const segmentedC245ChargebackTotal = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge245Selected) return null;
+    return computeSegmentedAggregateValue(
+      formData, forterKPIs, "c245", "chargeback",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+  
+  // Aggregated deduplication breakdown for segmented analysis
+  const segmentedDeduplicationBreakdown = useMemo(() => {
+    if (!isSegmentationEnabled) return null;
+    const challengeType = isChallenge245Selected ? "c245" : isChallenge1Selected ? "c1" : null;
+    if (!challengeType) return null;
+    return computeSegmentedAggregateDeduplicationBreakdown(
+      formData, forterKPIs, challengeType,
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate
+    );
+  }, [isSegmentationEnabled, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate]);
+
+  const challenge3Results = useMemo(() => {
+    if (!isChallenge3Selected) return null;
+
+    const currentReviewPct = formData.manualReviewPct ?? 0;
+    const currentTimePerReview = formData.timePerReview ?? 0;
+    
+    let reviewReduction = forterKPIs.manualReviewReduction ?? 5;
+    if (forterKPIs.manualReviewIsAbsolute) {
+      const targetReviewPct = Math.max(0, forterKPIs.manualReviewReduction ?? 0);
+      reviewReduction = Math.max(0, currentReviewPct - targetReviewPct);
+    }
+    reviewReduction = Math.min(reviewReduction, currentReviewPct);
+    
+    let timeReductionPct = forterKPIs.reviewTimeReduction ?? 30;
+    if (forterKPIs.reviewTimeIsAbsolute) {
+      const targetTime = Math.max(0, forterKPIs.reviewTimeReduction ?? 0);
+      const timeReductionMinutes = Math.max(0, currentTimePerReview - targetTime);
+      if (currentTimePerReview > 0) {
+        timeReductionPct = (timeReductionMinutes / currentTimePerReview) * 100;
+      } else {
+        timeReductionPct = 0;
+      }
+    }
+    timeReductionPct = Math.min(100, Math.max(0, timeReductionPct));
+
+    const inputs: Challenge3Inputs = {
+      transactionAttempts: formData.amerGrossAttempts ?? 0,
+      manualReviewPct: currentReviewPct,
+      timePerReview: currentTimePerReview,
+      hourlyReviewerCost: formData.hourlyReviewerCost ?? 0,
+      currencyCode: formData.baseCurrency || 'USD',
+      forterReviewReduction: reviewReduction,
+      forterTimeReduction: timeReductionPct,
+    };
+
+    return calculateChallenge3(inputs);
+  }, [isChallenge3Selected, formData, forterKPIs]);
+
+  // Challenge 7 calculations
+  const challenge7Results = useMemo(() => {
+    if (!isChallenge7Selected) return null;
+
+    const currentFraudDisputeRate = formData.fraudDisputeRate ?? 0;
+    const currentFraudWinRate = formData.fraudWinRate ?? 0;
+    const currentServiceDisputeRate = formData.serviceDisputeRate ?? 0;
+    const currentServiceWinRate = formData.serviceWinRate ?? 0;
+    
+    let fraudDisputeImprovement = forterKPIs.fraudDisputeRateImprovement ?? 45;
+    if (forterKPIs.fraudDisputeIsAbsolute) {
+      const targetFraudDispute = Math.min(100, forterKPIs.fraudDisputeRateImprovement ?? 45);
+      fraudDisputeImprovement = targetFraudDispute - currentFraudDisputeRate;
+    }
+    
+    let fraudWinChange = forterKPIs.fraudWinRateChange ?? -10;
+    if (forterKPIs.fraudWinRateIsAbsolute) {
+      const targetFraudWin = Math.min(100, Math.max(0, forterKPIs.fraudWinRateChange ?? 0));
+      fraudWinChange = targetFraudWin - currentFraudWinRate;
+    }
+    
+    let serviceDisputeImprovement = forterKPIs.serviceDisputeRateImprovement ?? 65;
+    if (forterKPIs.serviceDisputeIsAbsolute) {
+      const targetServiceDispute = Math.min(100, forterKPIs.serviceDisputeRateImprovement ?? 65);
+      serviceDisputeImprovement = targetServiceDispute - currentServiceDisputeRate;
+    }
+    
+    let serviceWinChange = forterKPIs.serviceWinRateChange ?? -10;
+    if (forterKPIs.serviceWinRateIsAbsolute) {
+      const targetServiceWin = Math.min(100, Math.max(0, forterKPIs.serviceWinRateChange ?? 0));
+      serviceWinChange = targetServiceWin - currentServiceWinRate;
+    }
+
+    // Determine if payment challenges are selected (affects how we get chargeback values)
+    const hasPaymentChallenges = isChallenge1Selected || isChallenge245Selected;
+
+    const inputs: Challenge7Inputs = {
+      transactionAttempts: formData.amerGrossAttempts ?? 0,
+      transactionAttemptsValue: formData.amerAnnualGMV ?? 0,
+      fraudChargebackRate: formData.fraudCBRate ?? 0,
+      fraudDisputeRate: currentFraudDisputeRate,
+      fraudWinRate: currentFraudWinRate,
+      serviceChargebackRate: formData.serviceCBRate ?? 0,
+      serviceDisputeRate: currentServiceDisputeRate,
+      serviceWinRate: currentServiceWinRate,
+      avgTimeToReviewCB: formData.avgTimeToReviewCB ?? 0,
+      annualCBDisputes: formData.annualCBDisputes ?? 0,
+      costPerHourAnalyst: formData.costPerHourAnalyst ?? 0,
+      currencyCode: formData.baseCurrency || 'USD',
+      forterFraudDisputeImprovement: fraudDisputeImprovement,
+      forterFraudWinChange: fraudWinChange,
+      forterServiceDisputeImprovement: serviceDisputeImprovement,
+      forterServiceWinChange: serviceWinChange,
+      forterTargetReviewTime: forterKPIs.disputeTimeReduction ?? 5,
+      // Direct value inputs for standalone Challenge 7 (when no payment challenges selected)
+      estFraudChargebackValue: formData.estFraudChargebackValue,
+      estServiceChargebackValue: formData.estServiceChargebackValue,
+      hasPaymentChallenges,
+      // Fraud chargeback coverage
+      includesFraudCBCoverage: fraudCBCoverageEnabled,
+    };
+
+    return calculateChallenge7(inputs);
+  }, [isChallenge7Selected, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, fraudCBCoverageEnabled]);
+
+  // Challenge 8 calculations
+  const challenge8Results = useMemo(() => {
+    if (!isChallenge8Selected) return null;
+
+    const benchmarks = forterKPIs.abuseBenchmarks || defaultAbuseBenchmarks;
+
+    // Customer inputs: use formData only; default to 0 when unset so calculator never shows phantom numbers
+    const inputs: Challenge8Inputs = {
+      expectedRefundsVolume: formData.expectedRefundsVolume ?? 0,
+      avgRefundValue: formData.avgRefundValue ?? 0,
+      isMarketplace: formData.isMarketplace ?? false,
+      commissionRate: formData.commissionRate ?? 100,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      avgOneWayShipping: formData.avgOneWayShipping ?? 0,
+      avgFulfilmentCost: formData.avgFulfilmentCost ?? 0,
+      txProcessingFeePct: formData.txProcessingFeePct ?? 0,
+      avgCSTicketCost: formData.avgCSTicketCost ?? 0,
+      pctINRClaims: formData.pctINRClaims ?? 0,
+      pctReplacedCredits: formData.pctReplacedCredits ?? 0,
+      currencyCode: formData.baseCurrency || 'USD',
+      forterCatchRate: forterKPIs.forterCatchRate ?? 90,
+      abuseAovMultiplier: forterKPIs.abuseAovMultiplier ?? 1.5,
+      egregiousReturnsAbusePct: benchmarks.egregiousReturnsAbusePct,
+      egregiousInventoryLossPct: benchmarks.egregiousInventoryLossPct,
+      egregiousINRAbusePct: benchmarks.egregiousINRAbusePct,
+      nonEgregiousReturnsAbusePct: benchmarks.nonEgregiousReturnsAbusePct,
+      nonEgregiousInventoryLossPct: benchmarks.nonEgregiousInventoryLossPct,
+      forterEgregiousReturnsReduction: benchmarks.forterEgregiousReturnsReduction,
+      forterEgregiousINRReduction: benchmarks.forterEgregiousINRReduction,
+      forterNonEgregiousReturnsReduction: benchmarks.forterNonEgregiousReturnsReduction,
+    };
+
+    return calculateChallenge8(inputs);
+  }, [isChallenge8Selected, formData, forterKPIs]);
+
+  // Challenge 10 calculations
+  const challenge10Results = useMemo(() => {
+    if (!isChallenge10_11Selected) return null;
+
+    const benchmarks = forterKPIs.abuseBenchmarks || defaultAbuseBenchmarks;
+
+    const inputs: Challenge10Inputs = {
+      transactionAttemptsValue: formData.amerAnnualGMV ?? 0,
+      avgDiscountByAbusers: formData.avgDiscountByAbusers ?? 0,
+      promotionAbuseCatchRateToday: formData.promotionAbuseCatchRateToday ?? 0,
+      isMarketplace: formData.isMarketplace ?? false,
+      commissionRate: formData.commissionRate ?? 100,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      currencyCode: formData.baseCurrency || 'USD',
+      forterCatchRate: forterKPIs.forterCatchRate ?? 90,
+      abuseAovMultiplier: forterKPIs.abuseAovMultiplier ?? 1.5,
+      promotionAbuseAsGMVPct: benchmarks.promotionAbuseAsGMVPct ?? 2,
+    };
+
+    return calculateChallenge10(inputs);
+  }, [isChallenge10_11Selected, formData, forterKPIs]);
+
+  // Challenge 9: Instant Refunds
+  const challenge9Results = useMemo(() => {
+    if (!isChallenge9Selected) return null;
+
+    // Calculate approved transactions: use formData only; default to 0 when unset
+    const grossAttempts = formData.amerGrossAttempts ?? 0;
+    const hasPaymentChallenges = isChallenge1Selected || isChallenge245Selected;
+    const approvalRate = hasPaymentChallenges ? (formData.amerPreAuthApprovalRate ?? 0) : 100;
+    const approvedTransactions = grossAttempts * (approvalRate / 100);
+    
+    const currentEcommerceSales = hasPaymentChallenges 
+      ? (formData.amerAnnualGMV ?? 0) * (approvalRate / 100)
+      : (formData.amerAnnualGMV ?? 0);
+
+    const inputs: Challenge9Inputs = {
+      currentEcommerceSales,
+      commissionRate: formData.commissionRate ?? 100,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      refundRate: formData.refundRate ?? 0,
+      expectedRefundsVolume: formData.expectedRefundsVolume ?? 0,
+      pctRefundsToCS: formData.pctRefundsToCS ?? 0,
+      costPerCSContact: formData.costPerCSContact ?? 0,
+      currencyCode: formData.baseCurrency || 'USD',
+      isMarketplace: formData.isMarketplace ?? false,
+      npsIncreaseFromInstantRefunds: forterKPIs.npsIncreaseFromInstantRefunds ?? 10,
+      lseNPSBenchmark: forterKPIs.lseNPSBenchmark ?? 1,
+      forterCSReduction: forterKPIs.forterCSReduction ?? 78,
+    };
+
+    return calculateChallenge9(inputs);
+  }, [isChallenge9Selected, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs]);
+
+  // Challenge 12/13: ATO Protection
+  const challenge12_13Results = useMemo(() => {
+    if (!isChallenge12_13Selected) return null;
+
+    // #region agent log
+    const _formAvgSalary = formData.avgSalaryPerCSMember;
+    if (typeof fetch !== 'undefined') { fetch('http://127.0.0.1:7242/ingest/48d8bace-9783-46c3-bd20-05ff6ac70f53',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ValueSummaryOptionA.tsx:challenge12_13',message:'ATO inputs',data:{formAvgSalary:_formAvgSalary,passed:(formData.avgSalaryPerCSMember != null && formData.avgSalaryPerCSMember !== '') ? Number(formData.avgSalaryPerCSMember) : 0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{}); }
+    // #endregion
+    const inputs: Challenge12_13Inputs = {
+      monthlyLogins: (formData.monthlyLogins != null && formData.monthlyLogins !== '') ? Number(formData.monthlyLogins) : 0,
+      customerLTV: formData.customerLTV ?? 0,
+      avgAppeasementValue: formData.avgAppeasementValue ?? 0,
+      avgSalaryPerCSMember: (formData.avgSalaryPerCSMember != null && formData.avgSalaryPerCSMember !== '') ? Number(formData.avgSalaryPerCSMember) : 0,
+      avgHandlingTimePerATOClaim: formData.avgHandlingTimePerATOClaim ?? 0,
+      pctChurnFromATO: formData.pctChurnFromATO ?? 0,
+      commissionRate: formData.commissionRate ?? 100,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      currencyCode: formData.baseCurrency || 'USD',
+      isMarketplace: formData.isMarketplace ?? false,
+      pctFraudulentLogins: forterKPIs.pctFraudulentLogins ?? 1,
+      churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO ?? 50,
+      atoCatchRate: forterKPIs.atoCatchRate ?? 90,
+    };
+
+    return calculateChallenge12_13(inputs);
+  }, [isChallenge12_13Selected, formData, forterKPIs]);
+
+  // Challenge 14/15: Sign-up Protection
+  const challenge14_15Results = useMemo(() => {
+    if (!isChallenge14_15Selected) return null;
+
+    // #region agent log
+    const _formMonthlySignups = formData.monthlySignups;
+    if (typeof fetch !== 'undefined') { fetch('http://127.0.0.1:7242/ingest/48d8bace-9783-46c3-bd20-05ff6ac70f53',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ValueSummaryOptionA.tsx:challenge14_15',message:'Sign-up inputs',data:{formMonthlySignups:_formMonthlySignups,passed:(formData.monthlySignups != null && formData.monthlySignups !== '') ? Number(formData.monthlySignups) : 0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{}); }
+    // #endregion
+    const inputs: Challenge14_15Inputs = {
+      monthlySignups: (formData.monthlySignups != null && formData.monthlySignups !== '') ? Number(formData.monthlySignups) : 0,
+      avgNewMemberBonus: formData.avgNewMemberBonus ?? 0,
+      numDigitalCommunicationsPerYear: formData.numDigitalCommunicationsPerYear ?? 0,
+      avgCostPerOutreach: formData.avgCostPerOutreach ?? 0,
+      avgKYCCostPerAccount: formData.avgKYCCostPerAccount ?? 0,
+      pctAccountsGoingThroughKYC: formData.pctAccountsGoingThroughKYC ?? 0,
+      currencyCode: formData.baseCurrency || 'USD',
+      pctFraudulentSignups: forterKPIs.pctFraudulentSignups ?? 10,
+      forterFraudulentSignupReduction: forterKPIs.forterFraudulentSignupReduction ?? 95,
+      forterKYCReduction: forterKPIs.forterKYCReduction ?? 80,
+    };
+
+    return calculateChallenge14_15(inputs);
+  }, [isChallenge14_15Selected, formData, forterKPIs]);
+
+  // Calculate total recovery rate for Challenge 7
+  // Formula: Total Recovery Rate = Total Recoveries / (Est. Fraud Chargebacks + Est. Service Chargebacks)
+  const totalRecoveryMetrics = useMemo(() => {
+    if (!challenge7Results) return null;
+    
+    const transactionValue = formData.amerAnnualGMV || 0;
+    const fraudCBRate = formData.fraudCBRate || 0.5;
+    const serviceCBRate = formData.serviceCBRate || 0.2;
+    const fraudDisputeRate = formData.fraudDisputeRate || 50;
+    const fraudWinRate = formData.fraudWinRate || 70;
+    const serviceDisputeRate = formData.serviceDisputeRate || 30;
+    const serviceWinRate = formData.serviceWinRate || 50;
+    
+    // Est. number of fraud and service chargebacks (in $)
+    const estFraudCB = transactionValue * (fraudCBRate / 100);
+    const estServiceCB = transactionValue * (serviceCBRate / 100);
+    const totalCB = estFraudCB + estServiceCB;
+    
+    if (totalCB === 0) return null;
+    
+    // Current: Total recoveries = (Fraud disputed * Fraud win rate) + (Service disputed * Service win rate)
+    const custFraudDisputed = estFraudCB * (fraudDisputeRate / 100);
+    const custFraudWon = custFraudDisputed * (fraudWinRate / 100);
+    const custServiceDisputed = estServiceCB * (serviceDisputeRate / 100);
+    const custServiceWon = custServiceDisputed * (serviceWinRate / 100);
+    const custTotalRecoveries = custFraudWon + custServiceWon;
+    const custTotalRecoveryRate = (custTotalRecoveries / totalCB) * 100;
+    
+    // Forter rates
+    const fortFraudDisputeRate = Math.min(100, fraudDisputeRate + (forterKPIs.fraudDisputeIsAbsolute ? forterKPIs.fraudDisputeRateImprovement - fraudDisputeRate : forterKPIs.fraudDisputeRateImprovement));
+    const fortFraudWinRate = Math.max(0, fraudWinRate + (forterKPIs.fraudWinRateIsAbsolute ? forterKPIs.fraudWinRateChange - fraudWinRate : forterKPIs.fraudWinRateChange));
+    const fortServiceDisputeRate = Math.min(100, serviceDisputeRate + (forterKPIs.serviceDisputeIsAbsolute ? forterKPIs.serviceDisputeRateImprovement - serviceDisputeRate : forterKPIs.serviceDisputeRateImprovement));
+    const fortServiceWinRate = Math.max(0, serviceWinRate + (forterKPIs.serviceWinRateIsAbsolute ? forterKPIs.serviceWinRateChange - serviceWinRate : forterKPIs.serviceWinRateChange));
+    
+    // Forter: Total recoveries = (Fraud disputed * Fraud win rate) + (Service disputed * Service win rate)
+    const fortFraudDisputed = estFraudCB * (fortFraudDisputeRate / 100);
+    const fortFraudWon = fortFraudDisputed * (fortFraudWinRate / 100);
+    const fortServiceDisputed = estServiceCB * (fortServiceDisputeRate / 100);
+    const fortServiceWon = fortServiceDisputed * (fortServiceWinRate / 100);
+    const fortTotalRecoveries = fortFraudWon + fortServiceWon;
+    const fortTotalRecoveryRate = (fortTotalRecoveries / totalCB) * 100;
+    
+    return {
+      current: custTotalRecoveryRate,
+      target: fortTotalRecoveryRate,
+      increase: fortTotalRecoveryRate - custTotalRecoveryRate,
+    };
+  }, [challenge7Results, formData, forterKPIs]);
+
+  // Build drivers with performance highlights
+  const businessGrowthDrivers: ValueDriver[] = useMemo(() => {
+    console.log('[businessGrowthDrivers] useMemo running with enabledBenefitIds:', Array.from(enabledBenefitIds));
+    console.log('[businessGrowthDrivers] driverStates:', Object.keys(driverStates).filter(k => driverStates[k] === 'removed').map(k => `${k}:${driverStates[k]}`));
+    const drivers: ValueDriver[] = [];
+
+    // Challenge 1: Reduce false declines (Pre-auth only)
+    // In custom mode, only show if c1 benefit is enabled AND c45 is NOT enabled (mutual exclusivity)
+    const hasC1 = enabledBenefitIds.has('c1');
+    const hasC45 = enabledBenefitIds.has('c45');
+    console.log('[businessGrowthDrivers] hasC1:', hasC1, 'hasC45:', hasC45, 'isCustomMode:', isCustomMode);
+    // Challenge 1: Reduce false declines
+    // In custom mode, ONLY show if c1 benefit is explicitly enabled AND c45 is NOT enabled (mutual exclusivity)
+    // In standard mode, show if challenge 1 is selected and challenge 245 is not selected
+    // In custom mode, do NOT show if no benefits are selected (empty state)
+    // IMPORTANT: In custom mode, don't check challenge selection - only check enabledBenefitIds
+    const shouldShowC1 = !isCustomMode 
+      ? (isChallenge1Selected && !isChallenge245Selected)  // Standard mode: show if challenge selected
+      : (hasC1 && !hasC45);  // Custom mode: ONLY check enabledBenefitIds, ignore challenge selection
+    // In custom mode, also show if benefit is enabled even if challenge isn't selected yet
+    const shouldShowC1Always = isCustomMode && hasC1 && !hasC45;
+    
+    // Show c1-revenue driver if visibility conditions are met
+    // In standard mode: show if challenge 1 is selected and challenge 245 is not selected
+    // In custom mode: show if c1 benefit is enabled, c45 is not enabled, and challenge 245 is not selected
+    if (shouldShowC1) {
+      // In custom mode, always show if c1 benefit is enabled (shouldShowC1 ensures this)
+      // In standard mode, show if challenge is selected
+      const shouldShowDriver = !isCustomMode 
+        ? (isChallenge1Selected && !isChallenge245Selected)  // Standard mode: show if challenge selected
+        : true;  // Custom mode: if shouldShowC1 is true, we should show the driver
+      
+      // Debug logging for c1-revenue visibility
+      if (hasC1) {
+        console.log('[businessGrowthDrivers] c1-revenue visibility:', {
+          shouldShowC1,
+          shouldShowDriver,
+          hasC1,
+          hasC45,
+          isChallenge1Selected,
+          isChallenge245Selected,
+          isCustomMode,
+          challenge1Results: !!challenge1Results,
+          driverState: driverStates['c1-revenue'],
+          enabledBenefitIds: Array.from(enabledBenefitIds)
+        });
+      }
+      
+      if (shouldShowDriver) {
+        if (challenge1Results) {
+          // Show driver with results
+          const currentApproval = formData.amerPreAuthApprovalRate || 95;
+          const targetApproval = forterKPIs.approvalRateIsAbsolute 
+            ? forterKPIs.approvalRateImprovement 
+            : currentApproval + forterKPIs.approvalRateImprovement;
+          const percentChange = currentApproval > 0 
+            ? ((targetApproval - currentApproval) / currentApproval) * 100 
+            : 0;
+
+          // Use segmented total if available; otherwise use global result
+          const driverValue = (isSegmentationEnabled && segmentedC1RevenueTotal !== null)
+            ? segmentedC1RevenueTotal
+            : challenge1Results.calculator1.revenueUplift;
+
+          drivers.push({
+            id: "c1-revenue",
+            label: "Reduce false declines and approve more transactions",
+            value: driverValue,
+            enabled: getDriverEnabled("c1-revenue"),
+            calculatorTitle: "Reduce false declines and approve more transactions",
+            calculatorRows: challenge1Results.calculator1.rows,
+            performanceHighlight: {
+              label: "Approval Rate",
+              current: currentApproval,
+              target: Math.min(100, targetApproval),
+              unit: "%",
+              percentChange,
+            },
+          });
+        } else {
+          // Show TBD driver when challenge is selected but no results yet, or benefit is enabled in custom mode
+          drivers.push({
+            id: "c1-revenue",
+            label: "Reduce false declines and approve more transactions",
+            value: 0,
+            enabled: getDriverEnabled("c1-revenue"),
+            calculatorTitle: "Reduce false declines and approve more transactions",
+            isTBD: true,
+          });
+        }
+      }
+    }
+
+    // Challenge 2/4/5: Optimize payment funnel
+    // In custom mode, ONLY show if c45 benefit is explicitly enabled AND c1 is NOT enabled (mutual exclusivity)
+    // In standard mode, show if challenge 245 is selected and challenge 1 is not selected
+    // In custom mode, do NOT show if no benefits are selected (empty state)
+    // IMPORTANT: In custom mode, don't check challenge selection - only check enabledBenefitIds
+    const shouldShowC245 = !isCustomMode 
+      ? (isChallenge245Selected && !isChallenge1Selected)  // Standard mode: show if challenge selected
+      : (hasC45 && !hasC1);  // Custom mode: ONLY check enabledBenefitIds, ignore challenge selection
+    const shouldShowC245Always = isCustomMode && hasC45 && !hasC1;
+    
+    // Debug logging for c245 visibility
+    if (isCustomMode && (hasC45 || shouldShowC245)) {
+      console.log('[businessGrowthDrivers] c245 visibility check:', {
+        shouldShowC245,
+        hasC45,
+        hasC1,
+        enabledBenefitIds: Array.from(enabledBenefitIds),
+        driverState: driverStates['c245-revenue']
+      });
+    }
+    
+      // Debug logging for c245-revenue visibility
+      if (hasC45 || shouldShowC245) {
+        console.log('[businessGrowthDrivers] c245-revenue visibility:', {
+          shouldShowC245,
+          hasC45,
+          hasC1,
+          isChallenge1Selected,
+          isChallenge245Selected,
+          isCustomMode,
+          challenge245Results: !!challenge245Results,
+          enabledBenefitIds: Array.from(enabledBenefitIds),
+          driverState: driverStates['c245-revenue']
+        });
+      }
+    
+    // Show c245-revenue driver if visibility conditions are met
+    if (shouldShowC245) {
+      // In custom mode, always show if c45 benefit is enabled
+      // In standard mode, show if challenge is selected
+      const shouldShowDriver = !isCustomMode 
+        ? (isChallenge245Selected && !isChallenge1Selected)  // Standard mode: show if challenge selected
+        : true;  // Custom mode: if shouldShowC245 is true, we should show the driver
+      
+      // In custom mode, also show TBD driver if no results yet
+      const driverState = driverStates['c245-revenue'];
+      const isRemoved = driverState === 'removed';
+      
+      if (shouldShowDriver && !isRemoved) {
+        if (challenge245Results) {
+          // Calculate completion rate for performance highlight
+        const transactionAttempts = formData.amerGrossAttempts || 0;
+        const preAuthRate = formData.amerPreAuthApprovalRate || 95;
+        const postAuthRate = formData.amerPostAuthApprovalRate || 98;
+        const ccPct = formData.amerCreditCardPct || 80;
+        const threeDSPct = formData.amer3DSChallengeRate ?? 50;
+        const threeDSFail = formData.amer3DSAbandonmentRate ?? 15;
+        const bankDecline = formData.amerIssuingBankDeclineRate || 15;
+
+        // Current completion rate calculation
+        const custPreAuth = transactionAttempts * (preAuthRate / 100);
+        const custPostAuth = custPreAuth * (postAuthRate / 100);
+        const custCC = custPostAuth * (ccPct / 100);
+        const custNonCC = custPostAuth * ((100 - ccPct) / 100);
+        const cust3DSChallenged = custCC * (threeDSPct / 100);
+        const cust3DSNonChallenged = custCC * ((100 - threeDSPct) / 100);
+        const cust3DSPassed = cust3DSChallenged * ((100 - threeDSFail) / 100);
+        const custPassedToBank = cust3DSNonChallenged + cust3DSPassed + custNonCC;
+        const custBankApproved = custPassedToBank * ((100 - bankDecline) / 100);
+        const custCompletionRate = transactionAttempts > 0 ? (custBankApproved / transactionAttempts) * 100 : 0;
+
+        // Forter completion rate
+        const fortPreAuthRate = Math.min(100, preAuthRate + (forterKPIs.preAuthIncluded !== false ? (forterKPIs.preAuthApprovalIsAbsolute ? forterKPIs.preAuthApprovalImprovement - preAuthRate : forterKPIs.preAuthApprovalImprovement) : 0));
+        const fortPostAuthRate = Math.min(100, postAuthRate + (forterKPIs.postAuthIncluded !== false ? (forterKPIs.postAuthApprovalIsAbsolute ? forterKPIs.postAuthApprovalImprovement - postAuthRate : forterKPIs.postAuthApprovalImprovement) : 0));
+        const fort3DSRate = Math.max(0, threeDSPct - (forterKPIs.threeDSReductionIsAbsolute ? threeDSPct - forterKPIs.threeDSReduction : forterKPIs.threeDSReduction));
+        
+        const fortPreAuth = transactionAttempts * (fortPreAuthRate / 100);
+        const fortPostAuth = fortPreAuth * (fortPostAuthRate / 100);
+        const fortCC = fortPostAuth * (ccPct / 100);
+        const fortNonCC = fortPostAuth * ((100 - ccPct) / 100);
+        const fort3DSChallenged = fortCC * (fort3DSRate / 100);
+        const fort3DSNonChallenged = fortCC * ((100 - fort3DSRate) / 100);
+        const fort3DSPassed = fort3DSChallenged * ((100 - threeDSFail) / 100);
+        const fortPassedToBank = fort3DSNonChallenged + fort3DSPassed + fortNonCC;
+        const fortBankApproved = fortPassedToBank * ((100 - bankDecline) / 100);
+        const fortCompletionRate = transactionAttempts > 0 ? (fortBankApproved / transactionAttempts) * 100 : 0;
+
+        const percentChange = custCompletionRate > 0 
+          ? ((fortCompletionRate - custCompletionRate) / custCompletionRate) * 100 
+          : 0;
+
+        // Use segmented total if available; otherwise use global result
+        const driverValue = (isSegmentationEnabled && segmentedC245RevenueTotal !== null)
+          ? segmentedC245RevenueTotal
+          : challenge245Results.calculator1.revenueUplift;
+
+        drivers.push({
+          id: "c245-revenue",
+          label: "Optimize payment funnel",
+          value: driverValue,
+          enabled: getDriverEnabled("c245-revenue"),
+          calculatorTitle: "Reduce false declines and optimize payments",
+          calculatorRows: challenge245Results.calculator1.rows,
+          performanceHighlight: {
+            label: "Payments Conversion",
+            current: Math.round(custCompletionRate * 10) / 10,
+            target: Math.round(fortCompletionRate * 10) / 10,
+            unit: "%",
+            percentChange,
+          },
+        });
+        } else {
+          // Show TBD driver when benefit is enabled but no results yet
+          drivers.push({
+            id: "c245-revenue",
+            label: "Optimize payment funnel",
+            value: 0,
+            enabled: getDriverEnabled("c245-revenue"),
+            calculatorTitle: "Reduce false declines and optimize payments",
+            isTBD: true,
+          });
+        }
+      }
+    }
+
+    // Challenge 9: Instant refunds CX uplift (GMV uplift)
+    // In custom mode, ONLY show if c9 benefit is explicitly enabled (c9-cs-opex is now separate)
+    // In standard mode, show if challenge 9 is selected
+    const shouldShowC9 = !isCustomMode || enabledBenefitIds.has('c9');
+    const shouldShowC9Always = isCustomMode && enabledBenefitIds.has('c9');
+    
+    if (challenge9Results && shouldShowC9) {
+      const npsIncrease = forterKPIs.npsIncreaseFromInstantRefunds || 10;
+      
+      drivers.push({
+        id: "c9-cx-uplift",
+        label: "Instant refunds CX uplift",
+        value: challenge9Results.calculator1.gmvUplift,
+        enabled: getDriverEnabled("c9-cx-uplift"),
+        calculatorTitle: "Instant refunds CX uplift",
+        calculatorRows: challenge9Results.calculator1.rows,
+        performanceHighlight: {
+          label: "Expected NPS increase",
+          current: 0,
+          target: npsIncrease,
+          unit: " pts",
+        },
+      });
+    } else if ((isChallenge9Selected || shouldShowC9Always) && shouldShowC9) {
+      // TBD driver when challenge selected but no inputs - also show if benefit is enabled in custom mode
+      drivers.push({
+        id: "c9-cx-uplift",
+        label: "Instant refunds CX uplift",
+        value: 0,
+        enabled: getDriverEnabled("c9-cx-uplift"),
+        calculatorTitle: "Instant refunds CX uplift",
+        isTBD: true,
+      });
+    }
+
+    // Add custom GMV uplift calculations
+    customCalculations
+      .filter(c => c.category === 'gmv_uplift')
+      .forEach(custom => {
+        drivers.push({
+          id: custom.id,
+          label: `${custom.name} (Custom)`,
+          value: custom.value,
+          enabled: getDriverEnabled(custom.id),
+          calculatorTitle: `${custom.name} (Custom)`,
+          sourceUrl: custom.sourceUrl,
+        });
+      });
+
+    // Duplicated calculators (standard pathway): each has its own inputs
+    if (isCustomMode && formData.standaloneCalculators) {
+      const runOpts = { deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled };
+      Object.entries(formData.standaloneCalculators).forEach(([dupId, dup]) => {
+        if (STANDALONE_CALC_SECTION[dup.sourceCalculatorId] !== "gmv") return;
+        const merged = { ...formData, ...dup.inputs };
+        const result = runStandaloneCalculator(dup.sourceCalculatorId, merged, forterKPIs, runOpts);
+        if (!result) return;
+        const content = getChallengeBenefitContent(dup.sourceCalculatorId);
+        const label = dup.customName ?? (content?.benefitTitle ? `${content.benefitTitle} (copy)` : `${dup.sourceCalculatorId} (copy)`);
+        drivers.push({
+          id: dupId,
+          label,
+          value: result.value,
+          enabled: getDriverEnabled(dupId),
+          calculatorTitle: label,
+          calculatorRows: result.rows,
+        });
+      });
+    }
+
+    // Filter out drivers that have been removed (driverStates[driverId] === 'removed')
+    // false = disabled but visible (switch off), 'removed' = completely removed (X button)
+    // IMPORTANT: Protect c1-revenue and c245-revenue from being filtered out if their benefits are enabled
+    const filtered = drivers.filter(driver => {
+      const isRemoved = driverStates[driver.id] === 'removed';
+      // If c1-revenue is marked as removed but c1 benefit is enabled, don't filter it out
+      if (driver.id === 'c1-revenue' && isRemoved && enabledBenefitIds.has('c1')) {
+        console.log('[businessGrowthDrivers] PROTECTING c1-revenue from being filtered out - c1 benefit is enabled');
+        return true; // Don't filter out
+      }
+      // If c245-revenue is marked as removed but c45 benefit is enabled, don't filter it out
+      if (driver.id === 'c245-revenue' && isRemoved && enabledBenefitIds.has('c45')) {
+        console.log('[businessGrowthDrivers] PROTECTING c245-revenue from being filtered out - c45 benefit is enabled');
+        return true; // Don't filter out
+      }
+      return !isRemoved;
+    });
+    return applyCustomBenefitNames(filtered, formData.customBenefitNames);
+  }, [challenge1Results, challenge245Results, challenge9Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge9Selected, isCustomMode, enabledBenefitIds, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  const riskAvoidanceDrivers: ValueDriver[] = useMemo(() => {
+    const drivers: ValueDriver[] = [];
+
+    // Reduce fraud chargebacks - adaptive based on which payment calculator is active
+    // Show c1-chargeback if c1 is active, c245-chargeback if c45 is active
+    // In custom mode, ONLY show if 'chargeback' benefit is explicitly enabled (not auto-show based on c1/c45)
+    // In standard mode, show if payment challenges are selected
+    const hasChargebackBenefit = enabledBenefitIds.has('chargeback');
+    const hasC1ForChargeback = enabledBenefitIds.has('c1');
+    const hasC45ForChargeback = enabledBenefitIds.has('c45');
+    const hasPaymentChallengesSelected = isChallenge1Selected || isChallenge245Selected;
+    // In custom mode, only show chargeback if it's explicitly enabled as a benefit
+    // In standard mode, show if payment challenges are selected
+    const shouldShowChargeback = !isCustomMode 
+      ? (hasPaymentChallengesSelected)  // Standard mode: show if payment challenges selected
+      : (hasChargebackBenefit);  // Custom mode: ONLY show if chargeback benefit is explicitly enabled
+    const shouldShowChargebackAlways = isCustomMode && hasChargebackBenefit;
+    
+    // Determine which chargeback calculator to show based on active payment calculator
+    // Priority: c45 > c1 (if both somehow active, prefer c45)
+    // Only show chargeback drivers if chargeback benefit is explicitly enabled (in custom mode)
+    // In standard mode, show based on challenge selection
+    const showC1Chargeback = shouldShowChargeback && (
+      (!isCustomMode && isChallenge1Selected && !isChallenge245Selected) ||
+      (isCustomMode && hasChargebackBenefit && hasC1ForChargeback && !hasC45ForChargeback)
+    );
+    const showC245Chargeback = shouldShowChargeback && (
+      (!isCustomMode && isChallenge245Selected) ||
+      (isCustomMode && hasChargebackBenefit && hasC45ForChargeback && !hasC1ForChargeback)
+    );
+    
+    if (showC1Chargeback && challenge1Results && shouldShowChargeback) {
+      const currentCB = formData.fraudCBRate || 0.5;
+      const targetCB = forterKPIs.chargebackReductionIsAbsolute 
+        ? forterKPIs.chargebackReduction 
+        : currentCB * (1 - forterKPIs.chargebackReduction / 100);
+      const percentChange = currentCB > 0 
+        ? ((targetCB - currentCB) / currentCB) * 100 
+        : 0;
+
+      // Use segmented total if available; otherwise use global result
+      const driverValue = (isSegmentationEnabled && segmentedC1ChargebackTotal !== null)
+        ? segmentedC1ChargebackTotal
+        : challenge1Results.calculator2.costReduction;
+
+      drivers.push({
+        id: "c1-chargeback",
+        label: "Reduce fraud chargebacks",
+        value: driverValue,
+        enabled: getDriverEnabled("c1-chargeback"),
+        calculatorTitle: "Reduce fraud chargebacks",
+        calculatorRows: challenge1Results.calculator2.rows,
+        performanceHighlight: {
+          label: "Chargeback Rate",
+          current: currentCB,
+          target: Math.max(0, targetCB),
+          unit: "%",
+          percentChange,
+        },
+      });
+    } else if (showC245Chargeback && challenge245Results && shouldShowChargeback) {
+      const currentCB = formData.fraudCBRate || 0.5;
+      const targetCB = forterKPIs.chargebackReductionIsAbsolute 
+        ? forterKPIs.chargebackReduction 
+        : currentCB * (1 - forterKPIs.chargebackReduction / 100);
+      const percentChange = currentCB > 0 
+        ? ((targetCB - currentCB) / currentCB) * 100 
+        : 0;
+
+      // Use segmented total if available; otherwise use global result
+      const driverValue = (isSegmentationEnabled && segmentedC245ChargebackTotal !== null)
+        ? segmentedC245ChargebackTotal
+        : challenge245Results.calculator2.costReduction;
+
+      drivers.push({
+        id: "c245-chargeback",
+        label: "Reduce fraud chargebacks",
+        value: driverValue,
+        enabled: getDriverEnabled("c245-chargeback"),
+        calculatorTitle: "Reduce fraud chargebacks",
+        calculatorRows: challenge245Results.calculator2.rows,
+        performanceHighlight: {
+          label: "Chargeback Rate",
+          current: currentCB,
+          target: Math.max(0, targetCB),
+          unit: "%",
+          percentChange,
+        },
+      });
+    } else if ((shouldShowChargebackAlways || (isChallenge1Selected && !isChallenge245Selected) || isChallenge245Selected) && shouldShowChargeback) {
+      // TBD driver - show appropriate one based on which payment calculator is active
+      const driverId = showC245Chargeback ? "c245-chargeback" : "c1-chargeback";
+      drivers.push({
+        id: driverId,
+        label: "Reduce fraud chargebacks",
+        value: 0,
+        enabled: getDriverEnabled(driverId),
+        calculatorTitle: "Reduce fraud chargebacks",
+        isTBD: true,
+      });
+    }
+
+    // Challenge 3: Reduce manual review costs
+    // In custom mode, ONLY show if c3 benefit is explicitly enabled
+    // In standard mode, show if challenge 3 is selected
+    const shouldShowC3 = !isCustomMode || enabledBenefitIds.has('c3');
+    const shouldShowC3Always = isCustomMode && enabledBenefitIds.has('c3');
+    
+    if (challenge3Results && shouldShowC3) {
+      const currentReview = formData.manualReviewPct || 5;
+      const targetReview = forterKPIs.manualReviewIsAbsolute 
+        ? forterKPIs.manualReviewReduction 
+        : currentReview - forterKPIs.manualReviewReduction;
+      const percentChange = currentReview > 0 
+        ? ((targetReview - currentReview) / currentReview) * 100 
+        : 0;
+
+      drivers.push({
+        id: "c3-review",
+        label: "Reduce manual review costs",
+        value: challenge3Results.calculator1.costReduction,
+        enabled: getDriverEnabled("c3-review"),
+        calculatorTitle: "Reduce manual review workflow",
+        calculatorRows: challenge3Results.calculator1.rows,
+        performanceHighlight: {
+          label: "Review Rate",
+          current: currentReview,
+          target: Math.max(0, targetReview),
+          unit: "%",
+          percentChange,
+        },
+      });
+    } else if ((isChallenge3Selected || shouldShowC3Always) && shouldShowC3) {
+      // TBD driver - also show if benefit is enabled in custom mode
+      drivers.push({
+        id: "c3-review",
+        label: "Reduce manual review costs",
+        value: 0,
+        enabled: getDriverEnabled("c3-review"),
+        calculatorTitle: "Reduce manual review workflow",
+        isTBD: true,
+      });
+    }
+
+    // Challenge 7: Chargeback disputes
+    // In custom mode, only show the specific benefit that was added
+    // In custom mode, ONLY show if benefit is explicitly enabled
+    // In standard mode, show if challenge 7 is selected
+    const shouldShowC7Revenue = !isCustomMode || enabledBenefitIds.has('c7-revenue');
+    const shouldShowC7OpEx = !isCustomMode || enabledBenefitIds.has('c7-opex');
+    const shouldShowC7RevenueAlways = isCustomMode && enabledBenefitIds.has('c7-revenue');
+    const shouldShowC7OpExAlways = isCustomMode && enabledBenefitIds.has('c7-opex');
+    
+    if ((isChallenge7Selected || shouldShowC7RevenueAlways || shouldShowC7OpExAlways) && challenge7Results) {
+      // Determine if this is TBD based on whether we have meaningful inputs
+      const hasPaymentChallenges = isChallenge1Selected || isChallenge245Selected;
+      
+      // Check for meaningful recovery inputs - include dispute/win rates OR direct value inputs
+      const hasFraudInputs = (formData.fraudDisputeRate !== undefined && formData.fraudDisputeRate > 0) || 
+                              (formData.estFraudChargebackValue !== undefined && formData.estFraudChargebackValue > 0);
+      const hasServiceInputs = (formData.serviceDisputeRate !== undefined && formData.serviceDisputeRate > 0) ||
+                                (formData.estServiceChargebackValue !== undefined && formData.estServiceChargebackValue > 0);
+      
+      const hasMeaningfulRecoveryInputs = hasPaymentChallenges 
+        ? (formData.amerAnnualGMV && formData.amerAnnualGMV > 0) 
+        : (hasFraudInputs || hasServiceInputs);
+      
+      const recoveryIsTBD = !hasMeaningfulRecoveryInputs;
+      
+      if (shouldShowC7Revenue) {
+        drivers.push({
+          id: "c7-disputes",
+          label: "Increase chargeback recoveries",
+          value: challenge7Results.calculator1.costReduction,
+          enabled: getDriverEnabled("c7-disputes"),
+          calculatorTitle: "Increase chargeback recoveries",
+          calculatorRows: challenge7Results.calculator1.rows,
+          isTBD: recoveryIsTBD,
+          performanceHighlight: totalRecoveryMetrics && !recoveryIsTBD ? {
+            label: "Total Recovery Rate",
+            current: totalRecoveryMetrics.current,
+            target: totalRecoveryMetrics.target,
+            unit: "%",
+            percentChange: totalRecoveryMetrics.current > 0 
+              ? ((totalRecoveryMetrics.target - totalRecoveryMetrics.current) / totalRecoveryMetrics.current) * 100 
+              : 0,
+          } : undefined,
+        });
+      }
+      
+      // Add OpEx efficiency as a separate driver
+      if (shouldShowC7OpEx) {
+        const opExIsTBD = !formData.annualCBDisputes || formData.annualCBDisputes === 0;
+        const currentReviewTime = formData.avgTimeToReviewCB || 20;
+        const targetReviewTime = forterKPIs.disputeTimeReduction ?? 5;
+        const percentChange = currentReviewTime > 0 
+          ? ((targetReviewTime - currentReviewTime) / currentReviewTime) * 100 
+          : 0;
+
+        drivers.push({
+          id: "c7-opex",
+          label: "Improve recovery efficiency (OpEx)",
+          value: challenge7Results.calculator2.costReduction,
+          enabled: getDriverEnabled("c7-opex"),
+          calculatorTitle: "Improve recovery efficiency (OpEx)",
+          calculatorRows: challenge7Results.calculator2.rows,
+          isTBD: opExIsTBD,
+          performanceHighlight: !opExIsTBD ? {
+            label: "Avg. Time to Review",
+            current: currentReviewTime,
+            target: targetReviewTime,
+            unit: " mins",
+            percentChange,
+          } : undefined,
+        });
+      }
+    } else if (isChallenge7Selected || shouldShowC7RevenueAlways || shouldShowC7OpExAlways) {
+      // Fallback TBD drivers if calculations fail - also show if benefit is enabled in custom mode
+      if (shouldShowC7Revenue || shouldShowC7RevenueAlways) {
+        drivers.push({
+          id: "c7-disputes",
+          label: "Increase chargeback recoveries",
+          value: 0,
+          enabled: getDriverEnabled("c7-disputes"),
+          calculatorTitle: "Increase chargeback recoveries",
+          isTBD: true,
+        });
+      }
+      if (shouldShowC7OpEx || shouldShowC7OpExAlways) {
+        drivers.push({
+          id: "c7-opex",
+          label: "Improve recovery efficiency (OpEx)",
+          value: 0,
+          enabled: getDriverEnabled("c7-opex"),
+          calculatorTitle: "Improve recovery efficiency (OpEx)",
+          isTBD: true,
+        });
+      }
+    }
+
+    // Challenge 9: Reduced CS ticket handling OpEx
+    // In custom mode, only show if c9-cs-opex benefit is enabled (now standalone)
+    // In custom mode, ONLY show if benefit is explicitly enabled
+    // In standard mode, show if challenge 9 is selected
+    const shouldShowC9OpEx = !isCustomMode || enabledBenefitIds.has('c9-cs-opex');
+    const shouldShowC9OpExAlways = isCustomMode && enabledBenefitIds.has('c9-cs-opex');
+    
+    if (challenge9Results && shouldShowC9OpEx) {
+      const csReduction = forterKPIs.forterCSReduction || 78;
+      
+      drivers.push({
+        id: "c9-cs-opex",
+        label: "Reduced CS ticket handling",
+        value: challenge9Results.calculator2.costReduction,
+        enabled: getDriverEnabled("c9-cs-opex"),
+        calculatorTitle: "Reduced CS ticket handling OpEx",
+        calculatorRows: challenge9Results.calculator2.rows,
+        performanceHighlight: {
+          label: "Expected % of instant refunds",
+          current: 0,
+          target: csReduction,
+          unit: "%",
+        },
+      });
+    } else if ((isChallenge9Selected || shouldShowC9OpExAlways) && shouldShowC9OpEx) {
+      // TBD driver - also show if benefit is enabled in custom mode
+      drivers.push({
+        id: "c9-cs-opex",
+        label: "Reduced CS ticket handling",
+        value: 0,
+        enabled: getDriverEnabled("c9-cs-opex"),
+        calculatorTitle: "Reduced CS ticket handling OpEx",
+        isTBD: true,
+      });
+    }
+
+    // Challenge 12/13: ATO OpEx savings
+    // In custom mode, only show the specific benefit that was added
+    // In custom mode, ONLY show if benefit is explicitly enabled
+    // In standard mode, show if challenge 12/13 is selected
+    const shouldShowC12 = !isCustomMode || enabledBenefitIds.has('c12');
+    const shouldShowC12Always = isCustomMode && enabledBenefitIds.has('c12');
+    
+    if (challenge12_13Results && shouldShowC12) {
+      const atoCatchRate = forterKPIs.atoCatchRate || 90;
+      
+      drivers.push({
+        id: "c12-ato-opex",
+        label: "ATO protection OpEx savings",
+        value: challenge12_13Results.calculator1.costReduction,
+        enabled: getDriverEnabled("c12-ato-opex"),
+        calculatorTitle: "ATO protection OpEx savings",
+        calculatorRows: challenge12_13Results.calculator1.rows,
+        performanceHighlight: {
+          label: "ATO Catch Rate",
+          current: 0,
+          target: atoCatchRate,
+          unit: "%",
+        },
+      });
+    } else if ((isChallenge12_13Selected || shouldShowC12Always) && shouldShowC12) {
+      // TBD driver - also show if benefit is enabled in custom mode
+      drivers.push({
+        id: "c12-ato-opex",
+        label: "ATO protection OpEx savings",
+        value: 0,
+        enabled: getDriverEnabled("c12-ato-opex"),
+        calculatorTitle: "ATO protection OpEx savings",
+        isTBD: true,
+      });
+    }
+
+    // Challenge 14/15: Sign-up protection cost savings
+    // Per mapping: these calculator benefits map to Challenges 14/15 (Account Protection / sign-up).
+    // Only show when (1) challenge 14 or 15 is selected (guided), or (2) benefit explicitly added (custom).
+    const shouldShowC14Marketing = (isChallenge14_15Selected && !isCustomMode) || (isCustomMode && enabledBenefitIds.has('c14-marketing'));
+    const shouldShowC14Kyc = (isChallenge14_15Selected && !isCustomMode) || (isCustomMode && enabledBenefitIds.has('c14-kyc'));
+    
+    // In custom mode, show KYC benefit if it's enabled, regardless of whether challenges are selected or results exist
+    const shouldShowC14KycAlways = isCustomMode && enabledBenefitIds.has('c14-kyc');
+    
+    const shouldShowKYC = shouldShowC14Kyc || shouldShowC14KycAlways;
+    
+    // Check if we have valid calculation results (not just an empty object)
+    const hasValidResults = challenge14_15Results && 
+      challenge14_15Results.calculator1 && 
+      challenge14_15Results.calculator2 && 
+      challenge14_15Results.calculator3;
+    
+    if (hasValidResults) {
+      const signupReduction = forterKPIs.forterFraudulentSignupReduction || 95;
+      
+      if (shouldShowC14Marketing) {
+        drivers.push({
+          id: "c14-marketing",
+          label: "Protect marketing budget",
+          value: challenge14_15Results.calculator1.costReduction,
+          enabled: getDriverEnabled("c14-marketing"),
+          calculatorTitle: "Protect marketing budget against duplicate accounts",
+          calculatorRows: challenge14_15Results.calculator1.rows,
+          performanceHighlight: {
+            label: "Fraud Signup Reduction",
+            current: 0,
+            target: signupReduction,
+            unit: "%",
+          },
+        });
+
+        // Only add reactivation driver if it hasn't been explicitly removed
+        if (driverStates["c14-reactivation"] !== 'removed') {
+          drivers.push({
+            id: "c14-reactivation",
+            label: "Reduce re-activation costs",
+            value: challenge14_15Results.calculator2.costReduction,
+            enabled: driverStates["c14-reactivation"] === true || driverStates["c14-reactivation"] === undefined,
+            calculatorTitle: "Reduce re-activation costs on fake accounts",
+            calculatorRows: challenge14_15Results.calculator2.rows,
+            performanceHighlight: {
+              label: "Fraud Signup Reduction",
+              current: 0,
+              target: signupReduction,
+              unit: "%",
+            },
+          });
+        }
+      }
+
+      if (shouldShowKYC && challenge14_15Results.calculator3) {
+        const kycReduction = forterKPIs.forterKYCReduction || 80;
+        
+        drivers.push({
+          id: "c14-kyc",
+          label: "Optimize KYC costs",
+          value: challenge14_15Results.calculator3.costReduction,
+          enabled: getDriverEnabled("c14-kyc"),
+          calculatorTitle: "Optimize KYC costs",
+          calculatorRows: challenge14_15Results.calculator3.rows,
+          performanceHighlight: {
+            label: "KYC Reduction",
+            current: 0,
+            target: kycReduction,
+            unit: "%",
+          },
+        });
+      }
+    }
+    
+    // Show TBD drivers if challenge is selected OR if benefit is enabled in custom mode
+    // Always show KYC if it's enabled in custom mode, regardless of challenge selection or results
+    if (!hasValidResults) {
+      // Show marketing drivers if challenge is selected or marketing benefit is enabled
+      if ((isChallenge14_15Selected || shouldShowC14Marketing) && shouldShowC14Marketing) {
+        drivers.push({
+          id: "c14-marketing",
+          label: "Protect marketing budget",
+          value: 0,
+          enabled: getDriverEnabled("c14-marketing"),
+          calculatorTitle: "Protect marketing budget against duplicate accounts",
+          isTBD: true,
+        });
+        // Only add reactivation driver if it hasn't been explicitly removed
+        if (driverStates["c14-reactivation"] !== 'removed') {
+          drivers.push({
+            id: "c14-reactivation",
+            label: "Reduce re-activation costs",
+            value: 0,
+            enabled: driverStates["c14-reactivation"] === true || driverStates["c14-reactivation"] === undefined,
+            calculatorTitle: "Reduce re-activation costs on fake accounts",
+            isTBD: true,
+          });
+        }
+      }
+      
+      // Always show KYC if it's enabled in custom mode, even if challenge isn't selected
+      if (shouldShowKYC) {
+        drivers.push({
+          id: "c14-kyc",
+          label: "Optimize KYC costs",
+          value: 0,
+          enabled: getDriverEnabled("c14-kyc"),
+          calculatorTitle: "Optimize KYC costs",
+          isTBD: true,
+        });
+      }
+    } else if (shouldShowC14KycAlways && !challenge14_15Results?.calculator3) {
+      // Fallback: If we have results but KYC calculator3 doesn't exist, and KYC is enabled, show TBD
+      // This handles edge cases where results exist but calculator3 is missing
+      drivers.push({
+        id: "c14-kyc",
+        label: "Optimize KYC costs",
+        value: 0,
+        enabled: getDriverEnabled("c14-kyc"),
+        calculatorTitle: "Optimize KYC costs",
+        isTBD: true,
+      });
+    }
+
+    // Add custom cost reduction calculations
+    customCalculations
+      .filter(c => c.category === 'cost_reduction')
+      .forEach(custom => {
+        drivers.push({
+          id: custom.id,
+          label: `${custom.name} (Custom)`,
+          value: custom.value,
+          enabled: getDriverEnabled(custom.id),
+          calculatorTitle: `${custom.name} (Custom)`,
+          sourceUrl: custom.sourceUrl,
+        });
+      });
+
+    // Duplicated calculators (standard pathway): each has its own inputs
+    if (isCustomMode && formData.standaloneCalculators) {
+      const runOpts = { deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled };
+      Object.entries(formData.standaloneCalculators).forEach(([dupId, dup]) => {
+        if (STANDALONE_CALC_SECTION[dup.sourceCalculatorId] !== "cost") return;
+        const merged = { ...formData, ...dup.inputs };
+        const result = runStandaloneCalculator(dup.sourceCalculatorId, merged, forterKPIs, runOpts);
+        if (!result) return;
+        const content = getChallengeBenefitContent(dup.sourceCalculatorId);
+        const label = dup.customName ?? (content?.benefitTitle ? `${content.benefitTitle} (copy)` : `${dup.sourceCalculatorId} (copy)`);
+        drivers.push({
+          id: dupId,
+          label,
+          value: result.value,
+          enabled: getDriverEnabled(dupId),
+          calculatorTitle: label,
+          calculatorRows: result.rows,
+        });
+      });
+    }
+
+    // Filter out drivers that have been removed (driverStates[driverId] === 'removed')
+    // false = disabled but visible (switch off), 'removed' = completely removed (X button)
+    const filtered = drivers.filter(driver => driverStates[driver.id] !== 'removed');
+    return applyCustomBenefitNames(filtered, formData.customBenefitNames);
+  }, [challenge1Results, challenge245Results, challenge3Results, challenge7Results, challenge9Results, challenge12_13Results, challenge14_15Results, customCalculations, totalRecoveryMetrics, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge3Selected, isChallenge7Selected, isChallenge9Selected, isChallenge12_13Selected, isChallenge14_15Selected, isCustomMode, Array.from(enabledBenefitIds).sort().join(','), deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  const riskMitigationDrivers: ValueDriver[] = useMemo(() => {
+    const drivers: ValueDriver[] = [];
+
+    // Challenge 8: Returns/INR abuse
+    // In custom mode, only show the specific benefit that was added (not both)
+    // In custom mode, ONLY show if benefit is explicitly enabled
+    // In standard mode, show if challenge 8 is selected
+    const shouldShowReturns = !isCustomMode || enabledBenefitIds.has('c8-returns');
+    const shouldShowINR = !isCustomMode || enabledBenefitIds.has('c8-inr');
+    const shouldShowReturnsAlways = isCustomMode && enabledBenefitIds.has('c8-returns');
+    const shouldShowINRAlways = isCustomMode && enabledBenefitIds.has('c8-inr');
+    
+    if (challenge8Results) {
+      const catchRate = forterKPIs.forterCatchRate ?? 90;
+      
+      if (shouldShowReturns) {
+        drivers.push({
+          id: "c8-returns",
+          label: "Block returns abusers",
+          value: challenge8Results.calculator1.costReduction,
+          enabled: getDriverEnabled("c8-returns"),
+          calculatorTitle: "Block/Dissuade returns abusers",
+          calculatorRows: challenge8Results.calculator1.rows,
+          performanceHighlight: {
+            label: "Catch Rate",
+            current: 0,
+            target: catchRate,
+            unit: "%",
+          },
+        });
+      }
+
+      if (shouldShowINR) {
+        drivers.push({
+          id: "c8-inr",
+          label: "Block INR abusers",
+          value: challenge8Results.calculator2.costReduction,
+          enabled: getDriverEnabled("c8-inr"),
+          calculatorTitle: "Block INR (Item Not Received) abusers",
+          calculatorRows: challenge8Results.calculator2.rows,
+          performanceHighlight: {
+            label: "Catch Rate",
+            current: 0,
+            target: catchRate,
+            unit: "%",
+          },
+        });
+      }
+    } else if (isChallenge8Selected || shouldShowReturnsAlways || shouldShowINRAlways) {
+      // TBD drivers - also show if benefit is enabled in custom mode
+      if (shouldShowReturns || shouldShowReturnsAlways) {
+        drivers.push({
+          id: "c8-returns",
+          label: "Block returns abusers",
+          value: 0,
+          enabled: getDriverEnabled("c8-returns"),
+          calculatorTitle: "Block/Dissuade returns abusers",
+          isTBD: true,
+        });
+      }
+      if (shouldShowINR || shouldShowINRAlways) {
+        drivers.push({
+          id: "c8-inr",
+          label: "Block INR abusers",
+          value: 0,
+          enabled: getDriverEnabled("c8-inr"),
+          calculatorTitle: "Block INR (Item Not Received) abusers",
+          isTBD: true,
+        });
+      }
+    }
+
+    // Challenge 10: Promotions abuse
+    // In custom mode, only show the specific benefit that was added
+    // In custom mode, ONLY show if benefit is explicitly enabled
+    // In standard mode, show if challenge 10/11 is selected
+    const shouldShowC10 = !isCustomMode || enabledBenefitIds.has('c10');
+    const shouldShowC10Always = isCustomMode && enabledBenefitIds.has('c10');
+    
+    if (challenge10Results && shouldShowC10) {
+      const catchRate = forterKPIs.forterCatchRate ?? 90;
+      
+      drivers.push({
+        id: "c10-promotions",
+        label: "Protect profitability from promotion abuse",
+        value: challenge10Results.calculator1.profitUplift,
+        enabled: getDriverEnabled("c10-promotions"),
+        calculatorTitle: "Protect profitability from promotion abuse",
+        calculatorRows: challenge10Results.calculator1.rows,
+        performanceHighlight: {
+          label: "Catch Rate",
+          current: 0,
+          target: catchRate,
+          unit: "%",
+        },
+      });
+    } else if ((isChallenge10_11Selected || shouldShowC10Always) && shouldShowC10) {
+      // TBD driver - also show if benefit is enabled in custom mode
+      drivers.push({
+        id: "c10-promotions",
+        label: "Protect profitability from promotion abuse",
+        value: 0,
+        enabled: getDriverEnabled("c10-promotions"),
+        calculatorTitle: "Protect profitability from promotion abuse",
+        isTBD: true,
+      });
+    }
+
+    // Challenge 12/13: CLV loss mitigation (risk mitigation category)
+    // In custom mode, only show the specific benefit that was added
+    // In custom mode, ONLY show if benefit is explicitly enabled
+    // In standard mode, show if challenge 12/13 is selected
+    const shouldShowC13 = !isCustomMode || enabledBenefitIds.has('c13');
+    const shouldShowC13Always = isCustomMode && enabledBenefitIds.has('c13');
+    
+    if (challenge12_13Results && shouldShowC13) {
+      const atoCatchRate = forterKPIs.atoCatchRate || 90;
+      
+      drivers.push({
+        id: "c13-clv",
+        label: "Mitigate CLV loss from ATO churn",
+        value: challenge12_13Results.calculator2.profitUplift,
+        enabled: getDriverEnabled("c13-clv"),
+        calculatorTitle: "Mitigate customer lifetime value loss from ATO churn",
+        calculatorRows: challenge12_13Results.calculator2.rows,
+        performanceHighlight: {
+          label: "ATO Catch Rate",
+          current: 0,
+          target: atoCatchRate,
+          unit: "%",
+        },
+      });
+    } else if ((isChallenge12_13Selected || shouldShowC13Always) && shouldShowC13) {
+      // TBD driver - also show if benefit is enabled in custom mode
+      drivers.push({
+        id: "c13-clv",
+        label: "Mitigate CLV loss from ATO churn",
+        value: 0,
+        enabled: getDriverEnabled("c13-clv"),
+        calculatorTitle: "Mitigate customer lifetime value loss from ATO churn",
+        isTBD: true,
+      });
+    }
+
+    // Add custom risk mitigation calculations
+    customCalculations
+      .filter(c => c.category === 'risk_mitigation')
+      .forEach(custom => {
+        drivers.push({
+          id: custom.id,
+          label: `${custom.name} (Custom)`,
+          value: custom.value,
+          enabled: getDriverEnabled(custom.id),
+          calculatorTitle: `${custom.name} (Custom)`,
+          sourceUrl: custom.sourceUrl,
+        });
+      });
+
+    // Duplicated calculators (standard pathway): each has its own inputs
+    if (isCustomMode && formData.standaloneCalculators) {
+      const runOpts = { deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled };
+      Object.entries(formData.standaloneCalculators).forEach(([dupId, dup]) => {
+        if (STANDALONE_CALC_SECTION[dup.sourceCalculatorId] !== "risk") return;
+        const merged = { ...formData, ...dup.inputs };
+        const result = runStandaloneCalculator(dup.sourceCalculatorId, merged, forterKPIs, runOpts);
+        if (!result) return;
+        const content = getChallengeBenefitContent(dup.sourceCalculatorId);
+        const label = dup.customName ?? (content?.benefitTitle ? `${content.benefitTitle} (copy)` : `${dup.sourceCalculatorId} (copy)`);
+        drivers.push({
+          id: dupId,
+          label,
+          value: result.value,
+          enabled: getDriverEnabled(dupId),
+          calculatorTitle: label,
+          calculatorRows: result.rows,
+        });
+      });
+    }
+
+    // Filter out drivers that have been removed (driverStates[driverId] === 'removed')
+    // false = disabled but visible (switch off), 'removed' = completely removed (X button)
+    const filtered = drivers.filter(driver => driverStates[driver.id] !== 'removed');
+    return applyCustomBenefitNames(filtered, formData.customBenefitNames);
+  }, [challenge8Results, challenge10Results, challenge12_13Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge8Selected, isChallenge10_11Selected, isChallenge12_13Selected, isCustomMode, Array.from(enabledBenefitIds).sort().join(','), deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  // Combine all drivers for lookup
+  const allDrivers = useMemo(() => [
+    ...businessGrowthDrivers,
+    ...riskAvoidanceDrivers,
+    ...riskMitigationDrivers,
+  ], [businessGrowthDrivers, riskAvoidanceDrivers, riskMitigationDrivers]);
+
+  // Get the currently selected calculator data (live, not snapshot)
+  // Use driver.label as modal title to match the Value Summary display
+  // For TBD drivers OR zero-value drivers, return info needed to show benefit summary without calculator
+  const selectedCalculator = useMemo(() => {
+    if (!selectedCalculatorId) return null;
+    const driver = allDrivers.find(d => d.id === selectedCalculatorId);
+    if (!driver) return null;
+    
+    // In Custom mode, never treat zero-value as TBD - show calculator so user can enter inputs
+    // In Guided mode, treat TBD or zero-value as TBD (hide calculator until inputs provided)
+    const effectivelyTBD = isCustomMode 
+      ? driver.isTBD && !driver.calculatorRows  // Only TBD in custom mode if explicitly marked AND no rows available
+      : (driver.isTBD || driver.value === 0);
+    
+    // For TBD drivers (without calculator rows), return with isTBD flag
+    if (effectivelyTBD && !driver.calculatorRows) {
+      return {
+        title: driver.label,
+        rows: undefined,
+        isTBD: true,
+      };
+    }
+    
+    // Return with calculator rows (even if value is 0 in custom mode)
+    return {
+      title: driver.label,
+      rows: driver.calculatorRows,
+      isTBD: effectivelyTBD,
+    };
+  }, [selectedCalculatorId, allDrivers]);
+
+  // Modal context for duplicate calculators: merged formData and callback that updates duplicate's inputs
+  const modalContext = useMemo(() => {
+    if (!selectedCalculatorId) {
+      return {
+        sourceIdForModal: null as string | null,
+        isDuplicateSelected: false,
+        modalFormData: formData,
+        modalOnFormDataChange: onFormDataChange,
+      };
+    }
+    const sourceIdForModal = getSourceCalculatorId(selectedCalculatorId);
+    const isDuplicateSelected = isDuplicateCalculator(selectedCalculatorId);
+    const modalFormData =
+      isDuplicateSelected && formData.standaloneCalculators?.[selectedCalculatorId]
+        ? { ...formData, ...formData.standaloneCalculators[selectedCalculatorId].inputs }
+        : formData;
+    const modalOnFormDataChange = isDuplicateSelected
+      ? (field: keyof CalculatorData, value: number) => {
+          const dup = formData.standaloneCalculators![selectedCalculatorId];
+          onFormDataChange?.('standaloneCalculators' as keyof CalculatorData, {
+            ...(formData.standaloneCalculators || {}),
+            [selectedCalculatorId]: { ...dup, inputs: { ...dup.inputs, [field]: value } },
+          } as any);
+        }
+      : onFormDataChange;
+    return { sourceIdForModal, isDuplicateSelected, modalFormData, modalOnFormDataChange };
+  }, [selectedCalculatorId, formData, onFormDataChange]);
+
+  // Totals
+  const businessGrowthTotal = businessGrowthDrivers.reduce(
+    (sum, d) => sum + (d.enabled ? d.value : 0),
+    0
+  );
+  const riskAvoidanceTotal = riskAvoidanceDrivers.reduce(
+    (sum, d) => sum + (d.enabled ? d.value : 0),
+    0
+  );
+  const riskMitigationTotal = riskMitigationDrivers.reduce(
+    (sum, d) => sum + (d.enabled ? d.value : 0),
+    0
+  );
+  const totalValue = businessGrowthTotal + riskAvoidanceTotal + riskMitigationTotal;
+
+  // EBITDA calculation
+  // Split standard drivers from custom GMV calculations for proper margin application
+  const standardGrowthTotal = businessGrowthDrivers
+    .filter(d => !d.id.startsWith('custom-'))
+    .reduce((sum, d) => sum + (d.enabled ? d.value : 0), 0);
+  const customGmvTotal = businessGrowthDrivers
+    .filter(d => d.id.startsWith('custom-'))
+    .reduce((sum, d) => sum + (d.enabled ? d.value : 0), 0);
+  
+  const grossMarginPercent = formData.amerGrossMarginPercent || 50;
+  const isMarketplace = formData.isMarketplace || false;
+  const commissionRate = formData.commissionRate || 100;
+  const effectiveMarginPercent = isMarketplace ? commissionRate : grossMarginPercent;
+  
+  // Apply margin to standard GMV drivers (normal calculation path)
+  const standardGmvProfitability = standardGrowthTotal * (effectiveMarginPercent / 100);
+  // Custom GMV calculations already entered as GMV - apply the gross margin stored in formData
+  // (the same margin shown in the modal: amerGrossMarginPercent, with commission if marketplace)
+  const customGmvProfitability = customGmvTotal * (isMarketplace ? (commissionRate / 100) : 1) * (grossMarginPercent / 100);
+  const gmvProfitability = standardGmvProfitability + customGmvProfitability;
+  const ebitdaContribution = gmvProfitability + riskAvoidanceTotal + riskMitigationTotal;
+
+  // Report totals to parent when they change
+  // Use a ref to store the callback to prevent it from triggering re-renders
+  const onTotalsChangeRef = useRef(onTotalsChange);
+  onTotalsChangeRef.current = onTotalsChange;
+  
+  // Use useEffect instead of useMemo to avoid infinite re-render loops
+  useEffect(() => {
+    // Build breakdown arrays with challengeId mappings
+    const gmvUpliftBreakdown = businessGrowthDrivers
+      .filter(d => d.enabled && d.value > 0)
+      .map(d => ({
+        label: d.label,
+        value: d.value,
+        challengeId: d.id.startsWith('c1-') ? '1' : 
+                    d.id.startsWith('c245-') ? '2' :
+                    d.id.startsWith('c9-') ? '9' : undefined,
+      }));
+    
+    const costReductionBreakdown = riskAvoidanceDrivers
+      .filter(d => d.enabled && d.value > 0)
+      .map(d => ({
+        label: d.label,
+        value: d.value,
+        challengeId: d.id.startsWith('c1-') ? '1' :
+                    d.id.startsWith('c245-') ? '2' :
+                    d.id.startsWith('c3-') ? '3' :
+                    d.id.startsWith('c7-') ? '7' :
+                    d.id.startsWith('c9-') ? '9' :
+                    d.id.startsWith('c12-') ? '12' :
+                    d.id.startsWith('c14-') ? '14' : undefined,
+      }));
+    
+    const riskMitigationBreakdown = riskMitigationDrivers
+      .filter(d => d.enabled && d.value > 0)
+      .map(d => ({
+        label: d.label,
+        value: d.value,
+        challengeId: d.id.startsWith('c8-') ? '8' :
+                    d.id.startsWith('c10-') ? '10' :
+                    d.id.startsWith('c13-') ? '13' : undefined,
+      }));
+
+    onTotalsChangeRef.current?.({
+      gmvUplift: businessGrowthTotal,
+      costReduction: riskAvoidanceTotal,
+      riskMitigation: riskMitigationTotal,
+      ebitdaContribution,
+      gmvUpliftBreakdown,
+      costReductionBreakdown,
+      riskMitigationBreakdown,
+    });
+  }, [businessGrowthTotal, riskAvoidanceTotal, riskMitigationTotal, ebitdaContribution, businessGrowthDrivers, riskAvoidanceDrivers, riskMitigationDrivers]);
+
+  const hasTBDDrivers = allDrivers.some(d => d.isTBD);
+  const hasAnyResults =
+    challenge1Results ||
+    challenge245Results ||
+    challenge3Results ||
+    challenge7Results ||
+    challenge8Results ||
+    challenge9Results ||
+    challenge10Results ||
+    challenge12_13Results ||
+    challenge14_15Results ||
+    hasTBDDrivers;
+
+  // Waterfall chart data - limit to top 5 bars + "Other" bucket to prevent overlap
+  const MAX_CHART_BARS = 5;
+  
+  const waterfallData = useMemo(() => {
+    const rawData: { name: string; value: number; base: number; isTotal: boolean; originalLabel: string }[] = [];
+    
+    const toMultiLine = (label: string) => label.split(" ").join("\n");
+    
+    // Helper to get benefit title from challengeBenefitContent, falling back to calculatorTitle/label
+    const getBenefitLabel = (driver: { id: string; calculatorTitle?: string; label: string }) => {
+      const content = getChallengeBenefitContent(driver.id);
+      return content?.benefitTitle ?? driver.calculatorTitle ?? driver.label;
+    };
+    
+    // Calculate margin multiplier for GMV uplift items
+    const marginMultiplier = (formData.isMarketplace ? (formData.commissionRate || 100) : (formData.amerGrossMarginPercent || 50)) / 100;
+
+    // Get non-custom business growth drivers and their total (to apply margin)
+    const nonCustomGrowthDrivers = businessGrowthDrivers.filter(d => !d.id.startsWith('custom-'));
+    const nonCustomGrowthTotal = nonCustomGrowthDrivers.reduce((sum, d) => sum + (d.enabled ? d.value : 0), 0);
+    const nonCustomGrowthProfitability = nonCustomGrowthTotal * marginMultiplier;
+    
+    // Add non-custom business growth as a single bar (with margin applied)
+    if (nonCustomGrowthProfitability > 0) {
+      const primaryGrowthLabel = getBenefitLabel(nonCustomGrowthDrivers[0]);
+
+      rawData.push({
+        name: toMultiLine(primaryGrowthLabel),
+        originalLabel: primaryGrowthLabel,
+        value: nonCustomGrowthProfitability,
+        base: 0,
+        isTotal: false,
+      });
+    }
+    
+    // Add custom GMV uplift calculations as separate bars (with margin applied)
+    const customGmvDrivers = businessGrowthDrivers.filter(d => d.id.startsWith('custom-'));
+    customGmvDrivers.forEach((driver) => {
+      if (driver.enabled && driver.value > 0) {
+        const ebitdaValue = driver.value * marginMultiplier;
+        const label = driver.calculatorTitle ?? driver.label;
+        rawData.push({
+          name: toMultiLine(label),
+          originalLabel: label,
+          value: ebitdaValue,
+          base: 0,
+          isTotal: false,
+        });
+      }
+    });
+
+    riskAvoidanceDrivers.forEach((driver) => {
+      if (driver.enabled && driver.value > 0) {
+        const label = getBenefitLabel(driver);
+        rawData.push({
+          name: toMultiLine(label),
+          originalLabel: label,
+          value: driver.value,
+          base: 0,
+          isTotal: false,
+        });
+      }
+    });
+
+    riskMitigationDrivers.forEach((driver) => {
+      if (driver.enabled && driver.value > 0) {
+        const label = getBenefitLabel(driver);
+        rawData.push({
+          name: toMultiLine(label),
+          originalLabel: label,
+          value: driver.value,
+          base: 0,
+          isTotal: false,
+        });
+      }
+    });
+
+    // Sort by value descending to get top contributors
+    const sortedData = [...rawData].sort((a, b) => b.value - a.value);
+    
+    // If we have more than MAX_CHART_BARS, bucket the rest into "Other"
+    let chartData: { name: string; value: number; base: number; isTotal: boolean }[] = [];
+    
+    if (sortedData.length > MAX_CHART_BARS) {
+      const topBars = sortedData.slice(0, MAX_CHART_BARS);
+      const otherBars = sortedData.slice(MAX_CHART_BARS);
+      const otherTotal = otherBars.reduce((sum, item) => sum + item.value, 0);
+      
+      // Build waterfall with running totals
+      let runningTotal = 0;
+      topBars.forEach((item) => {
+        chartData.push({
+          name: item.name,
+          value: item.value,
+          base: runningTotal,
+          isTotal: false,
+        });
+        runningTotal += item.value;
+      });
+      
+      // Add "Other" bucket
+      if (otherTotal > 0) {
+        chartData.push({
+          name: `Other\n(${otherBars.length})`,
+          value: otherTotal,
+          base: runningTotal,
+          isTotal: false,
+        });
+        runningTotal += otherTotal;
+      }
+    } else {
+      // Build waterfall with running totals
+      let runningTotal = 0;
+      sortedData.forEach((item) => {
+        chartData.push({
+          name: item.name,
+          value: item.value,
+          base: runningTotal,
+          isTotal: false,
+        });
+        runningTotal += item.value;
+      });
+    }
+
+    // Add EBITDA total bar
+    if (chartData.length > 0) {
+      chartData.push({
+        name: "EBITDA\nContribution",
+        value: ebitdaContribution,
+        base: 0,
+        isTotal: true,
+      });
+    }
+
+    return chartData;
+  }, [businessGrowthDrivers, businessGrowthTotal, gmvProfitability, riskAvoidanceDrivers, riskMitigationDrivers, ebitdaContribution]);
+
+  const currencyCode = formData.baseCurrency || "USD";
+  const currencySymbol = getCurrencySymbol(currencyCode);
+
+  const formatCurrency = (value: number): string => {
+    const absValue = Math.abs(value);
+    let formatted: string;
+    
+    // When showInMillions is on, ALWAYS show in millions with 1 decimal place
+    if (showInMillions) {
+      formatted = `${currencySymbol}${(absValue / 1000000).toFixed(1)}M`;
+    } else {
+      formatted = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: currencyCode,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(absValue);
+    }
+    
+    if (value < 0) return `(${formatted})`;
+    if (value > 0) return `+${formatted}`;
+    return formatted;
+  };
+
+  const handleDriverToggle = (driverId: string, enabled: boolean) => {
+    // Switch should only toggle enabled state, not remove the driver
+    // Use 'removed' for X button removal, false/true/undefined for enabled/disabled
+    // Filter logic: only filter out 'removed', not false
+    setDriverStates((prev) => {
+      const currentState = prev[driverId];
+      // If driver was explicitly removed (set to 'removed' by X button), don't allow switch to re-enable it
+      if (currentState === 'removed') {
+        return prev; // Don't allow switch to re-enable a removed driver
+      }
+      // Set enabled state: true = enabled, false = disabled but visible, undefined = enabled (default)
+      return { ...prev, [driverId]: enabled ? true : false };
+    });
+  };
+
+  // Check if margin data is needed for a calculator
+  const needsMarginData = (driverId: string): boolean => {
+    // GMV-related calculators need margin/business type info
+    const gmvCalculators = ['c1-revenue', 'c245-revenue', 'c10-promotions'];
+    if (!gmvCalculators.includes(driverId)) return false;
+    
+    // Check if we have the required data
+    const hasGrossMargin = formData.amerGrossMarginPercent !== undefined && formData.amerGrossMarginPercent > 0;
+    const hasBusinessType = formData.isMarketplace !== undefined;
+    const hasCommission = !formData.isMarketplace || (formData.commissionRate !== undefined && formData.commissionRate > 0);
+    
+    return !hasGrossMargin || !hasBusinessType || !hasCommission;
+  };
+
+  const handleDriverClick = (driver: ValueDriver) => {
+    // Allow clicking on TBD drivers to show benefit summary (without calculator)
+    if (driver.enabled && (driver.calculatorRows || driver.isTBD)) {
+      // Check if we need margin data before opening calculator
+      if (needsMarginData(driver.id)) {
+        setPendingCalculatorId(driver.id);
+        setShowMarginPrompt(true);
+        return;
+      }
+      
+      setSelectedCalculatorId(driver.id);
+      // In custom mode, go directly to calculator tab so users can enter inputs
+      setCalculatorModalTab(isCustomMode ? 'calculator' : 'summary');
+    }
+  };
+  
+  // Handle margin prompt save
+  const handleMarginPromptSave = (grossMargin: number, isMarketplace: boolean, commissionRate?: number) => {
+    // Update form data via parent callback
+    onFormDataChange?.('amerGrossMarginPercent' as keyof CalculatorData, grossMargin);
+    onFormDataChange?.('isMarketplace' as keyof CalculatorData, isMarketplace ? 1 : 0);
+    if (commissionRate !== undefined) {
+      onFormDataChange?.('commissionRate' as keyof CalculatorData, commissionRate);
+    }
+    
+    // Open the pending calculator - go to calculator tab in custom mode
+    if (pendingCalculatorId) {
+      setSelectedCalculatorId(pendingCalculatorId);
+      setCalculatorModalTab(isCustomMode ? 'calculator' : 'summary');
+      setPendingCalculatorId(null);
+    }
+  };
+  
+  // Handle margin prompt skip
+  const handleMarginPromptSkip = () => {
+    // Open calculator anyway - go to calculator tab in custom mode
+    if (pendingCalculatorId) {
+      setSelectedCalculatorId(pendingCalculatorId);
+      setCalculatorModalTab(isCustomMode ? 'calculator' : 'summary');
+      setPendingCalculatorId(null);
+    }
+  };
+
+  // Render inline comment for performance highlight (Option A style)
+  const renderPerformanceHighlight = (highlight?: PerformanceHighlight) => {
+    if (!highlight) return null;
+
+    const isPositive = highlight.target >= highlight.current;
+    const changeText = highlight.percentChange !== undefined
+      ? `(${highlight.percentChange >= 0 ? "+" : ""}${highlight.percentChange.toFixed(1)}%)`
+      : "";
+
+    // If current is 0, just show the target value (e.g., for Catch Rate)
+    const showOnlyTarget = highlight.current === 0;
+
+    return (
+      <p className="text-xs text-muted-foreground mt-1 pl-14">
+        <span className="font-medium">{highlight.label}:</span>{" "}
+        {showOnlyTarget ? (
+          <span className="font-medium text-primary">{highlight.target.toFixed(1)}{highlight.unit}</span>
+        ) : (
+          <>
+            <span className="text-foreground">{highlight.current.toFixed(1)}{highlight.unit}</span>
+            <span className="mx-1">→</span>
+            <span className="font-medium text-primary">{highlight.target.toFixed(1)}{highlight.unit}</span>
+          </>
+        )}
+        {changeText && (
+          <span className={`ml-1 font-medium ${isPositive ? "text-green-600" : "text-red-600"}`}>
+            {changeText}
+          </span>
+        )}
+      </p>
+    );
+  };
+
+  // Check if we have any challenges selected (not just results)
+  const hasSelectedChallenges = Object.values(selectedChallenges).some(Boolean);
+  const hasCustomCalculations = customCalculations.length > 0;
+  
+  // Map benefit IDs to calculator driver IDs
+  const benefitToDriverId: Record<string, string> = {
+    'c1': 'c1-revenue',
+    'c3': 'c3-review',
+    'c45': 'c245-revenue', // Combined c2 and c45 into one benefit
+    'c7-revenue': 'c7-disputes',
+    'c7-opex': 'c7-opex',
+    'c8-returns': 'c8-returns',
+    'c8-inr': 'c8-inr',
+    'c9': 'c9-cx-uplift',
+    'c10': 'c10-promotions',
+    'c12': 'c12-ato-opex',
+    'c13': 'c13-clv',
+    'c14-marketing': 'c14-marketing',
+    'c14-kyc': 'c14-kyc',
+  };
+  
+  // Map benefit ID to driver IDs
+  const benefitToDriverIds: Record<string, string[]> = {
+    'c1': ['c1-revenue'],
+    'c1-chargeback': ['c1-chargeback'],
+    'c45': ['c245-revenue'],
+    'c245-chargeback': ['c245-chargeback'],
+    'chargeback': ['c1-chargeback', 'c245-chargeback'], // Adaptive - shows appropriate one based on active payment calculator
+    'c3': ['c3-review'],
+    'c7-revenue': ['c7-disputes'],
+    'c7-opex': ['c7-opex'],
+    'c8-returns': ['c8-returns'],
+    'c8-inr': ['c8-inr'],
+    'c9': ['c9-cx-uplift'],
+    'c9-cs-opex': ['c9-cs-opex'],
+    'c10': ['c10-promotions'],
+    'c12': ['c12-ato-opex'],
+    'c13': ['c13-clv'],
+    'c14-marketing': ['c14-marketing', 'c14-reactivation'],
+    'c14-kyc': ['c14-kyc'],
+  };
+
+  // Handle removing a benefit (for mutual exclusivity conflicts)
+  const handleRemoveBenefitForConflict = (benefitId: string) => {
+    try {
+      // Map of benefits to their associated chargeback driver IDs
+      const benefitToChargebackDrivers: Record<string, string[]> = {
+        'c1': ['c1-chargeback'],
+        'c45': ['c245-chargeback'],
+      };
+      
+      // Get driver IDs for this benefit
+      const driverIdsForBenefit = benefitToDriverIds[benefitId] || [];
+      
+      // Also get associated chargeback driver IDs if they exist
+      const associatedChargebackDrivers = benefitToChargebackDrivers[benefitId];
+      if (associatedChargebackDrivers) {
+        driverIdsForBenefit.push(...associatedChargebackDrivers);
+      }
+      
+      // DON'T remove 'chargeback' benefit here - it should remain if user added it separately
+      // Only remove the chargeback drivers associated with this specific payment calculator
+      
+      // Mark all drivers as removed
+      setDriverStates(prev => {
+        const next = { ...prev };
+        driverIdsForBenefit.forEach(driverId => {
+          next[driverId] = 'removed';
+        });
+        return next;
+      });
+      
+      // Remove from enabledBenefitIds and check challenges
+      setEnabledBenefitIds(prev => {
+        const next = new Set(prev);
+        next.delete(benefitId);
+        
+        // DON'T remove 'chargeback' benefit - it can exist independently
+        // Only remove it if it was the only thing using these challenges
+        
+        // Get the benefit to find its challenge IDs
+        const benefit = BENEFIT_OPTIONS.find(b => b.id === benefitId);
+        if (benefit) {
+          // For mutual exclusivity conflicts, always disable the challenges
+          // This ensures c1 challenges are disabled when c45 is added, and vice versa
+          benefit.challengeIds.forEach(id => {
+            onChallengeChange?.(id, false);
+          });
+        }
+        
+        return next;
+      });
+    } catch (error) {
+      console.error('Error in handleRemoveBenefitForConflict:', error);
+    }
+  };
+
+  // Handle replacing one benefit with another (for mutual exclusivity).
+  // Uses a single atomic setState for benefit IDs so we never commit a state where both c1 and c45
+  // are in the set (which would hide both) or where neither is (which would show neither).
+  const handleReplaceBenefit = (removeBenefitId: string, addBenefitId: string, addChallengeIds: string[]) => {
+    try {
+      console.log('[handleReplaceBenefit] ========== STARTING REPLACEMENT ==========');
+      console.log('[handleReplaceBenefit] removeBenefitId:', removeBenefitId);
+      console.log('[handleReplaceBenefit] addBenefitId:', addBenefitId);
+      console.log('[handleReplaceBenefit] addChallengeIds:', addChallengeIds);
+      console.log('[handleReplaceBenefit] Current enabledBenefitIds BEFORE:', Array.from(enabledBenefitIds));
+      console.log('[handleReplaceBenefit] Current driverStates BEFORE:', Object.keys(driverStates).filter(k => driverStates[k] === 'removed'));
+      
+      // Map of benefits to their associated chargeback driver IDs
+      const benefitToChargebackDrivers: Record<string, string[]> = {
+        'c1': ['c1-chargeback'],
+        'c45': ['c245-chargeback'],
+      };
+
+      const hasChargebackBenefitBefore = enabledBenefitIds.has('chargeback');
+
+      // Driver IDs to mark as removed (old benefit) — copy so we don't mutate benefitToDriverIds
+      const driverIdsToRemove = [...(benefitToDriverIds[removeBenefitId] || [])];
+      if (!hasChargebackBenefitBefore) {
+        const associatedChargebackDrivers = benefitToChargebackDrivers[removeBenefitId];
+        if (associatedChargebackDrivers) {
+          driverIdsToRemove.push(...associatedChargebackDrivers);
+        }
+      }
+
+      // Driver IDs to clear 'removed' for (new benefit)
+      const driverIdsToAdd = [...(benefitToDriverIds[addBenefitId] || [])];
+      const newChargebackDriver = benefitToChargebackDrivers[addBenefitId]?.[0];
+      if (hasChargebackBenefitBefore && newChargebackDriver) {
+        const index = driverIdsToAdd.indexOf(newChargebackDriver);
+        if (index > -1) driverIdsToAdd.splice(index, 1);
+      }
+
+      const oldChargebackDriver = benefitToChargebackDrivers[removeBenefitId]?.[0];
+
+      // 1) Atomic benefit ID swap: remove old, add new in one update so we never have both or neither.
+      setEnabledBenefitIds(prev => {
+        const next = new Set(prev);
+        next.delete(removeBenefitId);
+        next.add(addBenefitId);
+        return next;
+      });
+
+      // 2) Single driver state update: mark old drivers removed, clear new drivers (and chargeback switch if needed).
+      setDriverStates(prev => {
+        const next = { ...prev };
+        driverIdsToRemove.forEach(driverId => {
+          if (!hasChargebackBenefitBefore || !driverId.includes('chargeback')) {
+            next[driverId] = 'removed';
+          }
+        });
+        if (hasChargebackBenefitBefore && oldChargebackDriver) {
+          next[oldChargebackDriver] = 'removed';
+        }
+        if (hasChargebackBenefitBefore && newChargebackDriver && next[newChargebackDriver] === 'removed') {
+          delete next[newChargebackDriver];
+        }
+        driverIdsToAdd.forEach(driverId => {
+          if (next[driverId] === 'removed' || next[driverId] === false) delete next[driverId];
+        });
+        const newBenefitDrivers = benefitToDriverIds[addBenefitId] || [];
+        newBenefitDrivers.forEach(driverId => {
+          if (next[driverId] === 'removed' || next[driverId] === false) delete next[driverId];
+        });
+        return next;
+      });
+
+      // 3) Challenge selection: disable removed benefit's challenges, enable new benefit's challenges.
+      const removeBenefit = BENEFIT_OPTIONS.find(b => b.id === removeBenefitId);
+      if (removeBenefit) {
+        removeBenefit.challengeIds.forEach(id => {
+          if (!addChallengeIds.includes(id)) {
+            onChallengeChange?.(id, false);
+          }
+        });
+      }
+      addChallengeIds.forEach(id => {
+        onChallengeChange?.(id, true);
+      });
+    } catch (error) {
+      console.error('Error in handleReplaceBenefit:', error);
+    }
+  };
+
+  // Handle adding a benefit from BenefitSelector
+  const handleAddBenefit = (challengeIds: string[], benefitId: string) => {
+    try {
+      // Special handling for 'chargeback' benefit - it can work standalone if challenges are selected
+      // Check if challenges 1, 2, 4, or 5 are selected (payment-related challenges)
+      if (benefitId === 'chargeback') {
+        const hasPaymentChallenges = selectedChallenges['1'] || selectedChallenges['2'] || selectedChallenges['4'] || selectedChallenges['5'];
+        const hasC1 = enabledBenefitIds.has('c1');
+        const hasC45 = enabledBenefitIds.has('c45');
+        
+        // Allow chargeback if payment challenges are selected OR if c1/c45 is already enabled
+        // This allows standalone chargeback addition when payment challenges are active
+        if (!hasPaymentChallenges && !hasC1 && !hasC45) {
+          // No payment challenges active - chargeback needs at least one payment calculator
+          // But don't block it - let it be added and it will show when a payment calculator is added
+        }
+      }
+      
+      // Handle mutual exclusivity: if adding c45, disable c1 and vice versa
+      if (benefitId === 'c45') {
+        // Disable challenge 1 if it's selected
+        if (selectedChallenges['1']) {
+          onChallengeChange?.('1', false);
+        }
+      } else if (benefitId === 'c1') {
+        // Disable challenges 2, 4, 5 if they're selected
+        ['2', '4', '5'].forEach(id => {
+          if (selectedChallenges[id]) {
+            onChallengeChange?.(id, false);
+          }
+        });
+      }
+      
+      // Clear 'removed' state for all drivers of this benefit when re-adding
+      const driverIdsForBenefit = benefitToDriverIds[benefitId] || [];
+      console.log('[handleAddBenefit] Adding benefit:', benefitId, 'Driver IDs:', driverIdsForBenefit);
+      setDriverStates(prev => {
+        const next = { ...prev };
+        driverIdsForBenefit.forEach(driverId => {
+          if (next[driverId] === 'removed') {
+            // Clear the 'removed' state so the driver can be shown again
+            console.log('[handleAddBenefit] Clearing removed state for driver:', driverId);
+            delete next[driverId];
+          }
+        });
+        
+        // IMPORTANT: When adding chargeback, ensure c1-revenue is NOT removed if c1 is enabled
+        // This prevents chargeback from accidentally removing c1-revenue
+        if (benefitId === 'chargeback' && enabledBenefitIds.has('c1')) {
+          if (next['c1-revenue'] === 'removed') {
+            console.log('[handleAddBenefit] PROTECTING c1-revenue from being removed when chargeback is added');
+            delete next['c1-revenue'];
+          }
+        }
+        
+        // IMPORTANT: When adding c1, ensure c1-revenue is never marked as removed
+        if (benefitId === 'c1') {
+          if (next['c1-revenue'] === 'removed') {
+            console.log('[handleAddBenefit] PROTECTING c1-revenue - clearing removed state');
+            delete next['c1-revenue'];
+          }
+          // Also ensure it's not set to removed in the future
+          console.log('[handleAddBenefit] Ensuring c1-revenue is not removed for benefit c1');
+        }
+        
+        console.log('[handleAddBenefit] Updated driverStates:', Object.keys(next).filter(k => next[k] === 'removed'));
+        return next;
+      });
+      
+      // Track the specific benefit ID being added (important for shared challenges like c8-returns/c8-inr)
+      setEnabledBenefitIds(prev => {
+        const next = new Set(prev);
+        next.add(benefitId);
+        return next;
+      });
+      
+      // Enable the challenges for this benefit
+      challengeIds.forEach(id => {
+        onChallengeChange?.(id, true);
+      });
+      
+      // In custom mode, DON'T automatically open the modal - let user click on the benefit from value summary
+      // This allows them to see the benefit appear on the value summary page first
+      // The modal will open when they click on the benefit driver
+    } catch (error) {
+      console.error('Error in handleAddBenefit:', error);
+    }
+  };
+  
+  // In custom mode, show the value summary if benefits are added, even if no results yet
+  const hasAddedBenefits = isCustomMode && enabledBenefitIds.size > 0;
+  
+  if (!hasAnyResults && !hasCustomCalculations && !hasAddedBenefits) {
+    return (
+      <div className="space-y-6">
+        {/* BenefitSelector for Custom Mode */}
+        {isCustomMode && (
+          <BenefitSelector 
+            selectedChallenges={selectedChallenges}
+            onAddBenefit={handleAddBenefit}
+            onRemoveBenefit={handleRemoveBenefitForConflict}
+            onReplaceBenefit={handleReplaceBenefit}
+            enabledBenefitIds={enabledBenefitIds}
+          />
+        )}
+        
+        <Card className="p-12">
+          <div className="text-center space-y-6 max-w-md mx-auto">
+            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto">
+              <Scale className="w-8 h-8 text-muted-foreground" />
+            </div>
+            
+            <div>
+              <h3 className="text-xl font-semibold mb-2">
+                {hasSelectedChallenges ? 'Enter Customer Data' : 'No Value Drivers Selected'}
+              </h3>
+              <p className="text-muted-foreground">
+                {isCustomMode 
+                  ? 'Add custom calculations or select a standard benefit calculator above'
+                  : hasSelectedChallenges 
+                    ? 'Please enter data in the Customer Inputs tab to see the value assessment.'
+                    : 'Add custom calculations or go back to select use cases to build your value model'}
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button onClick={handleOpenAddDialog} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Add Custom Calculation
+              </Button>
+              {/* Hide "Select Use Cases" in custom mode */}
+              {!isCustomMode && !hasSelectedChallenges && onSelectUseCases && (
+                <Button variant="outline" onClick={onSelectUseCases} className="gap-2">
+                  <ClipboardList className="w-4 h-4" />
+                  Select Use Cases
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+        
+        {/* Custom calculation dialog */}
+        <Dialog open={showCustomCalcDialog} onOpenChange={setShowCustomCalcDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingCustomCalcId ? 'Edit Custom Calculation' : 'Add Custom Calculation'}</DialogTitle>
+              <DialogDescription>
+                Add a value driver from an external calculator or spreadsheet
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="calc-name">Name</Label>
+                <Input
+                  id="calc-name"
+                  placeholder="e.g., Regional fraud prevention savings"
+                  value={customCalcName}
+                  onChange={(e) => setCustomCalcName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="calc-value">Value ($)</Label>
+                <Input
+                  id="calc-value"
+                  placeholder="e.g., 500,000"
+                  value={customCalcValue}
+                  onChange={(e) => setCustomCalcValue(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="calc-category">Category</Label>
+                <Select value={customCalcCategory} onValueChange={(v) => setCustomCalcCategory(v as 'gmv_uplift' | 'cost_reduction' | 'risk_mitigation')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gmv_uplift">GMV Uplift</SelectItem>
+                    <SelectItem value="cost_reduction">Cost Reduction</SelectItem>
+                    <SelectItem value="risk_mitigation">Risk Mitigation</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="calc-url">Calculator Link (optional)</Label>
+                <Input
+                  id="calc-url"
+                  placeholder="e.g., https://docs.google.com/spreadsheets/..."
+                  value={customCalcSourceUrl}
+                  onChange={(e) => setCustomCalcSourceUrl(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Link to the source calculator or spreadsheet
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCustomCalcDialog(false)}>Cancel</Button>
+              <Button onClick={handleSaveCustomCalculation}>{editingCustomCalcId ? 'Save Changes' : 'Add Custom Calculation'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // Check which highlights should be shown based on enabled drivers
+  const showApprovalRate = (challenge1Results && driverStates["c1-revenue"] !== 'removed') || 
+                           (challenge245Results && driverStates["c245-revenue"] !== 'removed');
+  const show3DS = challenge245Results && driverStates["c245-revenue"] !== 'removed';
+  const showChargeback = (challenge1Results && driverStates["c1-chargeback"] !== 'removed') || 
+                         (challenge245Results && driverStates["c245-chargeback"] !== 'removed');
+  const showManualReview = challenge3Results && driverStates["c3-review"] !== 'removed';
+  const showDispute = challenge7Results && driverStates["c7-disputes"] !== 'removed';
+  const showAbuse = challenge8Results && (driverStates["c8-returns"] !== 'removed' || driverStates["c8-inr"] !== 'removed');
+  const showInstantRefundsNPS = challenge9Results && driverStates["c9-cx-uplift"] !== 'removed';
+  const showInstantRefundsCS = challenge9Results && driverStates["c9-cs-opex"] !== 'removed';
+  const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDispute || showAbuse || showInstantRefundsNPS || showInstantRefundsCS;
+
+  return (
+    <>
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Left side - Value Drivers */}
+        <div className="space-y-4">
+
+          {/* GMV Uplift Section */}
+          {businessGrowthDrivers.length > 0 && (
+            <Collapsible open={businessGrowthOpen} onOpenChange={setBusinessGrowthOpen}>
+              <Card className="overflow-hidden">
+                <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {businessGrowthOpen ? (
+                      <ChevronDown className="w-5 h-5" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5" />
+                    )}
+                    <span className="font-semibold">GMV Uplift</span>
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="border-t">
+                    {businessGrowthDrivers.map((driver) => {
+                      const Icon = getIconForDriver(driver);
+                      const isCustom = driver.id.startsWith('custom-');
+
+                      return (
+                        <div
+                          key={driver.id}
+                          className={`p-4 border-b last:border-b-0 ${
+                            !driver.enabled && "opacity-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <Switch
+                                checked={driver.enabled}
+                                onCheckedChange={(checked) =>
+                                  handleDriverToggle(driver.id, checked)
+                                }
+                              />
+                              <Icon className={`w-4 h-4 shrink-0 ${isCustom ? 'text-amber-500' : 'text-primary'}`} aria-hidden />
+                              {isCustomMode && !isCustom && editingBenefitId === driver.id ? (
+                                <Input
+                                  value={editingBenefitName}
+                                  onChange={(e) => setEditingBenefitName(e.target.value)}
+                                  onBlur={() => saveCustomBenefitName(driver.id, editingBenefitName)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") saveCustomBenefitName(driver.id, editingBenefitName);
+                                    if (e.key === "Escape") setEditingBenefitId(null);
+                                  }}
+                                  className="h-8 text-sm flex-1 min-w-0"
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <span
+                                  className={`text-sm flex-1 min-w-0 ${(driver.calculatorRows || driver.isTBD || isCustom) ? 'cursor-pointer hover:underline hover:text-primary' : ''}`}
+                                  onClick={() => {
+                                    if (isCustom) {
+                                      handleEditCustomCalculation(driver.id);
+                                    } else if (driver.calculatorRows || driver.isTBD) {
+                                      handleDriverClick(driver);
+                                    }
+                                  }}
+                                >
+                                  {driver.label}
+                                </span>
+                              )}
+                              {isCustomMode && !isCustom && editingBenefitId !== driver.id && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingBenefitId(driver.id);
+                                    setEditingBenefitName(driver.label);
+                                  }}
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Edit benefit name"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustomMode && !isCustom && CALCULATOR_REQUIRED_INPUTS[getSourceCalculatorId(driver.id)] && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDuplicateCalculator(driver);
+                                  }}
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Duplicate calculator (separate inputs)"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustomMode && !isCustom && isDuplicateCalculator(driver.id) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveDuplicateCalculator(driver.id);
+                                  }}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove duplicate calculator"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustom && driver.sourceUrl && (
+                                <a
+                                  href={driver.sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Open source calculator"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                              {isCustom && (
+                                <button
+                                  onClick={() => handleRemoveCustomCalculation(driver.id)}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove custom calculation"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {/* Remove benefit button in custom mode for standard benefits (not for duplicates; they use Remove duplicate above) */}
+                              {isCustomMode && !isCustom && !isDuplicateCalculator(driver.id) && (
+                                <button
+                                  onClick={() => handleRemoveBenefit(driver.id)}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove benefit"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <span className={`font-semibold whitespace-nowrap ${driver.isTBD ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
+                                {driver.isTBD ? 'TBD' : formatCurrency(driver.value)}
+                              </span>
+                              {isCustom && (
+                                <p className="text-[10px] text-amber-600">custom value</p>
+                              )}
+                              {driver.isTBD && !isCustom && (
+                                <p className="text-[10px] text-muted-foreground">enter inputs to calculate</p>
+                              )}
+                              {!driver.isTBD && driver.value === 0 && !isCustom && (
+                                <p className="text-[10px] text-muted-foreground">no improvement from current</p>
+                              )}
+                              {!isCustom && !driver.isTBD && driver.value !== 0 && deduplicationEnabled && (driver.id === "c1-revenue" || driver.id === "c245-revenue") && (
+                                <p className="text-[10px] text-muted-foreground">deduplicated impact</p>
+                              )}
+                              {!isCustom && !driver.isTBD && driver.value !== 0 && isSegmentationEnabled && (driver.id === "c1-revenue" || driver.id === "c1-chargeback" || driver.id === "c245-revenue" || driver.id === "c245-chargeback") && (
+                                <p className="text-[10px] text-primary">Sum of Segments</p>
+                              )}
+                            </div>
+                          </div>
+                          {/* Inline performance highlight comment */}
+                          {driver.enabled && !isCustom && !driver.isTBD && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
+                        </div>
+                      );
+                    })}
+                    <div className="p-4 bg-muted/30">
+                      <div className="flex items-center justify-between font-semibold">
+                        <span>GMV uplift annual potential</span>
+                        <span className="text-foreground font-semibold">
+                          {formatCurrency(businessGrowthTotal)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
+                        <span className="italic">EBITDA contribution from GMV</span>
+                        <span className="font-medium text-gray-600 dark:text-gray-400">
+                          {formatCurrency(gmvProfitability)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          )}
+
+          {/* Cost Reduction Section */}
+          {riskAvoidanceDrivers.length > 0 && (
+            <Collapsible open={riskAvoidanceOpen} onOpenChange={setRiskAvoidanceOpen}>
+              <Card className="overflow-hidden">
+                <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {riskAvoidanceOpen ? (
+                      <ChevronDown className="w-5 h-5" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5" />
+                    )}
+                    <span className="font-semibold">Cost Reduction</span>
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="border-t">
+                    {riskAvoidanceDrivers.map((driver) => {
+                      const Icon = getIconForDriver(driver);
+                      const isCustom = driver.id.startsWith('custom-');
+
+                      return (
+                        <div
+                          key={driver.id}
+                          className={`p-4 border-b last:border-b-0 ${
+                            !driver.enabled && "opacity-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <Switch
+                                checked={driver.enabled}
+                                onCheckedChange={(checked) =>
+                                  handleDriverToggle(driver.id, checked)
+                                }
+                              />
+                              <Icon className={`w-4 h-4 shrink-0 ${isCustom ? 'text-amber-500' : 'text-primary'}`} aria-hidden />
+                              {isCustomMode && !isCustom && editingBenefitId === driver.id ? (
+                                <Input
+                                  value={editingBenefitName}
+                                  onChange={(e) => setEditingBenefitName(e.target.value)}
+                                  onBlur={() => saveCustomBenefitName(driver.id, editingBenefitName)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") saveCustomBenefitName(driver.id, editingBenefitName);
+                                    if (e.key === "Escape") setEditingBenefitId(null);
+                                  }}
+                                  className="h-8 text-sm flex-1 min-w-0"
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <span
+                                  className={`text-sm flex-1 min-w-0 ${(driver.calculatorRows || driver.isTBD || isCustom) ? 'cursor-pointer hover:underline hover:text-primary' : ''}`}
+                                  onClick={() => {
+                                    if (isCustom) {
+                                      handleEditCustomCalculation(driver.id);
+                                    } else if (driver.calculatorRows || driver.isTBD) {
+                                      handleDriverClick(driver);
+                                    }
+                                  }}
+                                >
+                                  {driver.label}
+                                </span>
+                              )}
+                              {isCustomMode && !isCustom && editingBenefitId !== driver.id && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingBenefitId(driver.id);
+                                    setEditingBenefitName(driver.label);
+                                  }}
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Edit benefit name"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustomMode && !isCustom && CALCULATOR_REQUIRED_INPUTS[getSourceCalculatorId(driver.id)] && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDuplicateCalculator(driver);
+                                  }}
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Duplicate calculator (separate inputs)"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustomMode && !isCustom && isDuplicateCalculator(driver.id) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveDuplicateCalculator(driver.id);
+                                  }}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove duplicate calculator"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustom && driver.sourceUrl && (
+                                <a
+                                  href={driver.sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Open source calculator"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                              {isCustom && (
+                                <button
+                                  onClick={() => handleRemoveCustomCalculation(driver.id)}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove custom calculation"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {/* Remove benefit button in custom mode for standard benefits (not for duplicates; they use Remove duplicate above) */}
+                              {isCustomMode && !isCustom && !isDuplicateCalculator(driver.id) && (
+                                <button
+                                  onClick={() => handleRemoveBenefit(driver.id)}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove benefit"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <span className={`font-semibold whitespace-nowrap ${driver.isTBD ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
+                                {driver.isTBD ? 'TBD' : formatCurrency(driver.value)}
+                              </span>
+                              {isCustom && (
+                                <p className="text-[10px] text-amber-600">custom value</p>
+                              )}
+                              {driver.isTBD && !isCustom && (
+                                <p className="text-[10px] text-muted-foreground">enter inputs to calculate</p>
+                              )}
+                              {!driver.isTBD && driver.value === 0 && !isCustom && (
+                                <p className="text-[10px] text-muted-foreground">no improvement from current</p>
+                              )}
+                            </div>
+                          </div>
+                          {/* Inline performance highlight comment */}
+                          {driver.enabled && !isCustom && !driver.isTBD && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
+                        </div>
+                      );
+                    })}
+                    <div className="p-4 bg-muted/30 font-semibold flex items-center justify-between">
+                      <span>Cost reduction annual potential</span>
+                      <span className="text-foreground font-semibold">
+                        {formatCurrency(riskAvoidanceTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          )}
+
+          {/* Risk Mitigation Section */}
+          {riskMitigationDrivers.length > 0 && (
+            <Collapsible open={riskMitigationOpen} onOpenChange={setRiskMitigationOpen}>
+              <Card className="overflow-hidden">
+                <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {riskMitigationOpen ? (
+                      <ChevronDown className="w-5 h-5" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5" />
+                    )}
+                    <span className="font-semibold">Risk Mitigation</span>
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="border-t">
+                    {riskMitigationDrivers.map((driver) => {
+                      const Icon = getIconForDriver(driver);
+                      const isCustom = driver.id.startsWith('custom-');
+
+                      return (
+                        <div
+                          key={driver.id}
+                          className={`p-4 border-b last:border-b-0 ${
+                            !driver.enabled && "opacity-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <Switch
+                                checked={driver.enabled}
+                                onCheckedChange={(checked) =>
+                                  handleDriverToggle(driver.id, checked)
+                                }
+                              />
+                              <Icon className={`w-4 h-4 shrink-0 ${isCustom ? 'text-amber-500' : 'text-primary'}`} aria-hidden />
+                              {isCustomMode && !isCustom && editingBenefitId === driver.id ? (
+                                <Input
+                                  value={editingBenefitName}
+                                  onChange={(e) => setEditingBenefitName(e.target.value)}
+                                  onBlur={() => saveCustomBenefitName(driver.id, editingBenefitName)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") saveCustomBenefitName(driver.id, editingBenefitName);
+                                    if (e.key === "Escape") setEditingBenefitId(null);
+                                  }}
+                                  className="h-8 text-sm flex-1 min-w-0"
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <span
+                                  className={`text-sm flex-1 min-w-0 ${(driver.calculatorRows || driver.isTBD || isCustom) ? 'cursor-pointer hover:underline hover:text-primary' : ''}`}
+                                  onClick={() => {
+                                    if (isCustom) {
+                                      handleEditCustomCalculation(driver.id);
+                                    } else if (driver.calculatorRows || driver.isTBD) {
+                                      handleDriverClick(driver);
+                                    }
+                                  }}
+                                >
+                                  {driver.label}
+                                </span>
+                              )}
+                              {isCustomMode && !isCustom && editingBenefitId !== driver.id && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingBenefitId(driver.id);
+                                    setEditingBenefitName(driver.label);
+                                  }}
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Edit benefit name"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustomMode && !isCustom && CALCULATOR_REQUIRED_INPUTS[getSourceCalculatorId(driver.id)] && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDuplicateCalculator(driver);
+                                  }}
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Duplicate calculator (separate inputs)"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustomMode && !isCustom && isDuplicateCalculator(driver.id) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveDuplicateCalculator(driver.id);
+                                  }}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove duplicate calculator"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isCustom && driver.sourceUrl && (
+                                <a
+                                  href={driver.sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary"
+                                  title="Open source calculator"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                              {isCustom && (
+                                <button
+                                  onClick={() => handleRemoveCustomCalculation(driver.id)}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove custom calculation"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {/* Remove benefit button in custom mode for standard benefits (not for duplicates; they use Remove duplicate above) */}
+                              {isCustomMode && !isCustom && !isDuplicateCalculator(driver.id) && (
+                                <button
+                                  onClick={() => handleRemoveBenefit(driver.id)}
+                                  className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                                  title="Remove benefit"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <span className={`font-semibold whitespace-nowrap ${driver.isTBD ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
+                                {driver.isTBD ? 'TBD' : formatCurrency(driver.value)}
+                              </span>
+                              {isCustom && (
+                                <p className="text-[10px] text-amber-600">custom value</p>
+                              )}
+                              {driver.isTBD && !isCustom && (
+                                <p className="text-[10px] text-muted-foreground">enter inputs to calculate</p>
+                              )}
+                              {!driver.isTBD && driver.value === 0 && !isCustom && (
+                                <p className="text-[10px] text-muted-foreground">no improvement from current</p>
+                              )}
+                            </div>
+                          </div>
+                          {/* Inline performance highlight comment */}
+                          {driver.enabled && !isCustom && !driver.isTBD && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
+                        </div>
+                      );
+                    })}
+                    <div className="p-4 bg-muted/30 font-semibold flex items-center justify-between">
+                      <span>Risk mitigation annual potential</span>
+                      <span className="text-foreground font-semibold">
+                        {formatCurrency(riskMitigationTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          )}
+
+          {/* Add Custom Calculation Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={handleOpenAddDialog}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Custom Calculation
+          </Button>
+          
+          {/* BenefitSelector for Custom Mode - in main content area */}
+          {isCustomMode && (
+            <BenefitSelector 
+              selectedChallenges={selectedChallenges}
+              onAddBenefit={handleAddBenefit}
+              enabledBenefitIds={enabledBenefitIds}
+            />
+          )}
+        </div>
+
+        {/* Right side - Summary (keeping current design) */}
+        <div className="space-y-4">
+          {/* Millions toggle */}
+          <div className="flex items-center justify-end gap-2">
+            <span className="text-sm text-muted-foreground">Show in millions</span>
+            <Switch checked={showInMillions} onCheckedChange={handleShowInMillionsChange} />
+          </div>
+
+          {/* Summary Card */}
+          <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 border-green-200 dark:border-green-800">
+            <div className="flex gap-4">
+              {/* Left side - Totals */}
+              <div className="flex-1">
+                {businessGrowthTotal > 0 && (
+                  <>
+                    <div className="flex items-start gap-3 mb-4">
+                      <TrendingUp className="w-8 h-8 text-green-600 dark:text-green-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-base font-semibold text-foreground mb-1">
+                          Annual Economic Benefit
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Includes full GMV Impact
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-5xl font-bold text-green-600 dark:text-green-400 mb-6">
+                      {formatCurrency(totalValue)}
+                    </p>
+                  </>
+                )}
+
+                <div className={businessGrowthTotal > 0 ? "pt-4 border-t border-green-200 dark:border-green-700" : ""}>
+                  <div className="flex items-start gap-3 mb-2">
+                    {businessGrowthTotal === 0 && (
+                      <TrendingUp className="w-8 h-8 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    )}
+                    <div className="flex-1">
+                      <p className="text-base font-semibold text-foreground mb-1">
+                        Contribution to EBITDA
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {businessGrowthTotal > 0
+                          ? isMarketplace
+                            ? "Applies commission and gross margin to GMV uplift"
+                            : "Applies gross margin to GMV uplift"
+                          : "Cost Reduction"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className={`font-bold text-green-600 dark:text-green-400 ${businessGrowthTotal > 0 ? "text-3xl" : "text-5xl"}`}>
+                    {formatCurrency(ebitdaContribution)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right side - Solution Icons */}
+              {selectedSolutions.size > 0 && (
+                <div className="flex flex-col items-end gap-1 pl-3 border-l border-green-200 dark:border-green-700 shrink-0">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">
+                    Required<br />Solutions
+                  </p>
+                  {SOLUTION_PRODUCTS.filter(product => selectedSolutions.has(product.id)).map(product => {
+                    const IconComponent = solutionIconMap[product.icon];
+                    const isEnabled = enabledSolutions.has(product.id);
+                    return (
+                      <div
+                        key={product.id}
+                        className={`flex items-center gap-1.5 transition-opacity ${!isEnabled ? 'opacity-40' : ''}`}
+                        title={product.name}
+                      >
+                        {IconComponent && <IconComponent className={`w-3.5 h-3.5 shrink-0 ${isEnabled ? 'text-green-700 dark:text-green-300' : 'text-muted-foreground'}`} />}
+                        <span className={`text-[11px] font-medium ${isEnabled ? 'text-green-800 dark:text-green-200' : 'text-muted-foreground'}`}>
+                          {product.name.split(' ')[0]}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Performance Highlights (keeping current design) */}
+          {hasAnyHighlight && (
+            <Card className="p-4">
+              <h4 className="font-semibold mb-3 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-500" />
+                Performance Highlights
+              </h4>
+              <div className="space-y-2">
+                {/* Approval Rate */}
+                {showApprovalRate && (
+                  <div className="flex justify-between items-center py-2 border-b">
+                    <span className="text-sm text-muted-foreground">Approval Rate with Forter</span>
+                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                      {challenge245Results 
+                        ? forterKPIs.preAuthApprovalImprovement 
+                        : forterKPIs.approvalRateImprovement}%
+                    </Badge>
+                  </div>
+                )}
+                {/* 3DS Reduction */}
+                {show3DS && (() => {
+                  const current3DSRate = formData.amer3DSChallengeRate || 30;
+                  const target3DSRate = forterKPIs.threeDSReduction ?? 0;
+                  const percentageDecrease = current3DSRate > 0 
+                    ? Math.round(((current3DSRate - target3DSRate) / current3DSRate) * 100)
+                    : 0;
+                  
+                  return (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm text-muted-foreground">3DS Reduction</span>
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        {percentageDecrease}%
+                      </Badge>
+                    </div>
+                  );
+                })()}
+                {/* Chargeback Reduction */}
+                {showChargeback && (() => {
+                  const currentCBRate = formData.fraudCBRate || 0.5;
+                  let cbRateReduction: number;
+                  if (forterKPIs.chargebackReductionIsAbsolute) {
+                    const targetCBRate = forterKPIs.chargebackReduction ?? 0;
+                    cbRateReduction = currentCBRate - targetCBRate;
+                  } else {
+                    cbRateReduction = currentCBRate * (forterKPIs.chargebackReduction ?? 50) / 100;
+                  }
+                  const bpsReduction = Math.round(cbRateReduction * 100);
+                  
+                  return (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm text-muted-foreground">Chargeback Reduction</span>
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        {bpsReduction}bps
+                      </Badge>
+                    </div>
+                  );
+                })()}
+                {/* Manual Review */}
+                {showManualReview && (() => {
+                  const currentManualReviewRate = formData.manualReviewPct || 5;
+                  const targetManualReviewRate = forterKPIs.manualReviewReduction ?? 0;
+                  const percentageDecrease = currentManualReviewRate > 0 
+                    ? Math.round(((currentManualReviewRate - targetManualReviewRate) / currentManualReviewRate) * 100)
+                    : 0;
+                  
+                  return (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm text-muted-foreground">Manual Review Eliminated</span>
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        {percentageDecrease}%
+                      </Badge>
+                    </div>
+                  );
+                })()}
+                {/* Recovery Rate Increase */}
+                {showDispute && totalRecoveryMetrics && (() => {
+                  const percentIncrease = totalRecoveryMetrics.current > 0
+                    ? Math.round(((totalRecoveryMetrics.target - totalRecoveryMetrics.current) / totalRecoveryMetrics.current) * 100)
+                    : 0;
+                  return (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm text-muted-foreground">Recovery Rate Increase</span>
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        +{percentIncrease}%
+                      </Badge>
+                    </div>
+                  );
+                })()}
+                {/* Abuse Blocked */}
+                {showAbuse && (
+                  <div className="flex justify-between items-center py-2 border-b">
+                    <span className="text-sm text-muted-foreground">Abuse Catch Rate</span>
+                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                      {forterKPIs.forterCatchRate ?? 90}%
+                    </Badge>
+                  </div>
+                )}
+                {/* Expected NPS Increase */}
+                {showInstantRefundsNPS && (
+                  <div className="flex justify-between items-center py-2 border-b">
+                    <span className="text-sm text-muted-foreground">Expected NPS increase</span>
+                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                      +{forterKPIs.npsIncreaseFromInstantRefunds || 10} pts
+                    </Badge>
+                  </div>
+                )}
+                {/* Expected % of instant refunds */}
+                {showInstantRefundsCS && (
+                  <div className="flex justify-between items-center py-2 border-b last:border-b-0">
+                    <span className="text-sm text-muted-foreground">Expected % of instant refunds</span>
+                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                      {forterKPIs.forterCSReduction || 78}%
+                    </Badge>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* Waterfall Chart */}
+          {waterfallData.length > 0 && (
+            <Card className="p-4">
+              <p className="text-sm font-semibold mb-3">Forter Annual EBITDA Attribution</p>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={waterfallData}
+                    margin={{ top: 30, right: 30, left: 30, bottom: 80 }}
+                    barCategoryGap="30%"
+                  >
+                    <XAxis
+                      dataKey="name"
+                      tick={(props) => {
+                        const { x, y, payload } = props;
+                        const lines = payload.value.split('\n');
+                        return (
+                          <g transform={`translate(${x},${y})`}>
+                            {lines.map((line: string, i: number) => (
+                              <text
+                                key={i}
+                                x={0}
+                                y={i * 12}
+                                dy={8}
+                                textAnchor="middle"
+                                fill="hsl(var(--foreground))"
+                                fontSize={10}
+                              >
+                                {line}
+                              </text>
+                            ))}
+                          </g>
+                        );
+                      }}
+                      interval={0}
+                      height={70}
+                      tickLine={false}
+                      axisLine={{ stroke: "hsl(var(--border))" }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                      tickFormatter={(v) => showInMillions ? `${currencySymbol}${(v / 1_000_000).toFixed(1)}M` : `${currencySymbol}${Math.round(v / 1000)}K`}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                    {/* Invisible base bar to create floating effect */}
+                    <Bar dataKey="base" stackId="stack" fill="transparent" />
+                    {/* Visible value bar on top of base */}
+                    <Bar dataKey="value" stackId="stack" radius={[4, 4, 0, 0]}>
+                      {waterfallData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.isTotal ? "#22c55e" : "#1a1a1a"} 
+                        />
+                      ))}
+                      <LabelList
+                        dataKey="value"
+                        position="top"
+                        content={(props) => {
+                          const { x, y, width, value, index } = props as any;
+                          const entry = waterfallData[index];
+                          const color = entry?.isTotal ? "#22c55e" : "#1a1a1a";
+                          const formattedValue = showInMillions 
+                            ? `${currencySymbol}${(Number(value) / 1_000_000).toFixed(1)}M`
+                            : `${currencySymbol}${Math.round(Number(value)).toLocaleString()}`;
+                          return (
+                            <text
+                              x={Number(x) + Number(width) / 2}
+                              y={Number(y) - 8}
+                              textAnchor="middle"
+                              fill={color}
+                              fontSize={12}
+                              fontWeight={600}
+                            >
+                              {formattedValue}
+                            </text>
+                          );
+                        }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* Calculator Dialog */}
+      <Dialog
+        open={selectedCalculatorId !== null}
+        onOpenChange={() => setSelectedCalculatorId(null)}
+      >
+        <DialogContent className="!max-w-none w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-0">
+            <div className="flex items-center justify-between pr-8">
+              <div>
+                <DialogTitle>{selectedCalculator?.title}</DialogTitle>
+                <DialogDescription className="sr-only">
+                  Calculator breakdown for {selectedCalculator?.title}
+                </DialogDescription>
+              </div>
+              {/* Download Slide Button */}
+              {(() => {
+                // Determine if we should show download button and with what data
+                const isSegmentableCalculator = selectedCalculatorId === "c1-revenue" || 
+                  selectedCalculatorId === "c1-chargeback" || 
+                  selectedCalculatorId === "c245-revenue" || 
+                  selectedCalculatorId === "c245-chargeback";
+                const isSegmentationEnabledForDownload = formData.segmentationEnabled && (formData.segments?.filter(s => s.enabled).length ?? 0) > 0;
+                const showSegmentedDownload = isSegmentableCalculator && isSegmentationEnabledForDownload;
+                
+                // For segmented calculators, we need to compute segment data at download time
+                const handleDownload = () => {
+                  if (!selectedCalculatorId || !selectedCalculator?.title) return;
+                  
+                  if (showSegmentedDownload) {
+                    // Import the calculation functions dynamically and compute segment rows
+                    const challengeType = selectedCalculatorId.startsWith("c1-") ? "c1" as const : "c245" as const;
+                    const calculatorType = selectedCalculatorId.endsWith("-revenue") ? "revenue" as const : "chargeback" as const;
+                    const enabledSegments = (formData.segments || []).filter(s => s.enabled);
+                    
+                    // Compute segment results for download
+                    const segmentData: Array<{ name: string; rows: CalculatorRow[] }> = [];
+                    
+                    for (const segment of enabledSegments) {
+                      // Use the same calculation logic as SegmentCalculatorTabs
+                      const segmentInputs = segment.inputs;
+                      const segmentKPIs = segment.kpis;
+                      const grossAttempts = segmentInputs.grossAttempts ?? 0;
+                      const annualGMV = segmentInputs.annualGMV ?? 0;
+                      
+                      if (grossAttempts > 0 && annualGMV > 0) {
+                        let result: { rows: CalculatorRow[]; value: number } | null = null;
+                        
+                        if (challengeType === "c1") {
+                          const currentApprovalRate = segmentInputs.preAuthApprovalRate ?? 0;
+                          const currentCBRate = segmentInputs.fraudCBRate ?? 0;
+                          let approvalImprovement = segmentKPIs.approvalRateTarget ?? 0;
+                          if (forterKPIs.approvalRateIsAbsolute && approvalImprovement > 0) {
+                            approvalImprovement = Math.max(0, approvalImprovement - currentApprovalRate);
+                          }
+                          approvalImprovement = Math.min(approvalImprovement, 100 - currentApprovalRate);
+                          
+                          let cbReduction = segmentKPIs.chargebackRateTarget ?? 0;
+                          if (forterKPIs.chargebackReductionIsAbsolute && cbReduction > 0) {
+                            if (currentCBRate > 0) {
+                              cbReduction = Math.max(0, ((currentCBRate - cbReduction) / currentCBRate) * 100);
+                            } else {
+                              cbReduction = 0;
+                            }
+                          }
+                          cbReduction = Math.min(100, Math.max(0, cbReduction));
+                          
+                          const inputs: Challenge1Inputs = {
+                            transactionAttempts: grossAttempts,
+                            transactionAttemptsValue: annualGMV,
+                            grossMarginPercent: formData.amerGrossMarginPercent || 50,
+                            approvalRate: currentApprovalRate,
+                            fraudChargebackRate: currentCBRate,
+                            isMarketplace: formData.isMarketplace || false,
+                            commissionRate: formData.commissionRate || 100,
+                            currencyCode: formData.baseCurrency || 'USD',
+                            completedAOV: segmentInputs.completedAOV ?? (grossAttempts > 0 ? annualGMV / grossAttempts : 0),
+                            forterApprovalRateImprovement: approvalImprovement,
+                            forterChargebackReduction: cbReduction,
+                            deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
+                          };
+                          
+                          const results = calculateChallenge1(inputs);
+                          result = calculatorType === "revenue"
+                            ? { rows: results.calculator1.rows, value: results.calculator1.revenueUplift }
+                            : { rows: results.calculator2.rows, value: results.calculator2.costReduction };
+                        } else {
+                          // Challenge 2/4/5
+                          const currentPreAuthRate = segmentInputs.preAuthApprovalRate ?? 0;
+                          const currentPostAuthRate = segmentInputs.postAuthApprovalRate ?? 0;
+                          const current3DSRate = segmentInputs.threeDSChallengeRate ?? 0;
+                          const currentCBRate = segmentInputs.fraudCBRate ?? 0;
+                          const creditCardPct = segmentInputs.creditCardPct ?? 0;
+                          const threeDSFailureRate = segmentInputs.threeDSAbandonmentRate ?? 0;
+                          const issuingBankDeclineRate = segmentInputs.issuingBankDeclineRate ?? 0;
+                          
+                          let preAuthImprovement = 0;
+                          const preAuthIncluded = segmentKPIs.preAuthIncluded ?? forterKPIs.preAuthIncluded !== false;
+                          if (preAuthIncluded) {
+                            preAuthImprovement = segmentKPIs.preAuthApprovalTarget ?? 0;
+                            if (forterKPIs.preAuthApprovalIsAbsolute && preAuthImprovement > 0) {
+                              preAuthImprovement = Math.max(0, preAuthImprovement - currentPreAuthRate);
+                            }
+                            preAuthImprovement = Math.min(preAuthImprovement, 100 - currentPreAuthRate);
+                          }
+                          
+                          let postAuthImprovement = 0;
+                          let targetPostAuthRate: number | undefined = undefined;
+                          const postAuthIncluded = segmentKPIs.postAuthIncluded ?? forterKPIs.postAuthIncluded !== false;
+                          if (postAuthIncluded) {
+                            postAuthImprovement = segmentKPIs.postAuthApprovalTarget ?? 0;
+                            if (forterKPIs.postAuthApprovalIsAbsolute && postAuthImprovement > 0) {
+                              postAuthImprovement = Math.max(0, postAuthImprovement - currentPostAuthRate);
+                            }
+                            postAuthImprovement = Math.min(postAuthImprovement, 100 - currentPostAuthRate);
+                          } else {
+                            targetPostAuthRate = 100;
+                            postAuthImprovement = 100 - currentPostAuthRate;
+                          }
+                          
+                          let threeDSReduction = segmentKPIs.threeDSRateTarget ?? 0;
+                          if (forterKPIs.threeDSReductionIsAbsolute && threeDSReduction > 0) {
+                            threeDSReduction = Math.max(0, current3DSRate - threeDSReduction);
+                          }
+                          threeDSReduction = Math.min(threeDSReduction, current3DSRate);
+                          
+                          let cbReduction = segmentKPIs.chargebackRateTarget ?? 0;
+                          let targetCBRate: number;
+                          if (forterKPIs.chargebackReductionIsAbsolute && cbReduction > 0) {
+                            targetCBRate = Math.max(0, cbReduction);
+                            if (currentCBRate > 0) {
+                              cbReduction = Math.max(0, ((currentCBRate - targetCBRate) / currentCBRate) * 100);
+                            } else {
+                              cbReduction = 0;
+                            }
+                          } else {
+                            targetCBRate = currentCBRate * (1 - cbReduction / 100);
+                          }
+                          cbReduction = Math.min(100, Math.max(0, cbReduction));
+                          
+                          const inputs: Challenge245Inputs = {
+                            transactionAttempts: grossAttempts,
+                            transactionAttemptsValue: annualGMV,
+                            grossMarginPercent: formData.amerGrossMarginPercent || 50,
+                            preAuthApprovalRate: currentPreAuthRate,
+                            postAuthApprovalRate: currentPostAuthRate,
+                            creditCardPct,
+                            creditCard3DSPct: current3DSRate,
+                            threeDSFailureRate,
+                            issuingBankDeclineRate,
+                            fraudChargebackRate: currentCBRate,
+                            isMarketplace: formData.isMarketplace || false,
+                            commissionRate: formData.commissionRate || 100,
+                            currencyCode: formData.baseCurrency || 'USD',
+                            completedAOV: segmentInputs.completedAOV ?? (grossAttempts > 0 ? annualGMV / grossAttempts : 0),
+                            forterPreAuthImprovement: preAuthImprovement,
+                            forterPostAuthImprovement: postAuthImprovement,
+                            forter3DSReduction: threeDSReduction,
+                            forterChargebackReduction: cbReduction,
+                            forterTargetCBRate: targetCBRate,
+                            forterTargetPostAuthRate: targetPostAuthRate,
+                            deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
+                          };
+                          
+                          const results = calculateChallenge245(inputs);
+                          result = calculatorType === "revenue"
+                            ? { rows: results.calculator1.rows, value: results.calculator1.revenueUplift }
+                            : { rows: results.calculator2.rows, value: results.calculator2.costReduction };
+                        }
+                        
+                        if (result) {
+                          segmentData.push({ name: segment.name, rows: result.rows });
+                        }
+                      }
+                    }
+                    
+                    // Build total rows by aggregating segment data
+                    // The Total tab displays summed values for currency/number rows and weighted averages for percent rows
+                    let totalRows: CalculatorRow[] = [];
+                    if (segmentData.length > 0) {
+                      const firstSegmentRows = segmentData[0].rows;
+                      const currencyCode = formData.baseCurrency || 'USD';
+                      const fmtCur = createCurrencyFormatter(currencyCode);
+                      
+                      // Aggregate rows across segments
+                      totalRows = firstSegmentRows.map((templateRow, rowIndex) => {
+                        // Skip section headers
+                        if (!templateRow.formula && templateRow.label && !templateRow.customerInput) {
+                          return { ...templateRow };
+                        }
+                        
+                        const inferredType: "percent" | "currency" | "number" =
+                          templateRow.valueType === "percent" ? "percent" :
+                          templateRow.valueType === "currency" ? "currency" :
+                          templateRow.customerInput?.includes("%") || templateRow.forterOutcome?.includes("%") ? "percent" :
+                          templateRow.customerInput?.includes("$") || templateRow.forterOutcome?.includes("$") ||
+                          templateRow.customerInput?.includes("€") || templateRow.forterOutcome?.includes("€") ||
+                          templateRow.customerInput?.includes("£") || templateRow.forterOutcome?.includes("£") ? "currency" : "number";
+                        
+                        // Parse value from display string
+                        const parseValue = (display: string | undefined): number | undefined => {
+                          if (!display) return undefined;
+                          let s = display.trim();
+                          if (!s) return undefined;
+                          let negative = false;
+                          if (s.startsWith("(") && s.endsWith(")")) {
+                            negative = true;
+                            s = s.slice(1, -1).trim();
+                          }
+                          s = s.replace(/[$€£%,]/g, "").trim();
+                          const v = parseFloat(s);
+                          if (isNaN(v)) return undefined;
+                          return negative ? -v : v;
+                        };
+                        
+                        let customerSum = 0, forterSum = 0;
+                        let hasCustomer = false, hasForter = false;
+                        let totalWeight = 0;
+                        
+                        for (let i = 0; i < segmentData.length; i++) {
+                          const segmentRows = segmentData[i].rows;
+                          if (!segmentRows[rowIndex]) continue;
+                          const row = segmentRows[rowIndex];
+                          const weight = enabledSegments[i]?.inputs.grossAttempts ?? 0;
+                          
+                          const custVal = row.rawCustomerValue ?? parseValue(row.customerInput);
+                          const fortVal = row.rawForterValue ?? parseValue(row.forterOutcome);
+                          
+                          if (inferredType === "percent") {
+                            if (custVal !== undefined && weight > 0) {
+                              customerSum += custVal * weight;
+                              hasCustomer = true;
+                            }
+                            if (fortVal !== undefined && weight > 0) {
+                              forterSum += fortVal * weight;
+                              hasForter = true;
+                            }
+                            totalWeight += weight;
+                          } else {
+                            if (custVal !== undefined) { customerSum += custVal; hasCustomer = true; }
+                            if (fortVal !== undefined) { forterSum += fortVal; hasForter = true; }
+                          }
+                        }
+                        
+                        const customerAgg = inferredType === "percent" ? (totalWeight > 0 ? customerSum / totalWeight : undefined) : (hasCustomer ? customerSum : undefined);
+                        const forterAgg = inferredType === "percent" ? (totalWeight > 0 ? forterSum / totalWeight : undefined) : (hasForter ? forterSum : undefined);
+                        
+                        const formatVal = (val: number, type: typeof inferredType) => {
+                          if (type === "percent") return `${val.toFixed(2)}%`;
+                          if (type === "currency") return fmtCur(val);
+                          return Math.round(val).toLocaleString();
+                        };
+                        
+                        // Calculate improvement delta
+                        let improvementDisplay = templateRow.forterImprovement;
+                        if (forterAgg !== undefined && customerAgg !== undefined) {
+                          const delta = forterAgg - customerAgg;
+                          if (inferredType === "percent") {
+                            improvementDisplay = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%pts`;
+                          } else if (inferredType === "currency") {
+                            improvementDisplay = delta >= 0 ? fmtCur(delta) : `(${fmtCur(Math.abs(delta))})`;
+                          } else {
+                            improvementDisplay = delta >= 0 ? `+${Math.round(delta).toLocaleString()}` : Math.round(delta).toLocaleString();
+                          }
+                        }
+                        
+                        return {
+                          ...templateRow,
+                          customerInput: customerAgg !== undefined ? formatVal(customerAgg, inferredType) : templateRow.customerInput,
+                          forterImprovement: improvementDisplay,
+                          forterOutcome: forterAgg !== undefined ? formatVal(forterAgg, inferredType) : templateRow.forterOutcome,
+                          rawCustomerValue: customerAgg,
+                          rawForterValue: forterAgg,
+                          editableCustomerField: undefined,
+                          editableForterField: undefined,
+                        };
+                      });
+                    }
+                    
+                    generateCalculatorSlide(
+                      selectedCalculatorId,
+                      selectedCalculator.title,
+                      selectedCalculator.rows || [],
+                      formData,
+                      true,
+                      segmentData,
+                      totalRows
+                    );
+                  } else {
+                    // Non-segmented: use the rows directly from the driver
+                    // But we need to recalculate to ensure we have current data
+                    let calculatedRows = selectedCalculator.rows || [];
+                    
+                    // For non-segmented calculators, recalculate to get accurate data
+                    if (selectedCalculatorId === "c1-revenue" && challenge1Results) {
+                      calculatedRows = challenge1Results.calculator1.rows;
+                    } else if (selectedCalculatorId === "c1-chargeback" && challenge1Results) {
+                      calculatedRows = challenge1Results.calculator2.rows;
+                    } else if (selectedCalculatorId === "c245-revenue" && challenge245Results) {
+                      calculatedRows = challenge245Results.calculator1.rows;
+                    } else if (selectedCalculatorId === "c245-chargeback" && challenge245Results) {
+                      calculatedRows = challenge245Results.calculator2.rows;
+                    }
+                    
+                    generateCalculatorSlide(
+                      selectedCalculatorId,
+                      selectedCalculator.title,
+                      calculatedRows,
+                      formData
+                    );
+                  }
+                };
+                
+                // Show button if we have rows or can calculate them
+                const hasRows = selectedCalculator?.rows && selectedCalculator.rows.length > 0;
+                const canCalculate = (selectedCalculatorId === "c1-revenue" || selectedCalculatorId === "c1-chargeback") && challenge1Results ||
+                                    (selectedCalculatorId === "c245-revenue" || selectedCalculatorId === "c245-chargeback") && challenge245Results;
+                
+                if (!hasRows && !canCalculate) return null;
+                
+                return (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-4 gap-2"
+                    onClick={handleDownload}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Slide{showSegmentedDownload ? 's' : ''}
+                  </Button>
+                );
+              })()}
+              {/* Deduplication toggle - only show for GMV uplift calculators and when on calculator tab */}
+              {calculatorModalTab === 'calculator' && (selectedCalculatorId === "c1-revenue" || selectedCalculatorId === "c245-revenue") && (
+                <div className="flex items-center gap-3 ml-auto">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="deduplication-toggle"
+                      checked={deduplicationEnabled}
+                      onCheckedChange={setDeduplicationEnabled}
+                    />
+                    <Label htmlFor="deduplication-toggle" className="text-sm font-medium whitespace-nowrap">
+                      Apply Deduplication
+                    </Label>
+                  </div>
+                  <Popover open={showDeduplicationInfo} onOpenChange={setShowDeduplicationInfo}>
+                    <PopoverTrigger asChild>
+                      <button className="p-1 rounded-full hover:bg-muted" aria-label="Deduplication info">
+                        <Info className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[420px]" align="end">
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="font-semibold text-sm mb-2">Deduplication Assumptions</h4>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Deduplication accounts for customers who retry transactions after initial declines. 
+                            Some "new" approvals represent retries of previously declined legitimate transactions.
+                          </p>
+                        </div>
+                        
+                        {/* Full calculation breakdown table */}
+                        {(() => {
+                          // Use segmented breakdown when segmentation is enabled, otherwise fall back to global
+                          const breakdown = isSegmentationEnabled 
+                            ? segmentedDeduplicationBreakdown
+                            : (challenge245Results?.calculator1?.deduplicationBreakdown || 
+                               challenge1Results?.calculator1?.deduplicationBreakdown);
+                          if (!breakdown) return null;
+                          
+                          const fmtCur = createCurrencyFormatter(formData.baseCurrency || 'USD');
+                          const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+                          
+                          const hasFullBreakdown = breakdown.threeDSDropOff !== undefined;
+                          
+                          return (
+                            <div className="border rounded-md overflow-hidden mb-3">
+                              <table className="w-full text-xs">
+                                <thead className="bg-muted">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left font-medium w-12">Formula</th>
+                                    <th className="px-2 py-1 text-left font-medium">Description</th>
+                                    <th className="px-2 py-1 text-right font-medium">Value</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                  <tr>
+                                    <td className="px-2 py-1 text-muted-foreground">a</td>
+                                    <td className="px-2 py-1">Fraud transaction drop-off</td>
+                                    <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.fraudTxDropOff))}</td>
+                                  </tr>
+                                  {hasFullBreakdown && (
+                                    <>
+                                      <tr>
+                                        <td className="px-2 py-1 text-muted-foreground">b</td>
+                                        <td className="px-2 py-1">3DS drop-off delta (non-deduped)</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.threeDSDropOff || 0))}</td>
+                                      </tr>
+                                      <tr>
+                                        <td className="px-2 py-1 text-muted-foreground">c</td>
+                                        <td className="px-2 py-1">Issuing bank decline delta (non-deduped)</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.bankDeclineDelta || 0))}</td>
+                                      </tr>
+                                    </>
+                                  )}
+                                  <tr className="bg-muted/50 font-medium">
+                                    <td className="px-2 py-1 text-muted-foreground">{hasFullBreakdown ? 'd = a+b+c' : 'd'}</td>
+                                    <td className="px-2 py-1">Non-fraud delta</td>
+                                    <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.nonFraudDelta))}</td>
+                                  </tr>
+                                  <tr className="bg-blue-50 dark:bg-blue-950">
+                                    <td className="px-2 py-1 text-muted-foreground">e</td>
+                                    <td className="px-2 py-1">Assumed retry rate</td>
+                                    <td className="px-2 py-1 text-right font-mono">{breakdown.retryRate.toFixed(1)}%</td>
+                                  </tr>
+                                  <tr className="bg-blue-50 dark:bg-blue-950">
+                                    <td className="px-2 py-1 text-muted-foreground">f</td>
+                                    <td className="px-2 py-1">Assumed success rate</td>
+                                    <td className="px-2 py-1 text-right font-mono">{breakdown.successRate.toFixed(1)}%</td>
+                                  </tr>
+                                  <tr className="font-medium">
+                                    <td className="px-2 py-1 text-muted-foreground">g = d*e*f</td>
+                                    <td className="px-2 py-1">Duplicate successful transactions</td>
+                                    <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.duplicateSuccessfulTx))}</td>
+                                  </tr>
+                                  <tr>
+                                    <td className="px-2 py-1 text-muted-foreground">h</td>
+                                    <td className="px-2 py-1">AoV</td>
+                                    <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
+                                  </tr>
+                                  <tr className="bg-green-50 dark:bg-green-950 font-semibold">
+                                    <td className="px-2 py-1 text-muted-foreground">i = g*h</td>
+                                    <td className="px-2 py-1">Duplication GMV reduction</td>
+                                    <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })()}
+                        
+                        <div className="space-y-3 border-t pt-3">
+                          <div>
+                            <Label htmlFor="retry-rate" className="text-xs">
+                              Retry Rate (% of declined customers who retry)
+                            </Label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Input
+                                id="retry-rate"
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={deduplicationRetryRate}
+                                onChange={(e) => setDeduplicationRetryRate(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                                className="h-8 w-20"
+                              />
+                              <span className="text-sm text-muted-foreground">%</span>
+                            </div>
+                          </div>
+                          <div>
+                            <Label htmlFor="success-rate" className="text-xs">
+                              Success Rate (% of retries that succeed)
+                            </Label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Input
+                                id="success-rate"
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={deduplicationSuccessRate}
+                                onChange={(e) => setDeduplicationSuccessRate(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                                className="h-8 w-20"
+                              />
+                              <span className="text-sm text-muted-foreground">%</span>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground border-t pt-2">
+                          Deduplication factor: {((deduplicationRetryRate / 100) * (deduplicationSuccessRate / 100) * 100).toFixed(1)}% 
+                          of incremental GMV already captured
+                        </p>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )}
+            </div>
+          </DialogHeader>
+          
+          {/* Tabs for Benefit Summary vs Calculator */}
+          <Tabs value={calculatorModalTab} onValueChange={(v) => setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator')} className="w-full">
+            {/* Show all 3 tabs (Benefit Summary, Inputs, Calculator) in both Guided and Custom mode when calculator has required inputs */}
+            {(() => {
+              const { sourceIdForModal, modalFormData } = modalContext;
+              const hasCalculatorRows = selectedCalculator?.rows && selectedCalculator.rows.length > 0;
+              const hasInputsConfig = sourceIdForModal ? !!CALCULATOR_REQUIRED_INPUTS[sourceIdForModal] : false;
+              // In Guided mode always show Calculator tab when modal is open; in Custom mode show when we have rows
+              const showCalculatorTab = !!selectedCalculatorId && (isCustomMode ? hasCalculatorRows : true);
+              const showInputsTab = selectedCalculatorId && hasInputsConfig; // Always show if config exists
+              const isInputsComplete = sourceIdForModal ? getCalculatorCompletionPercentage(sourceIdForModal, modalFormData) === 100 : false;
+              
+              // Calculate number of visible tabs
+              const tabCount = 1 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0);
+              const gridCols = tabCount === 3 ? 'grid-cols-3' : tabCount === 2 ? 'grid-cols-2' : 'grid-cols-1';
+              
+              return (
+                <TabsList className={`grid w-full max-w-lg ${gridCols}`}>
+                  <TabsTrigger value="summary" className="gap-2">
+                    Benefit Summary
+                    {isInputsComplete && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                  </TabsTrigger>
+                  {showInputsTab && (
+                    <TabsTrigger value="inputs" className="gap-2">
+                      Inputs
+                      {isInputsComplete && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                    </TabsTrigger>
+                  )}
+                  {showCalculatorTab && (
+                    <TabsTrigger value="calculator" className="gap-2">
+                      Calculator
+                      {isInputsComplete && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                    </TabsTrigger>
+                  )}
+                </TabsList>
+              );
+            })()}
+            
+            {/* Benefit Summary Tab */}
+            <TabsContent value="summary" className="mt-4">
+              {(() => {
+                const content = (modalContext.sourceIdForModal ?? selectedCalculatorId) ? getChallengeBenefitContent(modalContext.sourceIdForModal ?? selectedCalculatorId!) : null;
+                if (!content) {
+                  const hasCalculatorRows = selectedCalculator?.rows && selectedCalculator.rows.length > 0;
+                  const showCalculatorTab = !!selectedCalculatorId && (isCustomMode ? hasCalculatorRows : true);
+                  return (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No challenge/benefit information available for this calculator.</p>
+                      {showCalculatorTab && (
+                        <Button 
+                          className="mt-4"
+                          onClick={() => setCalculatorModalTab('calculator')}
+                        >
+                          Go to Calculator <ArrowRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                }
+                
+                return (
+                  <div className="space-y-6">
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Challenge (Left) */}
+                      <Card className="p-6 border-destructive/20 bg-destructive/5">
+                        <div className="flex items-start gap-3 mb-4">
+                          <div className="p-2 rounded-full bg-destructive/10">
+                            <AlertTriangle className="w-5 h-5 text-destructive" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-lg">The Challenge</h3>
+                            <p className="text-sm text-muted-foreground">{content.challengeTitle}</p>
+                          </div>
+                        </div>
+                        <p className="text-sm leading-relaxed text-foreground/90">
+                          {content.challengeDescription}
+                        </p>
+                      </Card>
+                      
+                      {/* Benefit (Right) */}
+                      <Card className="p-6 border-primary/20 bg-primary/5">
+                        <div className="flex items-start gap-3 mb-4">
+                          <div className="p-2 rounded-full bg-primary/10">
+                            <CheckCircle2 className="w-5 h-5 text-primary" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-lg">The Benefit</h3>
+                            <p className="text-sm text-muted-foreground">{content.benefitTitle}</p>
+                          </div>
+                        </div>
+                        <p className="text-sm leading-relaxed text-foreground/90 mb-4">
+                          {content.benefitDescription}
+                        </p>
+                        {content.benefitPoints && content.benefitPoints.length > 0 && (
+                          <div className="space-y-3 pt-3 border-t border-primary/10">
+                            {content.benefitPoints.map((point, idx) => (
+                              <div key={idx} className="flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                                <div>
+                                  <span className="font-medium text-sm">{point.title}:</span>
+                                  <span className="text-sm text-muted-foreground ml-1">{point.description}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </Card>
+                    </div>
+                    
+                    {/* Go to Calculator Button - show when Calculator tab is visible (all 3 tabs in Guided; Custom when has rows) */}
+                    {(() => {
+                      const hasCalculatorRows = selectedCalculator?.rows && selectedCalculator.rows.length > 0;
+                      const showButton = !!selectedCalculatorId && (isCustomMode ? hasCalculatorRows : true);
+                      if (!showButton) return null;
+                      return (
+                        <div className="flex justify-center pt-4">
+                          <Button 
+                            size="lg"
+                            onClick={() => setCalculatorModalTab('calculator')}
+                            className="gap-2"
+                          >
+                            Go to Calculator <ArrowRight className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+            </TabsContent>
+            
+            {/* Inputs Tab - shows all relevant customer inputs and KPIs for the calculator */}
+            <TabsContent value="inputs" className="mt-4">
+              {modalContext.sourceIdForModal && CALCULATOR_REQUIRED_INPUTS[modalContext.sourceIdForModal] && (
+                <CalculatorInputsTab
+                  calculatorId={modalContext.sourceIdForModal}
+                  formData={modalContext.modalFormData}
+                  onFormDataChange={(field, value) => modalContext.modalOnFormDataChange?.(field, value)}
+                  onForterKPIChange={(field, value) => onForterKPIChange?.(field, value)}
+                  onGoToCalculator={() => setCalculatorModalTab('calculator')}
+                  currency={modalContext.modalFormData.baseCurrency || 'USD'}
+                />
+              )}
+            </TabsContent>
+            
+            {/* Calculator Tab */}
+            <TabsContent value="calculator" className="mt-4">
+              {selectedCalculator && (() => {
+                const sourceId = modalContext.sourceIdForModal ?? selectedCalculatorId;
+                // Determine if we should show segment tabs for this calculator
+                const isSegmentableCalculator = sourceId === "c1-revenue" || 
+                  sourceId === "c1-chargeback" || 
+                  sourceId === "c245-revenue" || 
+                  sourceId === "c245-chargeback";
+                const isSegmentationEnabled = modalContext.modalFormData.segmentationEnabled && (modalContext.modalFormData.segments?.filter(s => s.enabled).length ?? 0) > 0;
+                
+                // Show fraud coverage toggle for chargeback calculators
+                const showFraudCoverageToggle = sourceId === "c245-chargeback" || sourceId === "c7-disputes";
+                
+                return (
+                  <div className="space-y-4">
+                    {/* Fraud Chargeback Coverage Toggle */}
+                    {showFraudCoverageToggle && (
+                      <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg border">
+                        <Switch
+                          id="fraud-cb-coverage-calc"
+                          checked={fraudCBCoverageEnabled}
+                          onCheckedChange={setFraudCBCoverageEnabled}
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="fraud-cb-coverage-calc" className="cursor-pointer font-medium">
+                            Includes Fraud Chargeback Coverage
+                          </Label>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {fraudCBCoverageEnabled 
+                              ? selectedCalculatorId === "c7-disputes"
+                                ? "Fraud chargebacks excluded - only service chargebacks are shown"
+                                : "Forter assumes fraud chargeback liability - fraud chargebacks override to $0"
+                              : "Enable if prospect will purchase fraud chargeback coverage"}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Calculator Display */}
+                    {isSegmentableCalculator && isSegmentationEnabled ? (
+                      <SegmentCalculatorTabs
+                        challengeType={sourceId.startsWith("c1-") ? "c1" as const : "c245" as const}
+                        calculatorType={sourceId.endsWith("-revenue") ? "revenue" as const : "chargeback" as const}
+                        formData={modalContext.modalFormData}
+                        globalForterKPIs={forterKPIs}
+                        deduplicationEnabled={deduplicationEnabled}
+                        deduplicationRetryRate={deduplicationRetryRate}
+                        deduplicationSuccessRate={deduplicationSuccessRate}
+                        includesFraudCBCoverage={fraudCBCoverageEnabled}
+                        onSegmentInputChange={onSegmentInputChange}
+                        onSegmentKPIChange={onSegmentKPIChange}
+                      />
+                    ) : (
+                      <EditableCalculatorDisplay 
+                        title={selectedCalculator.title} 
+                        rows={selectedCalculator.rows}
+                        onCustomerFieldChange={modalContext.modalOnFormDataChange ?? onFormDataChange}
+                        onForterFieldChange={(field, value) => {
+                          // Handle abuseBenchmarks fields specially
+                          const abuseBenchmarkFields = [
+                            'egregiousReturnsAbusePct',
+                            'egregiousINRAbusePct',
+                            'nonEgregiousReturnsAbusePct',
+                            'forterEgregiousReturnsReduction',
+                            'forterEgregiousINRReduction',
+                            'forterNonEgregiousReturnsReduction'
+                          ];
+                          
+                          const fieldStr = String(field);
+                          
+                          // Handle forterCatchRate: sync with forterEgregiousReturnsReduction bidirectionally
+                          if (fieldStr === 'forterCatchRate') {
+                            // Update catch rate
+                            onForterKPIChange?.('forterCatchRate' as keyof ForterKPIs, value);
+                            // Also sync with forterEgregiousReturnsReduction in abuseBenchmarks
+                            const currentBenchmarks = forterKPIs.abuseBenchmarks || defaultAbuseBenchmarks;
+                            const updatedBenchmarks = { ...currentBenchmarks, forterEgregiousReturnsReduction: value };
+                            onForterKPIChange?.('abuseBenchmarks' as keyof ForterKPIs, updatedBenchmarks as any);
+                          } else if (fieldStr === 'forterEgregiousReturnsReduction') {
+                            // When reduction is edited, sync catch rate
+                            const currentBenchmarks = forterKPIs.abuseBenchmarks || defaultAbuseBenchmarks;
+                            const updatedBenchmarks = { ...currentBenchmarks, forterEgregiousReturnsReduction: value };
+                            onForterKPIChange?.('abuseBenchmarks' as keyof ForterKPIs, updatedBenchmarks as any);
+                            // Also update catch rate to match
+                            onForterKPIChange?.('forterCatchRate' as keyof ForterKPIs, value);
+                          } else if (abuseBenchmarkFields.includes(fieldStr)) {
+                            const currentBenchmarks = forterKPIs.abuseBenchmarks || defaultAbuseBenchmarks;
+                            const updatedBenchmarks = { ...currentBenchmarks, [fieldStr]: value };
+                            onForterKPIChange?.('abuseBenchmarks' as keyof ForterKPIs, updatedBenchmarks as any);
+                          } else {
+                            onForterKPIChange?.(field, value);
+                          }
+                        }}
+                        formData={modalContext.modalFormData}
+                        forterKPIs={forterKPIs}
+                      />
+                    )}
+                  </div>
+                );
+              })()}
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
+
+
+      {/* Custom Calculation Dialog */}
+      <Dialog open={showCustomCalcDialog} onOpenChange={setShowCustomCalcDialog}>
+        <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              {editingCustomCalcId ? 'Edit Custom Calculation' : 'Add Custom Calculation'}
+            </DialogTitle>
+            <DialogDescription>
+              {editingCustomCalcId 
+                ? 'Update your custom value driver details.' 
+                : 'Add a custom value driver to your assessment. Custom items will be clearly marked.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 overflow-y-auto flex-1">
+            <div className="space-y-2">
+              <Label htmlFor="custom-name">Benefit Name</Label>
+              <Input
+                id="custom-name"
+                value={customCalcName}
+                onChange={(e) => setCustomCalcName(e.target.value)}
+                placeholder="e.g., Operational savings from automation"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="custom-category">Benefit Category</Label>
+              <Select
+                value={customCalcCategory}
+                onValueChange={(v) => setCustomCalcCategory(v as 'gmv_uplift' | 'cost_reduction' | 'risk_mitigation')}
+              >
+                <SelectTrigger id="custom-category" className="bg-background">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  <SelectItem value="gmv_uplift">GMV Uplift</SelectItem>
+                  <SelectItem value="cost_reduction">Cost Reduction</SelectItem>
+                  <SelectItem value="risk_mitigation">Risk Mitigation</SelectItem>
+                </SelectContent>
+              </Select>
+              {customCalcCategory === 'gmv_uplift' && (
+                <div className="space-y-3 p-3 bg-muted/30 rounded-lg border mt-2">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Info className="w-3 h-3" />
+                    GMV uplift requires margin data for EBITDA calculation
+                  </p>
+                  
+                  {/* Commission field - only for marketplaces */}
+                  {formData.isMarketplace && (
+                    <div className="space-y-1">
+                      <Label htmlFor="custom-commission" className="text-xs font-medium">
+                        Commission / Take Rate (%) <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="custom-commission"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={formData.commissionRate ?? ''}
+                        onChange={(e) => onFormDataChange?.('commissionRate', parseFloat(e.target.value) || 0)}
+                        placeholder="e.g., 15"
+                        className="h-8 text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">Your marketplace commission rate</p>
+                    </div>
+                  )}
+                  
+                  {/* Gross Margin field - always shown for GMV uplift */}
+                  <div className="space-y-1">
+                    <Label htmlFor="custom-margin" className="text-xs font-medium">
+                      Gross Margin (%) <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="custom-margin"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={formData.amerGrossMarginPercent ?? ''}
+                      onChange={(e) => onFormDataChange?.('amerGrossMarginPercent', parseFloat(e.target.value) || 0)}
+                      placeholder="e.g., 50"
+                      className="h-8 text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {formData.isMarketplace 
+                        ? "Applied to commission revenue for EBITDA"
+                        : "Applied to GMV for EBITDA contribution"
+                      }
+                    </p>
+                  </div>
+                  
+                  {/* Show calculated EBITDA preview if we have values */}
+                  {customCalcValue && formData.amerGrossMarginPercent && (
+                    <div className="pt-2 border-t">
+                      <p className="text-xs font-medium text-primary">
+                        Estimated EBITDA contribution: {getCurrencySymbol(formData.baseCurrency || 'USD')}
+                        {(() => {
+                          const gmv = parseFloat(customCalcValue.replace(/,/g, '')) || 0;
+                          const margin = (formData.amerGrossMarginPercent || 0) / 100;
+                          const commission = formData.isMarketplace ? (formData.commissionRate || 0) / 100 : 1;
+                          const ebitda = gmv * commission * margin;
+                          return ebitda.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                        })()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="custom-value">
+                {customCalcCategory === 'gmv_uplift' ? 'GMV Uplift Value' : 'Benefit Value'} ({getCurrencySymbol(formData.baseCurrency || 'USD')})
+              </Label>
+              <Input
+                id="custom-value"
+                value={customCalcValue}
+                onChange={(e) => {
+                  // Allow only numbers and commas
+                  const cleaned = e.target.value.replace(/[^0-9,]/g, '');
+                  setCustomCalcValue(cleaned);
+                }}
+                placeholder="e.g., 500,000"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="custom-source-url" className={isCustomMode ? "font-medium" : ""}>
+                Calculator Link {isCustomMode ? <span className="text-destructive">*</span> : "(optional)"}
+              </Label>
+              <Input
+                id="custom-source-url"
+                value={customCalcSourceUrl}
+                onChange={(e) => setCustomCalcSourceUrl(e.target.value)}
+                placeholder="e.g., https://docs.google.com/spreadsheets/d/..."
+                type="url"
+              />
+              {isCustomMode && (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs text-muted-foreground">Or</span>
+                  <div className="relative">
+                    <Button variant="outline" size="sm" className="gap-2 text-xs">
+                      <FileText className="w-3 h-3" />
+                      {customCalcFileName ? customCalcFileName : "Upload Calculator File"}
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv,.gsheet"
+                        onChange={handleCalculatorFileUpload}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                    </Button>
+                  </div>
+                  {customCalcFileName && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => { setCustomCalcUploadedFile(null); setCustomCalcFileName(null); }}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {isCustomMode 
+                  ? "Required: Link to your Google Sheets, Excel file, or upload a calculator file."
+                  : "Add a link to your Google Sheets or external calculator for reference."
+                }
+              </p>
+              {isCustomMode && !customCalcSourceUrl.trim() && !customCalcUploadedFile && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  A calculator link or file is required in Custom pathway
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="flex-shrink-0">
+            <Button variant="outline" onClick={() => setShowCustomCalcDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveCustomCalculation}
+              disabled={
+                !customCalcName.trim() || 
+                !customCalcValue || 
+                (isCustomMode && !customCalcSourceUrl.trim() && !customCalcUploadedFile) ||
+                (customCalcCategory === 'gmv_uplift' && !formData.amerGrossMarginPercent) ||
+                (customCalcCategory === 'gmv_uplift' && formData.isMarketplace && !formData.commissionRate)
+              }
+            >
+              {editingCustomCalcId ? 'Save Changes' : 'Add Custom Calculation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Margin Prompt Dialog */}
+      <MarginPromptDialog
+        open={showMarginPrompt}
+        onOpenChange={setShowMarginPrompt}
+        grossMarginPercent={formData.amerGrossMarginPercent}
+        isMarketplace={formData.isMarketplace}
+        commissionRate={formData.commissionRate}
+        onSave={handleMarginPromptSave}
+        onSkip={handleMarginPromptSkip}
+      />
+    </>
+  );
+};

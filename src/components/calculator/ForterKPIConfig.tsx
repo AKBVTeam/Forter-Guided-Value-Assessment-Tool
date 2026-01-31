@@ -1,0 +1,1012 @@
+import { useState, useMemo, useCallback } from "react";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { NumericInput } from "./NumericInput";
+import { PercentageInput } from "./PercentageInput";
+import { IncludeExcludeChip } from "./IncludeExcludeChip";
+import { AbuseBenchmarksModal, AbuseBenchmarks, defaultAbuseBenchmarks } from "./AbuseBenchmarksModal";
+import { ForterKPISegmentModal } from "./ForterKPISegmentModal";
+import { WeightedAverageTooltipKPI } from "./WeightedAverageTooltipKPI";
+import { getValidationWarning } from "@/lib/inputValidation";
+import { Segment, hasPaymentChallengesSelected, aggregateSegmentKPIs, getSegmentKPIStatus } from "@/lib/segments";
+import { Layers, Pencil, Info, RotateCcw } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+export interface ForterKPIs {
+  approvalRateImprovement: number;
+  approvalRateIsAbsolute: boolean;
+  chargebackReduction: number;
+  chargebackReductionIsAbsolute: boolean;
+  preAuthApprovalImprovement: number;
+  preAuthApprovalIsAbsolute: boolean;
+  preAuthIncluded: boolean;
+  postAuthApprovalImprovement: number;
+  postAuthApprovalIsAbsolute: boolean;
+  postAuthIncluded: boolean;
+  threeDSReduction: number;
+  threeDSReductionIsAbsolute: boolean;
+  manualReviewReduction: number;
+  manualReviewIsAbsolute: boolean;
+  reviewTimeReduction: number;
+  reviewTimeIsAbsolute: boolean;
+  fraudDisputeRateImprovement: number;
+  fraudDisputeIsAbsolute: boolean;
+  fraudWinRateChange: number;
+  fraudWinRateIsAbsolute: boolean;
+  serviceDisputeRateImprovement: number;
+  serviceDisputeIsAbsolute: boolean;
+  serviceWinRateChange: number;
+  serviceWinRateIsAbsolute: boolean;
+  disputeTimeReduction: number;
+  disputeTimeIsAbsolute: boolean;
+  fraudApprovalRate?: number;
+  // Challenge 8: General model assumptions (on main KPI page)
+  forterCatchRate: number;
+  abuseAovMultiplier: number;
+  // Challenge 8: Abuse benchmarks (in modal)
+  abuseBenchmarks?: AbuseBenchmarks;
+  // Challenge 9: Instant Refunds
+  npsIncreaseFromInstantRefunds: number;
+  lseNPSBenchmark: number;
+  forterCSReduction: number;
+  // Challenge 12/13: ATO Protection
+  pctFraudulentLogins: number;
+  churnLikelihoodFromATO: number;
+  atoCatchRate: number;
+  // Challenge 14/15: Sign-up Protection
+  pctFraudulentSignups: number;
+  forterFraudulentSignupReduction: number;
+  forterKYCReduction: number;
+  // Legacy properties for backward compatibility with ResultsDashboard
+  bankDeclineImprovement?: number;
+  threeDSChallengeIsAbsolute?: boolean;
+  threeDSChallengeReduction?: number;
+  threeDSAbandonmentIsAbsolute?: boolean;
+  threeDSAbandonmentImprovement?: number;
+}
+
+export const defaultForterKPIs: ForterKPIs = {
+  // Challenge 1: False Fraud Declines (absolute mode - target values)
+  approvalRateImprovement: 99,
+  approvalRateIsAbsolute: true,
+  chargebackReduction: 0.25, // Target 0.25% CB rate
+  chargebackReductionIsAbsolute: true, // Using target rate mode since UI shows "Target CB Rate"
+  // Challenges 2, 4, 5: Rules, 3DS & Exemptions (absolute mode - target values)
+  preAuthApprovalImprovement: 99,
+  preAuthApprovalIsAbsolute: true,
+  preAuthIncluded: true,
+  postAuthApprovalImprovement: 100, // Default to 100% (excluded)
+  postAuthApprovalIsAbsolute: true,
+  postAuthIncluded: false, // Default to excluded
+  threeDSReduction: 10,
+  threeDSReductionIsAbsolute: true,
+  // Challenge 3: Manual Review (absolute by default - target values)
+  manualReviewReduction: 0, // Target 0% manual review rate
+  manualReviewIsAbsolute: true,
+  reviewTimeReduction: 7, // Target 7 minutes per review
+  reviewTimeIsAbsolute: true,
+  // Challenge 7: Chargeback Disputes (absolute by default)
+  fraudDisputeRateImprovement: 90,
+  fraudDisputeIsAbsolute: true,
+  fraudWinRateChange: 30,
+  fraudWinRateIsAbsolute: true,
+  serviceDisputeRateImprovement: 90,
+  serviceDisputeIsAbsolute: true,
+  serviceWinRateChange: 40,
+  serviceWinRateIsAbsolute: true,
+  disputeTimeReduction: 5, // Target avg time to review CB in minutes (absolute value)
+  disputeTimeIsAbsolute: true,
+  // Challenge 8: Policy Abuse Prevention
+  forterCatchRate: 90,
+  abuseAovMultiplier: 1.5,
+  abuseBenchmarks: defaultAbuseBenchmarks,
+  // Challenge 9: Instant Refunds
+  npsIncreaseFromInstantRefunds: 10,
+  lseNPSBenchmark: 1, // 1% per 7 NPS points
+  forterCSReduction: 78, // 78% reduction in CS contacts
+  // Challenge 12/13: ATO Protection
+  pctFraudulentLogins: 1,
+  churnLikelihoodFromATO: 50,
+  atoCatchRate: 90,
+  // Challenge 14/15: Sign-up Protection
+  pctFraudulentSignups: 10,
+  forterFraudulentSignupReduction: 95,
+  forterKYCReduction: 80,
+  // Legacy defaults
+  bankDeclineImprovement: 20,
+  threeDSChallengeIsAbsolute: false,
+  threeDSChallengeReduction: 40,
+  threeDSAbandonmentIsAbsolute: false,
+  threeDSAbandonmentImprovement: 20,
+};
+
+interface CustomerInputs {
+  amerPreAuthApprovalRate?: number;
+  amerPostAuthApprovalRate?: number;
+  amer3DSChallengeRate?: number;
+  fraudCBRate?: number;
+  manualReviewPct?: number;
+  timePerReview?: number;
+  fraudDisputeRate?: number;
+  fraudWinRate?: number;
+  serviceDisputeRate?: number;
+  serviceWinRate?: number;
+  avgTimeToReviewCB?: number;
+  annualCBDisputes?: number;
+  costPerHourAnalyst?: number;
+  // For AOV calculation display
+  amerAnnualGMV?: number;
+  amerGrossAttempts?: number;
+  baseCurrency?: string;
+  // For vendor-based CB rate lookup in segments
+  existingFraudVendor?: string;
+}
+
+interface ForterKPIConfigProps {
+  kpis: ForterKPIs;
+  onUpdate: (kpis: ForterKPIs) => void;
+  selectedChallenges?: { [key: string]: boolean };
+  customerInputs?: CustomerInputs;
+  // Segmentation support
+  segmentationEnabled?: boolean;
+  segments?: Segment[];
+  onSegmentUpdate?: (segment: Segment) => void;
+}
+
+interface KPIInputRowProps {
+  label: string;
+  value: number;
+  onValueChange: (value: number) => void;
+  included?: boolean;
+  onIncludedChange?: (included: boolean) => void;
+  showIncludeToggle?: boolean;
+  currentValue?: number;
+  currentValueLabel?: string;
+  currentValueUnit?: string;
+  /** Field name for validation lookup */
+  fieldName?: string;
+  /** Number of decimal places to display */
+  decimalPlaces?: number;
+}
+
+const KPIInputRow = ({ 
+  label, 
+  value, 
+  onValueChange, 
+  included = true,
+  onIncludedChange,
+  showIncludeToggle = false,
+  currentValue,
+  currentValueLabel,
+  currentValueUnit = "%",
+  fieldName,
+  decimalPlaces,
+}: KPIInputRowProps) => {
+  // Calculate actual % reduction: (target - current) / current * 100
+  const calculatePercentChange = (): string | null => {
+    if (currentValue === undefined || currentValue === 0) return null;
+    const percentChange = ((value - currentValue) / currentValue) * 100;
+    const sign = percentChange >= 0 ? '+' : '';
+    return `${sign}${percentChange.toFixed(1)}%`;
+  };
+
+  const percentChange = calculatePercentChange();
+  const warning = fieldName && included ? getValidationWarning(fieldName, value) : null;
+  
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Label className={`text-sm ${!included ? "text-muted-foreground" : ""}`}>
+            {label}
+          </Label>
+          {showIncludeToggle && onIncludedChange && (
+            <IncludeExcludeChip
+              included={included}
+              onIncludedChange={onIncludedChange}
+            />
+          )}
+        </div>
+      </div>
+      <NumericInput 
+        value={included ? value : 0} 
+        onChange={onValueChange} 
+        placeholder="0" 
+        disabled={!included}
+        warning={warning}
+        decimalPlaces={decimalPlaces}
+      />
+      {/* Fixed height container to prevent layout bouncing */}
+      <div className="min-h-5 flex items-center">
+        {currentValue !== undefined && currentValueLabel && (
+          <p className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+            Current: <span className="font-medium text-foreground">{currentValue}{currentValueUnit}</span>
+            {included && percentChange && (
+              <span className="ml-1.5">
+                &gt; <span className="font-medium text-primary">{value}{currentValueUnit}</span>
+                <span className={`ml-1 font-medium ${value >= currentValue ? 'text-green-600' : 'text-red-600'}`}>
+                  ({percentChange})
+                </span>
+              </span>
+            )}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export const ForterKPIConfig = ({ 
+  kpis, 
+  onUpdate, 
+  selectedChallenges = {}, 
+  customerInputs = {},
+  segmentationEnabled = false,
+  segments = [],
+  onSegmentUpdate,
+}: ForterKPIConfigProps) => {
+  const [segmentModalOpen, setSegmentModalOpen] = useState(false);
+  const [editingSegment, setEditingSegment] = useState<Segment | null>(null);
+  
+  const updateKPI = (field: keyof ForterKPIs, value: number | boolean) => {
+    const updates: Partial<ForterKPIs> = { [field]: value };
+    
+    // Ensure absolute flags are set for target-based fields
+    // Since UI shows "Target X Rate", we're always in absolute mode
+    if (field === 'chargebackReduction') {
+      updates.chargebackReductionIsAbsolute = true;
+    } else if (field === 'approvalRateImprovement') {
+      updates.approvalRateIsAbsolute = true;
+    } else if (field === 'preAuthApprovalImprovement') {
+      updates.preAuthApprovalIsAbsolute = true;
+    } else if (field === 'postAuthApprovalImprovement') {
+      updates.postAuthApprovalIsAbsolute = true;
+    } else if (field === 'threeDSReduction') {
+      updates.threeDSReductionIsAbsolute = true;
+    }
+    
+    onUpdate({ ...kpis, ...updates });
+  };
+
+  const challenge1 = selectedChallenges['1'] === true;
+  const challenge2 = selectedChallenges['2'] === true;
+  const challenge3 = selectedChallenges['3'] === true;
+  const challenge4 = selectedChallenges['4'] === true;
+  const challenge5 = selectedChallenges['5'] === true;
+  const challenge7 = selectedChallenges['7'] === true;
+  const challenge8 = selectedChallenges['8'] === true;
+  const challenge9 = selectedChallenges['9'] === true;
+  const challenge10 = selectedChallenges['10'] === true;
+  const challenge11 = selectedChallenges['11'] === true;
+  const challenge12 = selectedChallenges['12'] === true;
+  const challenge13 = selectedChallenges['13'] === true;
+  const challenge14 = selectedChallenges['14'] === true;
+  const challenge15 = selectedChallenges['15'] === true;
+  
+  const show245KPIs = challenge2 || challenge4 || challenge5;
+  const show10_11KPIs = challenge10 || challenge11;
+  const show12_13KPIs = challenge12 || challenge13;
+  const show14_15KPIs = challenge14 || challenge15;
+  // Challenge 8 and 10/11 share abuse-related KPIs
+  const showAbuseKPIs = challenge8 || show10_11KPIs;
+  const showAnyKPIs = challenge1 || show245KPIs || challenge3 || challenge7 || showAbuseKPIs || challenge9 || show12_13KPIs || show14_15KPIs;
+  
+  // Check if payment/fraud challenges have segmentation
+  const showPaymentChallenges = hasPaymentChallengesSelected(selectedChallenges);
+  const isSegmentMode = segmentationEnabled && showPaymentChallenges && segments.length > 0;
+  
+  // Calculate aggregated KPIs from segments
+  const aggregatedKPIs = useMemo(() => {
+    if (!isSegmentMode) return null;
+    return aggregateSegmentKPIs(segments, {
+      approvalRateImprovement: kpis.approvalRateImprovement,
+      preAuthApprovalImprovement: kpis.preAuthApprovalImprovement,
+      postAuthApprovalImprovement: kpis.postAuthApprovalImprovement,
+      chargebackReduction: kpis.chargebackReduction,
+      threeDSReduction: kpis.threeDSReduction,
+    });
+  }, [isSegmentMode, segments, kpis]);
+  
+  const handleEditSegmentKPIs = useCallback((segment: Segment) => {
+    setEditingSegment(segment);
+    setSegmentModalOpen(true);
+  }, []);
+  
+  const handleSaveSegmentKPIs = useCallback((segment: Segment) => {
+    if (onSegmentUpdate) {
+      onSegmentUpdate(segment);
+    }
+    setSegmentModalOpen(false);
+    setEditingSegment(null);
+  }, [onSegmentUpdate]);
+  
+  // Copy KPIs from first segment to all other segments
+  const handleCopyFromFirst = useCallback(() => {
+    if (!onSegmentUpdate || segments.length < 2) return;
+    
+    const firstSegment = segments[0];
+    if (!firstSegment) return;
+    
+    segments.slice(1).forEach(segment => {
+      if (segment.enabled) {
+        onSegmentUpdate({
+          ...segment,
+          kpis: { ...firstSegment.kpis }
+        });
+      }
+    });
+  }, [segments, onSegmentUpdate]);
+
+  if (!showAnyKPIs) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <p>Please select challenges in the Challenges tab to see relevant Forter KPIs.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Forter Performance Assumptions</h3>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onUpdate(defaultForterKPIs)}
+              className="gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset to Defaults
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            <p className="text-sm">Reset all KPI targets to default values</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      
+      {/* Segment KPI Editor - shown when segmentation is enabled for payment/fraud challenges */}
+      {isSegmentMode && (
+        <Card className="p-4 border-primary/30 bg-primary/5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Layers className="h-5 w-5 text-primary" />
+              <div>
+                <p className="font-medium text-sm">Segmented KPI Targets</p>
+                <p className="text-xs text-muted-foreground">
+                  Configure Forter performance targets per segment. Payment/fraud KPIs below show weighted averages.
+                </p>
+              </div>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-xs">
+                <p className="text-sm">
+                  Each segment requires its own KPI targets.
+                  Edit the first segment and use "Copy to Other Segments" to replicate settings.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          
+          <div className="space-y-2">
+            {segments.filter(s => s.enabled).map((segment) => {
+              const kpiStatus = getSegmentKPIStatus(segment);
+              
+              return (
+                <div 
+                  key={segment.id} 
+                  className="flex items-center justify-between gap-4 p-3 bg-background rounded-lg border"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{segment.name}</p>
+                    <p className="text-xs text-muted-foreground">{kpiStatus}</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => handleEditSegmentKPIs(segment)}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Edit KPIs
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+      
+      {/* Segment KPI Modal */}
+      <ForterKPISegmentModal
+        open={segmentModalOpen}
+        onOpenChange={setSegmentModalOpen}
+        segment={editingSegment}
+        onSave={handleSaveSegmentKPIs}
+        selectedChallenges={selectedChallenges}
+        globalKPIs={kpis}
+        segments={segments}
+        onCopyFromFirst={handleCopyFromFirst}
+        existingFraudVendor={customerInputs?.existingFraudVendor}
+        baseCurrency={customerInputs?.baseCurrency}
+      />
+      
+      {(challenge1 && !show245KPIs) && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-medium text-primary">False Fraud Declines</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Target Fraud Approval Rate (%)</Label>
+                {isSegmentMode && (
+                  <WeightedAverageTooltipKPI
+                    segments={segments}
+                    fieldLabel="Target Fraud Approval Rate"
+                    getKPIValue={(s) => s.kpis.approvalRateTarget}
+                    weightedValue={aggregatedKPIs?.weightedApprovalRateTarget}
+                  />
+                )}
+              </div>
+              <PercentageInput
+                value={isSegmentMode ? (aggregatedKPIs?.weightedApprovalRateTarget ?? 0) : kpis.approvalRateImprovement}
+                onChange={(v) => updateKPI("approvalRateImprovement", v)}
+                readOnly={isSegmentMode}
+                warning={!isSegmentMode ? getValidationWarning("approvalRateImprovement", kpis.approvalRateImprovement) : null}
+                decimalPlaces={2}
+              />
+              {!isSegmentMode && customerInputs.amerPreAuthApprovalRate !== undefined && (() => {
+                const currentRate = customerInputs.amerPreAuthApprovalRate;
+                const targetRate = kpis.approvalRateImprovement;
+                const pctImprovement = currentRate > 0 && targetRate !== currentRate
+                  ? (((targetRate - currentRate) / currentRate) * 100).toFixed(1)
+                  : null;
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="font-medium text-foreground">{currentRate}%</span>
+                    {targetRate !== undefined && targetRate !== currentRate && (
+                      <span className="ml-1">
+                        &gt; <span className="font-medium text-primary">{targetRate}%</span>
+                        {pctImprovement != null && (
+                          <span className={`ml-1 font-medium ${Number(pctImprovement) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ({Number(pctImprovement) > 0 ? '+' : ''}{pctImprovement}%)
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Target Fraud CB Rate (%)</Label>
+                {isSegmentMode && (
+                  <WeightedAverageTooltipKPI
+                    segments={segments}
+                    fieldLabel="Target Fraud CB Rate"
+                    getKPIValue={(s) => s.kpis.chargebackRateTarget}
+                    weightedValue={aggregatedKPIs?.weightedChargebackRateTarget}
+                  />
+                )}
+              </div>
+              <PercentageInput
+                value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
+                onChange={(v) => updateKPI("chargebackReduction", v)}
+                readOnly={isSegmentMode}
+                warning={!isSegmentMode ? getValidationWarning("chargebackReduction", kpis.chargebackReduction) : null}
+                decimalPlaces={2}
+                max={10}
+                step={0.01}
+              />
+              {customerInputs.fraudCBRate !== undefined && (() => {
+                const currentCBRate = customerInputs.fraudCBRate;
+                const targetCBRate = isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction;
+                const improvement = currentCBRate - targetCBRate;
+                const pctReduction = currentCBRate > 0 ? ((improvement / currentCBRate) * 100).toFixed(1) : null;
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="font-medium text-foreground">{currentCBRate}%</span>
+                    {targetCBRate !== undefined && targetCBRate !== currentCBRate && pctReduction != null && (
+                      <span className="ml-1">
+                        → <span className="font-medium text-primary">{targetCBRate.toFixed(2)}%</span>
+                        <span className={`ml-1 font-medium ${improvement > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ({improvement > 0 ? '-' : '+'}{Math.abs(Number(pctReduction))}%)
+                        </span>
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
+            </div>
+          </div>
+        </Card>
+      )}
+      
+      {show245KPIs && (() => {
+        // Calculate AOV for display
+        const gmv = customerInputs.amerAnnualGMV || 0;
+        const attempts = customerInputs.amerGrossAttempts || 0;
+        const aov = attempts > 0 ? gmv / attempts : 0;
+        const currency = customerInputs.baseCurrency || 'USD';
+        const formattedAOV = aov > 0 
+          ? new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(aov)
+          : null;
+        
+        return (
+        <Card className="p-4 space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h4 className="font-medium text-primary">Fraud Detection & 3DS</h4>
+            {formattedAOV && (
+              <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
+                AOV: {formattedAOV}
+              </span>
+            )}
+            {isSegmentMode && (
+              <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
+                Forter KPIs (weighted avg): {aggregatedKPIs?.weightedPreAuthApprovalTarget?.toFixed(1)}% pre-auth fraud approval, {aggregatedKPIs?.weightedThreeDSRateTarget?.toFixed(1)}% 3DS, {aggregatedKPIs?.weightedChargebackRateTarget?.toFixed(2)}% fraud CB
+              </span>
+            )}
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* Fraud approval rate */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Label className={`text-sm ${!isSegmentMode && kpis.preAuthIncluded === false ? "text-muted-foreground" : ""}`}>
+                    Target Pre-Auth Fraud Approval Rate (%)
+                  </Label>
+                  {isSegmentMode && (
+                    <WeightedAverageTooltipKPI
+                      segments={segments}
+                      fieldLabel="Target Pre-Auth Fraud Approval Rate"
+                      getKPIValue={(s) => s.kpis.preAuthApprovalTarget}
+                      weightedValue={aggregatedKPIs?.weightedPreAuthApprovalTarget}
+                    />
+                  )}
+                </div>
+                {!isSegmentMode && (
+                  <IncludeExcludeChip
+                    included={kpis.preAuthIncluded !== false}
+                    onIncludedChange={(v) => updateKPI("preAuthIncluded", v)}
+                  />
+                )}
+              </div>
+              <PercentageInput
+                value={isSegmentMode 
+                  ? (aggregatedKPIs?.weightedPreAuthApprovalTarget ?? 0)
+                  : (kpis.preAuthIncluded === false ? 100 : kpis.preAuthApprovalImprovement)}
+                onChange={(v) => updateKPI("preAuthApprovalImprovement", v)}
+                readOnly={isSegmentMode}
+                disabled={!isSegmentMode && kpis.preAuthIncluded === false}
+                warning={!isSegmentMode && kpis.preAuthIncluded !== false ? getValidationWarning("preAuthApprovalImprovement", kpis.preAuthApprovalImprovement) : null}
+                decimalPlaces={2}
+              />
+              {(kpis.preAuthIncluded !== false || isSegmentMode) && customerInputs.amerPreAuthApprovalRate !== undefined && (() => {
+                const currentRate = customerInputs.amerPreAuthApprovalRate;
+                const targetRate = isSegmentMode 
+                  ? (aggregatedKPIs?.weightedPreAuthApprovalTarget ?? 0) 
+                  : kpis.preAuthApprovalImprovement;
+                const improvement = targetRate - currentRate;
+                const improvementPct = currentRate > 0 ? ((improvement / currentRate) * 100).toFixed(1) : '0';
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="font-medium text-foreground">{currentRate}%</span>
+                    {targetRate !== undefined && targetRate !== currentRate && (
+                      <span className="ml-1">
+                        &gt; <span className="font-medium text-primary">{targetRate}%</span>
+                        <span className={`ml-1 font-medium ${improvement > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ({improvement > 0 ? '+' : ''}{improvementPct}%)
+                        </span>
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
+            </div>
+            
+            {/* Post-Auth Approval Rate */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Label className={`text-sm ${!isSegmentMode && kpis.postAuthIncluded === false ? "text-muted-foreground" : ""}`}>
+                    Target Post-Auth Fraud Approval Rate (%)
+                  </Label>
+                  {isSegmentMode && (
+                    <WeightedAverageTooltipKPI
+                      segments={segments}
+                      fieldLabel="Target Post-Auth Approval Rate"
+                      getKPIValue={(s) => s.kpis.postAuthApprovalTarget}
+                      weightedValue={aggregatedKPIs?.weightedPostAuthApprovalTarget}
+                    />
+                  )}
+                </div>
+                {!isSegmentMode && (
+                  <IncludeExcludeChip
+                    included={kpis.postAuthIncluded !== false}
+                    onIncludedChange={(v) => updateKPI("postAuthIncluded", v)}
+                  />
+                )}
+              </div>
+              <PercentageInput
+                value={isSegmentMode 
+                  ? (aggregatedKPIs?.weightedPostAuthApprovalTarget ?? 0)
+                  : (kpis.postAuthIncluded === false ? 100 : kpis.postAuthApprovalImprovement)}
+                onChange={(v) => updateKPI("postAuthApprovalImprovement", v)}
+                readOnly={isSegmentMode}
+                disabled={!isSegmentMode && kpis.postAuthIncluded === false}
+                warning={!isSegmentMode && kpis.postAuthIncluded !== false ? getValidationWarning("postAuthApprovalImprovement", kpis.postAuthApprovalImprovement) : null}
+                decimalPlaces={2}
+              />
+              {(kpis.postAuthIncluded !== false || isSegmentMode) && customerInputs.amerPostAuthApprovalRate !== undefined && (() => {
+                const currentRate = customerInputs.amerPostAuthApprovalRate;
+                const targetRate = isSegmentMode 
+                  ? (aggregatedKPIs?.weightedPostAuthApprovalTarget ?? 0) 
+                  : kpis.postAuthApprovalImprovement;
+                const improvement = targetRate - currentRate;
+                const improvementPct = currentRate > 0 ? ((improvement / currentRate) * 100).toFixed(1) : '0';
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="font-medium text-foreground">{currentRate}%</span>
+                    {targetRate !== undefined && targetRate !== currentRate && (
+                      <span className="ml-1">
+                        &gt; <span className="font-medium text-primary">{targetRate}%</span>
+                        <span className={`ml-1 font-medium ${improvement > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ({improvement > 0 ? '+' : ''}{improvementPct}%)
+                        </span>
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
+            </div>
+            
+            {/* 3DS Rate */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Target Challenge 3DS Rate (%)</Label>
+                {isSegmentMode && (
+                  <WeightedAverageTooltipKPI
+                    segments={segments}
+                    fieldLabel="Target Challenge 3DS Rate"
+                    getKPIValue={(s) => s.kpis.threeDSRateTarget}
+                    weightedValue={aggregatedKPIs?.weightedThreeDSRateTarget}
+                  />
+                )}
+              </div>
+              <PercentageInput
+                value={isSegmentMode ? (aggregatedKPIs?.weightedThreeDSRateTarget ?? 0) : kpis.threeDSReduction}
+                onChange={(v) => updateKPI("threeDSReduction", v)}
+                readOnly={isSegmentMode}
+                warning={!isSegmentMode ? getValidationWarning("threeDSReduction", kpis.threeDSReduction) : null}
+                decimalPlaces={2}
+              />
+              {customerInputs.amer3DSChallengeRate !== undefined && (() => {
+                const currentRate = customerInputs.amer3DSChallengeRate;
+                const targetRate = isSegmentMode 
+                  ? (aggregatedKPIs?.weightedThreeDSRateTarget ?? 0) 
+                  : kpis.threeDSReduction;
+                const improvement = currentRate - targetRate; // For 3DS, reduction is positive
+                const improvementPct = currentRate > 0 ? ((improvement / currentRate) * 100).toFixed(1) : '0';
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="font-medium text-foreground">{currentRate}%</span>
+                    {targetRate !== undefined && targetRate !== currentRate && (
+                      <span className="ml-1">
+                        &gt; <span className="font-medium text-primary">{targetRate}%</span>
+                        <span className={`ml-1 font-medium ${improvement > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ({improvement > 0 ? '-' : '+'}{Math.abs(Number(improvementPct))}%)
+                        </span>
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
+            </div>
+            
+            {/* CB Rate */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Target Fraud CB Rate (%)</Label>
+                {isSegmentMode && (
+                  <WeightedAverageTooltipKPI
+                    segments={segments}
+                    fieldLabel="Target Fraud CB Rate"
+                    getKPIValue={(s) => s.kpis.chargebackRateTarget}
+                    weightedValue={aggregatedKPIs?.weightedChargebackRateTarget}
+                  />
+                )}
+              </div>
+              <PercentageInput
+                value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
+                onChange={(v) => updateKPI("chargebackReduction", v)}
+                readOnly={isSegmentMode}
+                warning={!isSegmentMode ? getValidationWarning("chargebackReduction", kpis.chargebackReduction) : null}
+                decimalPlaces={2}
+                max={10}
+                step={0.01}
+              />
+              {customerInputs.fraudCBRate !== undefined && (() => {
+                const currentCBRate = customerInputs.fraudCBRate;
+                const targetCBRate = isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction;
+                const improvement = currentCBRate - targetCBRate;
+                const improvementPct = currentCBRate > 0 ? ((improvement / currentCBRate) * 100).toFixed(1) : '0';
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Current: <span className="font-medium text-foreground">{currentCBRate}%</span>
+                    {targetCBRate !== undefined && targetCBRate !== currentCBRate && (
+                      <span className="ml-1">
+                        &gt; <span className="font-medium text-primary">{targetCBRate.toFixed(2)}%</span>
+                        <span className={`ml-1 font-medium ${improvement > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ({improvement > 0 ? '-' : '+'}{Math.abs(Number(improvementPct))}%)
+                        </span>
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
+            </div>
+          </div>
+        </Card>
+        );
+      })()}
+      
+      {challenge3 && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-medium text-primary">Manual Review Reduction</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <KPIInputRow
+              label="Target Review Rate (%)"
+              value={kpis.manualReviewReduction}
+              onValueChange={(v) => updateKPI("manualReviewReduction", v)}
+              currentValue={customerInputs.manualReviewPct}
+              currentValueLabel="Manual Review Rate"
+              fieldName="manualReviewReduction"
+              decimalPlaces={2}
+            />
+            <KPIInputRow
+              label="Target Time (min)"
+              value={kpis.reviewTimeReduction}
+              onValueChange={(v) => updateKPI("reviewTimeReduction", v)}
+              currentValue={customerInputs.timePerReview}
+              currentValueLabel="Time per Review"
+              currentValueUnit=" min"
+            />
+          </div>
+        </Card>
+      )}
+      
+      {challenge7 && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-medium text-primary">Chargeback Disputes</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <KPIInputRow
+              label="Target Fraud Dispute Rate (%)"
+              value={kpis.fraudDisputeRateImprovement}
+              onValueChange={(v) => updateKPI("fraudDisputeRateImprovement", v)}
+              currentValue={customerInputs.fraudDisputeRate}
+              currentValueLabel="Fraud Dispute Rate"
+              fieldName="fraudDisputeRateImprovement"
+              decimalPlaces={2}
+            />
+            <KPIInputRow
+              label="Target Fraud Win Rate (%)"
+              value={kpis.fraudWinRateChange}
+              onValueChange={(v) => updateKPI("fraudWinRateChange", v)}
+              currentValue={customerInputs.fraudWinRate}
+              currentValueLabel="Fraud Win Rate"
+              fieldName="fraudWinRateChange"
+              decimalPlaces={2}
+            />
+            <KPIInputRow
+              label="Target Service Dispute Rate (%)"
+              value={kpis.serviceDisputeRateImprovement}
+              onValueChange={(v) => updateKPI("serviceDisputeRateImprovement", v)}
+              currentValue={customerInputs.serviceDisputeRate}
+              currentValueLabel="Service Dispute Rate"
+              fieldName="serviceDisputeRateImprovement"
+              decimalPlaces={2}
+            />
+            <KPIInputRow
+              label="Target Service Win Rate (%)"
+              value={kpis.serviceWinRateChange}
+              onValueChange={(v) => updateKPI("serviceWinRateChange", v)}
+              currentValue={customerInputs.serviceWinRate}
+              currentValueLabel="Service Win Rate"
+              fieldName="serviceWinRateChange"
+              decimalPlaces={2}
+            />
+            <div className="space-y-2">
+              <Label className="text-sm">Target Time to Review CB (mins)</Label>
+              <NumericInput 
+                value={kpis.disputeTimeReduction} 
+                onChange={(v) => updateKPI("disputeTimeReduction", v)} 
+                placeholder="5"
+              />
+              <div className="min-h-5 flex items-center">
+                {(() => {
+                  const currentTime = customerInputs?.avgTimeToReviewCB ?? 20;
+                  const targetTime = kpis.disputeTimeReduction ?? 5;
+                  const percentChange = currentTime > 0 ? ((targetTime - currentTime) / currentTime) * 100 : 0;
+                  const sign = percentChange >= 0 ? '+' : '';
+                  const isReduction = targetTime < currentTime;
+                  return (
+                    <p className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                      Current: <span className="font-medium text-foreground">{currentTime} mins</span>
+                      <span className="ml-1.5">
+                        → <span className="font-medium text-primary">{targetTime} mins</span>
+                        <span className={`ml-1 font-medium ${isReduction ? 'text-green-600' : 'text-red-600'}`}>
+                          ({sign}{percentChange.toFixed(1)}%)
+                        </span>
+                      </span>
+                    </p>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {showAbuseKPIs && (
+        <Card className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-primary">
+              {challenge8 && show10_11KPIs 
+                ? 'Policy & Promotion Abuse Prevention' 
+                : challenge8 
+                  ? 'Policy Abuse Prevention' 
+                  : 'Promotion Abuse Prevention'}
+            </h4>
+            <AbuseBenchmarksModal
+              benchmarks={kpis.abuseBenchmarks || defaultAbuseBenchmarks}
+              onUpdate={(benchmarks) => onUpdate({ ...kpis, abuseBenchmarks: benchmarks })}
+            />
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm">Forter Catch Rate (%)</Label>
+              <NumericInput 
+                value={kpis.forterCatchRate} 
+                onChange={(v) => updateKPI("forterCatchRate", v)} 
+                placeholder="90"
+                decimalPlaces={2}
+                warning={getValidationWarning("forterCatchRate", kpis.forterCatchRate)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">Abuse AoV Multiplier (x)</Label>
+              <NumericInput 
+                value={kpis.abuseAovMultiplier} 
+                onChange={(v) => updateKPI("abuseAovMultiplier", v)} 
+                placeholder="1.5" 
+              />
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Advanced abuse assumptions (including promotion abuse % of GMV) are configured via the button above.
+          </p>
+        </Card>
+      )}
+
+      {challenge9 && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-medium text-primary">Instant Refunds</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm">NPS Increase from Instant Refunds</Label>
+              <NumericInput 
+                value={kpis.npsIncreaseFromInstantRefunds} 
+                onChange={(v) => updateKPI("npsIncreaseFromInstantRefunds", v)} 
+                placeholder="10"
+              />
+              <p className="text-xs text-muted-foreground">Expected NPS point increase</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">LSE NPS Benchmark (%)</Label>
+              <NumericInput 
+                value={kpis.lseNPSBenchmark} 
+                onChange={(v) => updateKPI("lseNPSBenchmark", v)} 
+                placeholder="1"
+                decimalPlaces={2}
+              />
+              <p className="text-xs text-muted-foreground">Revenue increase per 7 NPS points</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">Forter CS Contact Reduction (%)</Label>
+              <NumericInput 
+                value={kpis.forterCSReduction} 
+                onChange={(v) => updateKPI("forterCSReduction", v)} 
+                placeholder="78"
+                decimalPlaces={2}
+                warning={getValidationWarning("forterCSReduction", kpis.forterCSReduction)}
+              />
+              <p className="text-xs text-muted-foreground">Reduction in CS tickets from instant refunds</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {show12_13KPIs && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-medium text-primary">Account Takeover (ATO) Protection</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm">% of Fraudulent Logins (%)</Label>
+              <NumericInput 
+                value={kpis.pctFraudulentLogins} 
+                onChange={(v) => updateKPI("pctFraudulentLogins", v)} 
+                placeholder="1"
+                decimalPlaces={2}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">Churn Likelihood from ATO (%)</Label>
+              <NumericInput 
+                value={kpis.churnLikelihoodFromATO} 
+                onChange={(v) => updateKPI("churnLikelihoodFromATO", v)} 
+                placeholder="50"
+                decimalPlaces={2}
+                warning={getValidationWarning("churnLikelihoodFromATO", kpis.churnLikelihoodFromATO)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">ATO Catch Rate (%)</Label>
+              <NumericInput 
+                value={kpis.atoCatchRate} 
+                onChange={(v) => updateKPI("atoCatchRate", v)} 
+                placeholder="90"
+                decimalPlaces={2}
+                warning={getValidationWarning("atoCatchRate", kpis.atoCatchRate)}
+              />
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {show14_15KPIs && (
+        <Card className="p-4 space-y-4">
+          <h4 className="font-medium text-primary">Sign-up Protection</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm">% of Fraudulent Sign-ups (%)</Label>
+              <NumericInput 
+                value={kpis.pctFraudulentSignups} 
+                onChange={(v) => updateKPI("pctFraudulentSignups", v)} 
+                placeholder="10"
+                decimalPlaces={2}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">Forter Fraudulent Sign-up Reduction (%)</Label>
+              <NumericInput 
+                value={kpis.forterFraudulentSignupReduction} 
+                onChange={(v) => updateKPI("forterFraudulentSignupReduction", v)} 
+                placeholder="95"
+                decimalPlaces={2}
+                warning={getValidationWarning("forterFraudulentSignupReduction", kpis.forterFraudulentSignupReduction)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">Forter KYC Reduction (%)</Label>
+              <NumericInput 
+                value={kpis.forterKYCReduction} 
+                onChange={(v) => updateKPI("forterKYCReduction", v)} 
+                placeholder="80"
+                decimalPlaces={2}
+                warning={getValidationWarning("forterKYCReduction", kpis.forterKYCReduction)}
+              />
+              <p className="text-xs text-muted-foreground">Reduction in KYC checks needed</p>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+};
