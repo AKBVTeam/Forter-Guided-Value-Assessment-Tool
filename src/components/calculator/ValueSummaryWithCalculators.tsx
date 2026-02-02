@@ -34,6 +34,7 @@ import { ForterKPIs, defaultForterKPIs } from "./ForterKPIConfig";
 import {
   calculateChallenge1,
   calculateChallenge245,
+  getCompletedTransactionCount,
   calculateChallenge3,
   calculateChallenge7,
   calculateChallenge8,
@@ -136,7 +137,7 @@ export const ValueSummaryWithCalculators = ({
     }
   }, [driverStates, DRIVER_STATES_KEY]);
   
-  const [showInMillions, setShowInMillions] = useState(true);
+  const [showInMillions, setShowInMillions] = useState(false);
 
   const driverIconMap: Record<string, LucideIcon> = {
     "c1-revenue": TrendingUp,
@@ -553,14 +554,9 @@ export const ValueSummaryWithCalculators = ({
   const challenge9Results = useMemo(() => {
     if (!isChallenge9Selected) return null;
 
-    const grossAttempts = formData.amerGrossAttempts ?? 0;
-    const hasPaymentChallenges = isChallenge1Selected || isChallenge245Selected;
-    const approvalRate = hasPaymentChallenges ? (formData.amerPreAuthApprovalRate ?? 0) : 100;
-    const approvedTransactions = grossAttempts * (approvalRate / 100);
-    
-    const currentEcommerceSales = hasPaymentChallenges 
-      ? (formData.amerAnnualGMV ?? 0) * (approvalRate / 100)
-      : (formData.amerAnnualGMV ?? 0);
+    const completedCount = getCompletedTransactionCount(formData, isChallenge1Selected, isChallenge245Selected);
+    const effectiveAOV = formData.completedAOV ?? ((formData.amerGrossAttempts ?? 0) > 0 ? (formData.amerAnnualGMV ?? 0) / (formData.amerGrossAttempts ?? 1) : 0);
+    const currentEcommerceSales = completedCount * effectiveAOV;
 
     const inputs: Challenge9Inputs = {
       currentEcommerceSales,
@@ -878,12 +874,13 @@ export const ValueSummaryWithCalculators = ({
   );
   const totalValue = businessGrowthTotal + riskAvoidanceTotal + riskMitigationTotal;
 
-  // EBITDA Contribution = (GMV Uplift * margin %) + Cost Reduction + Risk Mitigation
-  // For marketplaces: use commission rate instead of gross margin
+  // EBITDA Contribution = (GMV Uplift × margin) + Cost Reduction + Risk Mitigation
+  // Retailer: GMV × gross margin; Marketplace: GMV × commission × gross margin (both applied)
   const isMarketplace = formData.isMarketplace || false;
   const commissionRate = formData.commissionRate || 100;
-  const effectiveMarginPercent = isMarketplace ? commissionRate : grossMarginPercent;
-  const gmvProfitability = businessGrowthTotal * (effectiveMarginPercent / 100);
+  const gmvProfitability = isMarketplace
+    ? businessGrowthTotal * (commissionRate / 100) * (grossMarginPercent / 100)
+    : businessGrowthTotal * (grossMarginPercent / 100);
   const ebitdaContribution = gmvProfitability + riskAvoidanceTotal + riskMitigationTotal;
 
   // Waterfall chart data - limit to top 5 bars + "Other" bucket to prevent overlap
@@ -1043,7 +1040,7 @@ export const ValueSummaryWithCalculators = ({
           {/* GMV Uplift Section */}
           {businessGrowthDrivers.length > 0 && (
             <Collapsible open={businessGrowthOpen} onOpenChange={setBusinessGrowthOpen}>
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]">
                 <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-2">
                     {businessGrowthOpen ? (
@@ -1062,7 +1059,7 @@ export const ValueSummaryWithCalculators = ({
                       return (
                         <div
                           key={driver.id}
-                          className={`p-4 border-b last:border-b-0 flex items-center justify-between ${
+                          className={`p-4 border-b last:border-b-0 flex items-center justify-between transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                             !driver.enabled && "opacity-50"
                           }`}
                         >
@@ -1102,7 +1099,7 @@ export const ValueSummaryWithCalculators = ({
           {/* Cost Reduction Section */}
           {riskAvoidanceDrivers.length > 0 && (
             <Collapsible open={riskAvoidanceOpen} onOpenChange={setRiskAvoidanceOpen}>
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]">
                 <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-2">
                     {riskAvoidanceOpen ? (
@@ -1121,7 +1118,7 @@ export const ValueSummaryWithCalculators = ({
                       return (
                         <div
                           key={driver.id}
-                          className={`p-4 border-b last:border-b-0 flex items-center justify-between ${
+                          className={`p-4 border-b last:border-b-0 flex items-center justify-between transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                             !driver.enabled && "opacity-50"
                           }`}
                         >
@@ -1161,7 +1158,7 @@ export const ValueSummaryWithCalculators = ({
           {/* Risk Mitigation Section */}
           {riskMitigationDrivers.length > 0 && (
             <Collapsible open={riskMitigationOpen} onOpenChange={setRiskMitigationOpen}>
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]">
                 <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-2">
                     {riskMitigationOpen ? (
@@ -1180,7 +1177,7 @@ export const ValueSummaryWithCalculators = ({
                       return (
                         <div
                           key={driver.id}
-                          className={`p-4 border-b last:border-b-0 flex items-center justify-between ${
+                          className={`p-4 border-b last:border-b-0 flex items-center justify-between transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                             !driver.enabled && "opacity-50"
                           }`}
                         >
@@ -1296,19 +1293,28 @@ export const ValueSummaryWithCalculators = ({
             </div>
           </Card>
 
-          {/* Performance Highlights - only show when at least one relevant driver is enabled */}
+          {/* Performance Highlights - only show when driver is enabled AND metric is an improvement */}
           {(() => {
-            // Check which highlights should be shown based on enabled drivers
-            const showApprovalRate = (challenge1Results && driverStates["c1-revenue"] !== false) || 
-                                     (challenge245Results && driverStates["c245-revenue"] !== false);
-            const show3DS = challenge245Results && driverStates["c245-revenue"] !== false;
-            const showChargeback = (challenge1Results && driverStates["c1-chargeback"] !== false) || 
-                                   (challenge245Results && driverStates["c245-chargeback"] !== false);
-            const showManualReview = challenge3Results && driverStates["c3-review"] !== false;
-            const showDispute = challenge7Results && driverStates["c7-disputes"] !== false;
-            const showAbuse = challenge8Results && (driverStates["c8-returns"] !== false || driverStates["c8-inr"] !== false);
+            const approvalImprovement = challenge245Results ? forterKPIs.preAuthApprovalImprovement : forterKPIs.approvalRateImprovement;
+            const showApprovalRate = ((challenge1Results && driverStates["c1-revenue"] !== false) || (challenge245Results && driverStates["c245-revenue"] !== false)) && (approvalImprovement ?? 0) > 0;
+            const threeDSDecreasePct = (formData.amer3DSChallengeRate || 30) > 0
+              ? Math.round(((formData.amer3DSChallengeRate || 30) - (forterKPIs.threeDSReduction ?? 0)) / (formData.amer3DSChallengeRate || 30) * 100)
+              : 0;
+            const show3DS = challenge245Results && driverStates["c245-revenue"] !== false && threeDSDecreasePct > 0;
+            const currentCBRate = formData.fraudCBRate || 0.5;
+            const bpsReduction = forterKPIs.chargebackReductionIsAbsolute
+              ? Math.round((currentCBRate - (forterKPIs.chargebackReduction ?? 0)) * 100)
+              : Math.round(currentCBRate * (forterKPIs.chargebackReduction ?? 50) / 100 * 100);
+            const showChargeback = ((challenge1Results && driverStates["c1-chargeback"] !== false) || (challenge245Results && driverStates["c245-chargeback"] !== false)) && bpsReduction > 0;
+            const manualReviewCurrent = formData.amerManualReviewRate ?? formData.manualReviewPct ?? 5;
+            const manualReviewDecreasePct = manualReviewCurrent > 0
+              ? Math.round(((manualReviewCurrent - (forterKPIs.manualReviewReduction ?? 0)) / manualReviewCurrent) * 100)
+              : 0;
+            const showManualReview = challenge3Results && driverStates["c3-review"] !== false && manualReviewDecreasePct > 0;
+            const showDisputeBase = challenge7Results && driverStates["c7-disputes"] !== false;
+            const showAbuse = challenge8Results && (driverStates["c8-returns"] !== false || driverStates["c8-inr"] !== false) && (forterKPIs.forterCatchRate ?? 0) > 0;
             
-            const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDispute || showAbuse;
+            const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDisputeBase || showAbuse;
             
             if (!hasAnyHighlight) return null;
             
@@ -1319,7 +1325,7 @@ export const ValueSummaryWithCalculators = ({
                   Performance Highlights
                 </h4>
                 <div className="space-y-2">
-                  {/* Approval Rate - show when GMV uplift driver is enabled */}
+                  {/* Approval Rate - only when improvement > 0 */}
                   {showApprovalRate && (
                     <div className="flex justify-between items-center py-2 border-b">
                       <span className="text-sm text-muted-foreground">Approval Rate with Forter</span>
@@ -1394,72 +1400,35 @@ export const ValueSummaryWithCalculators = ({
                       </div>
                     );
                   })()}
-                  {/* 3DS Reduction - show when Challenge 245 GMV driver is enabled */}
-                  {show3DS && (() => {
-                    // Calculate percentage reduction from customer input to Forter target
-                    const current3DSRate = formData.amer3DSChallengeRate || 30;
-                    const target3DSRate = forterKPIs.threeDSReduction ?? 0;
-                    // Percentage decrease = ((current - target) / current) * 100
-                    const percentageDecrease = current3DSRate > 0 
-                      ? Math.round(((current3DSRate - target3DSRate) / current3DSRate) * 100)
-                      : 0;
-                    
-                    return (
-                      <div className="flex justify-between items-center py-2 border-b">
-                        <span className="text-sm text-muted-foreground">3DS Reduction</span>
-                        <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                          -{percentageDecrease}%
-                        </Badge>
-                      </div>
-                    );
-                  })()}
-                  {/* Chargeback Reduction - show when chargeback driver is enabled, in basis points */}
-                  {showChargeback && (() => {
-                    // Calculate actual CB rate reduction in basis points
-                    // If absolute mode, reduction = current - target; otherwise use reduction value as percentage of current
-                    const currentCBRate = formData.fraudCBRate || 0.5;
-                    let cbRateReduction: number;
-                    if (forterKPIs.chargebackReductionIsAbsolute) {
-                      const targetCBRate = forterKPIs.chargebackReduction ?? 0;
-                      cbRateReduction = currentCBRate - targetCBRate;
-                    } else {
-                      // Relative mode: reduction percentage of current rate
-                      cbRateReduction = currentCBRate * (forterKPIs.chargebackReduction ?? 50) / 100;
-                    }
-                    // Convert to basis points (0.1% = 10bps, so multiply by 100)
-                    const bpsReduction = Math.round(cbRateReduction * 100);
-                    
-                    return (
-                      <div className="flex justify-between items-center py-2 border-b">
-                        <span className="text-sm text-muted-foreground">Chargeback Reduction</span>
-                        <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400">
-                          -{bpsReduction}bps
-                        </Badge>
-                      </div>
-                    );
-                  })()}
-                  {/* Manual Review - show when manual review driver is enabled */}
-                  {showManualReview && (() => {
-                    // Calculate percentage reduction from customer input to Forter target
-                    const currentManualReviewRate = formData.amerManualReviewRate || 5;
-                    const targetManualReviewRate = forterKPIs.manualReviewReduction ?? 0;
-                    // Percentage decrease = ((current - target) / current) * 100
-                    const percentageDecrease = currentManualReviewRate > 0 
-                      ? Math.round(((currentManualReviewRate - targetManualReviewRate) / currentManualReviewRate) * 100)
-                      : 0;
-                    
-                    return (
-                      <div className="flex justify-between items-center py-2 border-b">
-                        <span className="text-sm text-muted-foreground">Manual Review Eliminated</span>
-                        <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400">
-                          -{percentageDecrease}%
-                        </Badge>
-                      </div>
-                    );
-                  })()}
-                  {/* Recovery Rate - show when dispute driver is enabled */}
-                  {showDispute && challenge7Results && (() => {
-                    // Calculate weighted average recovery rate increase
+                  {/* 3DS Reduction - only when percentageDecrease > 0 (improvement) */}
+                  {show3DS && (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm text-muted-foreground">3DS Reduction</span>
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        {threeDSDecreasePct}%
+                      </Badge>
+                    </div>
+                  )}
+                  {/* Fraud Chargeback Reduction - only when bpsReduction > 0 (improvement) */}
+                  {showChargeback && (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm text-muted-foreground">Fraud Chargeback Reduction</span>
+                      <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                        {bpsReduction}bps
+                      </Badge>
+                    </div>
+                  )}
+                  {/* Manual Review - only when percentageDecrease > 0 (improvement) */}
+                  {showManualReview && (
+                    <div className="flex justify-between items-center py-2 border-b">
+                      <span className="text-sm text-muted-foreground">Manual Review Eliminated</span>
+                      <Badge className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                        {manualReviewDecreasePct}%
+                      </Badge>
+                    </div>
+                  )}
+                  {/* Recovery Rate - only when recoveryRateIncrease > 0 (improvement) */}
+                  {showDisputeBase && challenge7Results && (() => {
                     const transactionValue = formData.amerAnnualGMV || 0;
                     const fraudCBRate = formData.fraudCBRate || 0.5;
                     const serviceCBRate = formData.serviceCBRate || 0.5;
@@ -1467,35 +1436,24 @@ export const ValueSummaryWithCalculators = ({
                     const fraudWinRate = formData.fraudWinRate || 70;
                     const serviceDisputeRate = formData.serviceDisputeRate || 30;
                     const serviceWinRate = formData.serviceWinRate || 50;
-                    
                     const estFraudCB = transactionValue * (fraudCBRate / 100);
                     const estServiceCB = transactionValue * (serviceCBRate / 100);
                     const totalCB = estFraudCB + estServiceCB;
-                    
                     if (totalCB === 0) return null;
-                    
-                    // Current recovery rates
                     const custFraudRecoveryRate = (fraudDisputeRate / 100) * (fraudWinRate / 100);
                     const custServiceRecoveryRate = (serviceDisputeRate / 100) * (serviceWinRate / 100);
-                    
-                    // Forter recovery rates
                     const fortFraudDisputeRate = Math.min(100, fraudDisputeRate + forterKPIs.fraudDisputeRateImprovement);
                     const fortFraudWinRate = Math.max(0, fraudWinRate + forterKPIs.fraudWinRateChange);
                     const fortServiceDisputeRate = Math.min(100, serviceDisputeRate + forterKPIs.serviceDisputeRateImprovement);
                     const fortServiceWinRate = Math.max(0, serviceWinRate + forterKPIs.serviceWinRateChange);
-                    
                     const fortFraudRecoveryRate = (fortFraudDisputeRate / 100) * (fortFraudWinRate / 100);
                     const fortServiceRecoveryRate = (fortServiceDisputeRate / 100) * (fortServiceWinRate / 100);
-                    
-                    // Weighted average recovery rates
                     const fraudWeight = estFraudCB / totalCB;
                     const serviceWeight = estServiceCB / totalCB;
-                    
                     const custWeightedRecovery = (custFraudRecoveryRate * fraudWeight) + (custServiceRecoveryRate * serviceWeight);
                     const fortWeightedRecovery = (fortFraudRecoveryRate * fraudWeight) + (fortServiceRecoveryRate * serviceWeight);
-                    
                     const recoveryRateIncrease = (fortWeightedRecovery - custWeightedRecovery) * 100;
-                    
+                    if (recoveryRateIncrease <= 0) return null;
                     return (
                       <div className="flex justify-between items-center py-2 border-b">
                         <span className="text-sm text-muted-foreground">Recovery Rate Increase</span>

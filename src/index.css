@@ -6,8 +6,10 @@
 All colors MUST be HSL.
 */
 
+/* Proxima Nova: load via Adobe Fonts (add your kit in index.html) or self-host. Fallbacks used until font is available. */
 @layer base {
   :root {
+    --font-sans: "Proxima Nova", "Helvetica Neue", Helvetica, Arial, sans-serif;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -101,6 +103,7 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
   }
 }
 

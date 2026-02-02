@@ -22,7 +22,7 @@ import { PercentageInput } from "@/components/calculator/PercentageInput";
 import { IncludeExcludeChip } from "@/components/calculator/IncludeExcludeChip";
 import { Segment, copyGlobalInputsToSegment } from "@/lib/segments";
 import { ChevronDown, Copy } from "lucide-react";
-import { getCurrencySymbol, countryBenchmarks, verticalBenchmarks, getWeightedApprovalRate } from "@/lib/benchmarkData";
+import { getCurrencySymbol, countryBenchmarksSortedForHQ, verticalBenchmarks, getWeightedApprovalRate } from "@/lib/benchmarkData";
 import { toast } from "sonner";
 
 interface SegmentEditorModalProps {
@@ -241,7 +241,7 @@ export function SegmentEditorModal({
                     <SelectValue placeholder="Select country" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
-                    {countryBenchmarks.map((country) => (
+                    {countryBenchmarksSortedForHQ.map((country) => (
                       <SelectItem key={country.name} value={country.name}>
                         {country.flag} {country.name}
                       </SelectItem>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CalculatorRow } from "@/lib/calculations";
@@ -29,7 +29,7 @@ const FIELD_LABELS: Record<string, string> = {
   amerGrossAttempts: "Transaction attempts",
   amerAnnualGMV: "Annual GMV",
   amerGrossMarginPercent: "Gross margin %",
-  amerPreAuthApprovalRate: "Fraud approval rate %",
+  amerPreAuthApprovalRate: "Pre-auth fraud approval rate %",
   amerPostAuthApprovalRate: "Post-auth fraud approval rate %",
   completedAOV: "Completed AOV",
   fraudCBRate: "Fraud chargeback rate %",
@@ -84,24 +84,20 @@ const formatForterImprovement = (value: string | undefined) => {
   if (!value) return "";
   let str = String(value).trim();
 
-  // Remove any existing %pts and replace with %
-  const normalizePercent = (s: string) => {
-    return s.replace(/%pts/g, "%");
-  };
-
-  if (str === "0" || str === "0%" || str === "0.00%" || str === "$0" || str === "-$0") {
-    return normalizePercent(str.replace("-", ""));
+  // Display as-is: % improvement (no suffix) or % pts for percentage-point improvements
+  if (str === "0" || str === "0%" || str === "0.00%" || str === "0.0% pts" || str === "0% pts" || str === "$0" || str === "-$0") {
+    return str.replace("-", "");
   }
 
   if (str.startsWith("+") || (str.startsWith("(") && str.endsWith(")"))) {
-    return normalizePercent(str);
+    return str;
   }
 
   if (str.startsWith("-")) {
-    return normalizePercent(`(${str.slice(1)})`);
+    return `(${str.slice(1)})`;
   }
 
-  return normalizePercent(`+${str}`);
+  return `+${str}`;
 };
 
 const getImprovementTone = (value: string | undefined): "positive" | "negative" | "neutral" => {
@@ -110,7 +106,7 @@ const getImprovementTone = (value: string | undefined): "positive" | "negative" 
   if (str.startsWith("-")) return "negative";
   if (str.startsWith("(")) return "negative";
   if (str.startsWith("+")) return "positive";
-  if (str === "0" || str === "0%" || str === "0.00%" || str === "$0") return "neutral";
+  if (str === "0" || str === "0%" || str === "0.00%" || str === "0.0% pts" || str === "0% pts" || str === "$0") return "neutral";
   if (str.startsWith("0")) return "neutral";
   return "positive";
 };
@@ -137,6 +133,8 @@ export const EditableCalculatorDisplay = ({
 }: EditableCalculatorDisplayProps) => {
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; type: 'customer' | 'forter' } | null>(null);
   const [editValue, setEditValue] = useState<string>("");
+  // Optimistic display: show committed value until row data catches up (prevents "bounce back")
+  const lastCommittedCustomerRef = useRef<{ rowIndex: number; field: string; value: number; valueType?: string } | null>(null);
 
   const handleStartEdit = useCallback((rowIndex: number, type: 'customer' | 'forter', currentValue: number | undefined) => {
     setEditingCell({ rowIndex, type });
@@ -146,15 +144,22 @@ export const EditableCalculatorDisplay = ({
   const handleEndEdit = useCallback((row: CalculatorRow) => {
     if (!editingCell) return;
     
-    const numValue = parseFloat(editValue);
+    let numValue = parseFloat(editValue);
     if (!isNaN(numValue)) {
+      // Clamp percentage fields to 0-100 so committed value is valid and persists
+      if (row.valueType === 'percent') {
+        numValue = Math.max(0, Math.min(100, numValue));
+      }
+      const valueAsNumber = Number(numValue);
       if (editingCell.type === 'customer' && row.editableCustomerField) {
         // If the customer field is actually a Forter KPI field, or if the row has an editableForterField
         // (meaning it's a shared field like abuseAovMultiplier), route to Forter handler
         if ((FORTER_KPI_FIELDS.has(row.editableCustomerField) || row.editableForterField) && onForterFieldChange) {
-          onForterFieldChange(row.editableCustomerField as keyof ForterKPIs, numValue);
+          onForterFieldChange(row.editableCustomerField as keyof ForterKPIs, valueAsNumber);
         } else if (onCustomerFieldChange) {
-          onCustomerFieldChange(row.editableCustomerField as keyof CalculatorData, numValue);
+          onCustomerFieldChange(row.editableCustomerField as keyof CalculatorData, valueAsNumber);
+          // Optimistic display: show this value until row.rawCustomerValue catches up (avoids bounce back)
+          lastCommittedCustomerRef.current = { rowIndex: editingCell.rowIndex, field: row.editableCustomerField, value: valueAsNumber, valueType: row.valueType };
         }
       } else if (editingCell.type === 'forter' && row.editableForterField && onForterFieldChange) {
         // Handle special case: Forter outcome is calculated from reduction percentage
@@ -197,6 +202,24 @@ export const EditableCalculatorDisplay = ({
       setEditValue("");
     }
   }, [handleEndEdit]);
+
+  // Clear optimistic ref when row data catches up (so we don't show stale optimistic value)
+  useEffect(() => {
+    const ref = lastCommittedCustomerRef.current;
+    if (!ref || ref.rowIndex < 0 || ref.rowIndex >= (rows?.length ?? 0)) return;
+    const row = rows[ref.rowIndex];
+    if (!row || row.editableCustomerField !== ref.field) return;
+    const rowVal = row.rawCustomerValue as number | undefined;
+    if (rowVal !== undefined && Math.abs(rowVal - ref.value) < 0.01) {
+      lastCommittedCustomerRef.current = null;
+    }
+  }, [rows]);
+
+  const formatOptimisticValue = (value: number, valueType?: string) => {
+    if (valueType === 'percent') return `${value.toFixed(1)}%`;
+    if (valueType === 'currency') return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return value.toLocaleString();
+  };
 
   const getValueDriverBadge = (valueDriver?: "revenue" | "profit" | "cost") => {
     if (!valueDriver) return null;
@@ -323,29 +346,12 @@ export const EditableCalculatorDisplay = ({
                       )}
                     </div>
                   </td>
-                  <td 
-                    className={`p-4 align-middle text-right text-sm font-medium ${customerEditable ? 'cursor-pointer hover:bg-primary/10 group' : ''}`}
-                    onClick={() => customerEditable && handleStartEdit(index, 'customer', row.rawCustomerValue)}
-                  >
+                  <td className="p-4 align-middle text-right text-sm font-medium">
                     {isEditingCustomer ? (
                       <Input
                         type="number"
                         value={editValue}
-                        onChange={(e) => {
-                          const newValue = e.target.value;
-                          setEditValue(newValue);
-                          // Commit immediately on change (fixes spinner button bounce)
-                          const numValue = parseFloat(newValue);
-                          if (!isNaN(numValue) && row.editableCustomerField) {
-                            // If the customer field is actually a Forter KPI field, or if the row has an editableForterField
-                            // (meaning it's a shared field like abuseAovMultiplier), route to Forter handler
-                            if ((FORTER_KPI_FIELDS.has(row.editableCustomerField) || row.editableForterField) && onForterFieldChange) {
-                              onForterFieldChange(row.editableCustomerField as keyof ForterKPIs, numValue);
-                            } else if (onCustomerFieldChange) {
-                              onCustomerFieldChange(row.editableCustomerField as keyof CalculatorData, numValue);
-                            }
-                          }
-                        }}
+                        onChange={(e) => setEditValue(e.target.value)}
                         onBlur={() => handleEndEdit(row)}
                         onKeyDown={(e) => handleKeyDown(e, row)}
                         className="h-7 w-24 text-right ml-auto"
@@ -355,16 +361,28 @@ export const EditableCalculatorDisplay = ({
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary/5 border border-primary/20 text-primary hover:bg-primary/10 transition-colors">
-                              {row.customerInput}
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(index, 'customer', row.rawCustomerValue)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary/5 border border-primary/20 text-primary hover:bg-primary/10 transition-colors cursor-pointer text-right w-full justify-end min-w-0 font-medium"
+                            >
+                              {(() => {
+                                const ref = lastCommittedCustomerRef.current;
+                                const showOptimistic = ref && ref.rowIndex === index && ref.field === row.editableCustomerField && (row.rawCustomerValue === undefined || Math.abs((row.rawCustomerValue as number) - ref.value) >= 0.01);
+                                return showOptimistic ? formatOptimisticValue(ref!.value, ref!.valueType) : row.customerInput;
+                              })()}
                               <span className="text-xs opacity-60">✎</span>
-                            </span>
+                            </button>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-xs">
                             <p className="text-xs">
                               <span className="font-medium">Edit: </span>
                               {FIELD_LABELS[row.editableCustomerField as string] || row.editableCustomerField}
-                              {row.editableCustomerField === 'monthlyLogins' || row.editableCustomerField === 'monthlySignups' ? (
+                              {row.editableCustomerField === 'amerPreAuthApprovalRate' ? (
+                                <span className="block mt-1 text-muted-foreground">
+                                  Can also be edited in the Inputs modal.
+                                </span>
+                              ) : row.editableCustomerField === 'monthlyLogins' || row.editableCustomerField === 'monthlySignups' ? (
                                 <span className="block mt-1 text-muted-foreground">
                                   Raw value: {row.rawCustomerValue?.toLocaleString()}
                                 </span>
@@ -380,46 +398,12 @@ export const EditableCalculatorDisplay = ({
                   <td className={`p-4 align-middle text-right text-sm font-medium bg-blue-50 dark:bg-blue-950/30 ${toneClass}`.trim()}>
                     {improvementText}
                   </td>
-                  <td 
-                    className={`p-4 align-middle text-right text-sm font-medium ${forterEditable && !row.readOnlyForterOutcome ? 'cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/20 group' : ''}`}
-                    onClick={() => forterEditable && !row.readOnlyForterOutcome && handleStartEdit(index, 'forter', row.rawForterValue)}
-                  >
+                  <td className="p-4 align-middle text-right text-sm font-medium">
                     {isEditingForter ? (
                       <Input
                         type="number"
                         value={editValue}
-                        onChange={(e) => {
-                          const newValue = e.target.value;
-                          setEditValue(newValue);
-                          // Commit immediately on change (fixes spinner button bounce)
-                          const numValue = parseFloat(newValue);
-                          if (!isNaN(numValue) && row.editableForterField && onForterFieldChange) {
-                            // Handle special case: Forter outcome is calculated from reduction percentage
-                            // This applies to 'forter-outcome-from-reduction' and 'abuse-benchmark-outcome' footnotes
-                            if ((row.footnote === 'forter-outcome-from-reduction' || row.footnote === 'abuse-benchmark-outcome') && row.rawCustomerValue !== undefined && formData && forterKPIs) {
-                              const customerValue = row.rawCustomerValue;
-                              const forterOutcomePct = numValue; // User entered the Forter outcome percentage
-                              
-                              // Calculate reduction: outcome = customer * (1 - reduction/100)
-                              // So: reduction = (1 - outcome/customer) * 100
-                              if (customerValue > 0) {
-                                const reduction = (1 - forterOutcomePct / customerValue) * 100;
-                                // Clamp reduction to 0-100%
-                                const clampedReduction = Math.max(0, Math.min(100, reduction));
-                                onForterFieldChange(row.editableForterField as keyof ForterKPIs, clampedReduction);
-                              } else {
-                                onForterFieldChange(row.editableForterField as keyof ForterKPIs, numValue);
-                              }
-                            } else if (row.footnote === 'abuse-catch-rate-outcome') {
-                              // For abuse-catch-rate-outcome: when editing Forter improvement (catch rate),
-                              // the value entered IS the catch rate, so use it directly
-                              const catchRate = Math.max(0, Math.min(100, numValue));
-                              onForterFieldChange(row.editableForterField as keyof ForterKPIs, catchRate);
-                            } else {
-                              onForterFieldChange(row.editableForterField as keyof ForterKPIs, numValue);
-                            }
-                          }
-                        }}
+                        onChange={(e) => setEditValue(e.target.value)}
                         onBlur={() => handleEndEdit(row)}
                         onKeyDown={(e) => handleKeyDown(e, row)}
                         className="h-7 w-24 text-right ml-auto"
@@ -429,10 +413,14 @@ export const EditableCalculatorDisplay = ({
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(index, 'forter', row.rawForterValue)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer text-right w-full justify-end min-w-0 font-medium"
+                            >
                               {row.forterOutcome}
                               <span className="text-xs opacity-60">✎</span>
-                            </span>
+                            </button>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-xs">
                             <p className="text-xs">

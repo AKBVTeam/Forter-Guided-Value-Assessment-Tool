@@ -23,6 +23,14 @@ export const createCurrencyFormatter = (currencyCode: string = 'USD') => {
   };
 };
 
+/** Relative % improvement for display: (forter - customer) / customer * 100. Use for % improvements (not %pts). */
+export const formatPctImprovementRel = (customerVal: number, forterVal: number, decimals = 1): string => {
+  if (typeof customerVal !== 'number' || typeof forterVal !== 'number' || customerVal === 0) return '—';
+  const rel = ((forterVal - customerVal) / customerVal) * 100;
+  const sign = rel >= 0 ? '+' : '';
+  return `${sign}${rel.toFixed(decimals)}%`;
+};
+
 // ============================================================
 // CHALLENGE 1: False fraud declines
 // ============================================================
@@ -82,6 +90,8 @@ export interface Challenge1Results {
     deduplicatedProfitUplift?: number;
     deduplicationApplied?: boolean;
     deduplicationBreakdown?: DeduplicationBreakdown;
+    /** Current-state completed transaction count (for refund volume formula: attempts × completion rate × refund rate) */
+    customerCompletedTransactionCount: number;
   };
   // Calculator 2: Reduce fraud chargebacks
   calculator2: {
@@ -198,7 +208,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
   const displayProfitabilityImprovement = deduplicationEnabled ? profitabilityImprovementDeduplicated : profitabilityImprovement;
   
   // Completion rate = Value of approved transactions / eCommerce sales attempts ($)
-  // Per spreadsheet row q = p / b (deduplicated value of approved transactions / transaction attempts value)
+  // When dedup is on, Forter side uses f'/b (displayForterApprovedValue = forterApprovedValueDeduplicated)
   const customerCompletionRate = transactionAttemptsValue > 0 
     ? (customerApprovedValue / transactionAttemptsValue) * 100 
     : approvalRate;
@@ -215,7 +225,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     { formula: 'a', label: 'Transaction Attempts (#)', customerInput: fmt(transactionAttempts), forterImprovement: '', forterOutcome: fmt(transactionAttempts), editableCustomerField: 'amerGrossAttempts', rawCustomerValue: transactionAttempts, valueType: 'number' },
     { formula: 'b', label: 'Transaction Attempts ($)', customerInput: fmtCur(transactionAttemptsValue), forterImprovement: '', forterOutcome: fmtCur(transactionAttemptsValue), editableCustomerField: 'amerAnnualGMV', rawCustomerValue: transactionAttemptsValue, valueType: 'currency' },
     { formula: 'c = b/a', label: 'Average order value (calculated)', customerInput: fmtCur(calculatedAOV), forterImprovement: '', forterOutcome: fmtCur(calculatedAOV), isCalculation: true },
-    { formula: 'd', label: 'Fraud approval rate (%)', customerInput: fmtPct(approvalRate), forterImprovement: `${forterApprovalRateImprovement.toFixed(1)}%`, forterOutcome: fmtPct(forterApprovalRate), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: approvalRate, editableForterField: 'approvalRateImprovement', rawForterValue: forterApprovalRate, valueType: 'percent' },
+    { formula: 'd', label: 'Fraud approval rate (%)', customerInput: fmtPct(approvalRate), forterImprovement: formatPctImprovementRel(approvalRate, forterApprovalRate), forterOutcome: fmtPct(forterApprovalRate), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: approvalRate, editableForterField: 'approvalRateImprovement', rawForterValue: forterApprovalRate, valueType: 'percent' },
     { formula: 'e = a*d', label: 'Approved transactions (#)', customerInput: fmt(Math.round(customerApprovedTx)), forterImprovement: fmt(Math.round(approvedTxImprovement)), forterOutcome: fmt(Math.round(forterApprovedTx)), isCalculation: true },
     { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: '', forterOutcome: fmtCur(effectiveCompletedAOV), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, valueType: 'currency' },
     // Always show the non-deduplicated value first
@@ -224,7 +234,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     ...(deduplicationEnabled ? [
       { formula: 'f\' = f - dedup', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: fmtCur(approvedValueImprovementDeduplicated), forterOutcome: fmtCur(forterApprovedValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
-    { formula: 'g = f/b', label: 'Completion rate (%)', customerInput: fmtPct(customerCompletionRate), forterImprovement: `${completionRateImprovement.toFixed(1)}%`, forterOutcome: fmtPct(forterCompletionRate), isCalculation: true },
+    { formula: 'g = f/b', label: 'Completion rate (%)', customerInput: fmtPct(customerCompletionRate), forterImprovement: formatPctImprovementRel(customerCompletionRate, forterCompletionRate), forterOutcome: fmtPct(forterCompletionRate), isCalculation: true },
     { formula: 'h', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: isMarketplace ? 'commissionRate' : 'amerGrossMarginPercent', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
     // For marketplaces: add Revenue row (GMV × Commission), then Gross Margin row, then Profitability (Revenue × Margin)
     // For retailers: skip Revenue, just show Profitability (GMV × Gross Margin)
@@ -260,7 +270,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: '', forterOutcome: fmtCur(displayForterApprovedValue), isCalculation: true },
-    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: `${cbRateImprovement.toFixed(1)}%`, forterOutcome: fmtPct(forterCBDecimal * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: forterCBDecimal * 100, valueType: 'percent' },
+    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, forterCBDecimal * 100), forterOutcome: fmtPct(forterCBDecimal * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: forterCBDecimal * 100, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Fraud chargebacks', customerInput: fmtCur(-customerChargebacks), forterImprovement: fmtCur(chargebackSavings), forterOutcome: fmtCur(-forterChargebacks), valueDriver: 'cost', isCalculation: true },
   ];
 
@@ -284,6 +294,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
       deduplicatedProfitUplift: profitabilityImprovementDeduplicated,
       deduplicationApplied: deduplicationEnabled,
       deduplicationBreakdown,
+      customerCompletedTransactionCount: customerApprovedTx,
     },
     calculator2: { rows: calculator2Rows, costReduction: chargebackSavings },
   };
@@ -334,6 +345,8 @@ export interface Challenge245Results {
     deduplicatedProfitUplift?: number;
     deduplicationApplied?: boolean;
     deduplicationBreakdown?: DeduplicationBreakdown;
+    /** Current-state completed transaction count (for refund volume formula: attempts × completion rate × refund rate) */
+    customerCompletedTransactionCount: number;
   };
   calculator2: { rows: CalculatorRow[]; costReduction: number; };
 }
@@ -402,7 +415,8 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const custFinalApproved = custPostBankTx * custPostAuth;
   // Use Completed AOV for value of approved transactions (q = Completed AOV × p)
   const custFinalValue = custFinalApproved * effectiveCompletedAOV;
-  const custCompletionRate = transactionAttempts > 0 ? (custFinalApproved / transactionAttempts) * 100 : 0;
+  // Completion rate (%) = Value of approved transactions ($) / Transaction Attempts ($) — r = q/b
+  const custCompletionRate = transactionAttemptsValue > 0 ? (custFinalValue / transactionAttemptsValue) * 100 : 0;
   // For marketplaces: Revenue = GMV × Commission, then Profitability = Revenue × Gross Margin
   const custRevenue = isMarketplace ? custFinalValue * commissionDecimal : custFinalValue;
   const custProfitability = custFinalValue * profitabilityMultiplier;
@@ -418,7 +432,8 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const fortFinalApproved = fortPostBankTx * fortPostAuth;
   // Use Completed AOV for value of approved transactions (q = Completed AOV × p)
   const fortFinalValue = fortFinalApproved * effectiveCompletedAOV;
-  const fortCompletionRate = transactionAttempts > 0 ? (fortFinalApproved / transactionAttempts) * 100 : 0;
+  // Completion rate (%) = Value of approved transactions ($) / Transaction Attempts ($) — r = q/b (forter: q'/b when dedup)
+  const fortCompletionRate = transactionAttemptsValue > 0 ? (fortFinalValue / transactionAttemptsValue) * 100 : 0;
   // For marketplaces: Revenue = GMV × Commission, then Profitability = Revenue × Gross Margin
   const fortRevenue = isMarketplace ? fortFinalValue * commissionDecimal : fortFinalValue;
   const fortProfitability = fortFinalValue * profitabilityMultiplier;
@@ -456,7 +471,8 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const fortFinalValueDeduplicated = deduplicationEnabled 
     ? fortFinalValue - deduplicationGMVReduction 
     : fortFinalValue;
-  const fortCompletionRateDeduplicated = transactionAttempts > 0 
+  // r = q'/b when deduplication enabled
+  const fortCompletionRateDeduplicated = transactionAttemptsValue > 0 
     ? (fortFinalValueDeduplicated / transactionAttemptsValue) * 100 
     : 0;
   const fortRevenueDeduplicated = isMarketplace ? fortFinalValueDeduplicated * commissionDecimal : fortFinalValueDeduplicated;
@@ -489,21 +505,21 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     { formula: 'a', label: 'Transaction Attempts (#)', customerInput: fmt(transactionAttempts), forterImprovement: '', forterOutcome: fmt(transactionAttempts), editableCustomerField: 'amerGrossAttempts', rawCustomerValue: transactionAttempts, valueType: 'number' },
     { formula: 'b', label: 'Transaction Attempts ($)', customerInput: fmtCur(transactionAttemptsValue), forterImprovement: '', forterOutcome: fmtCur(transactionAttemptsValue), editableCustomerField: 'amerAnnualGMV', rawCustomerValue: transactionAttemptsValue, valueType: 'currency' },
     { formula: 'c = b/a', label: 'Average order value (calculated)', customerInput: fmtCur(calculatedAOV), forterImprovement: '', forterOutcome: fmtCur(calculatedAOV), isCalculation: true },
-    { formula: 'd', label: 'Pre-Auth Fraud Approval Rate (%)', customerInput: fmtPct(preAuthApprovalRate), forterImprovement: `${forterPreAuthImprovement.toFixed(1)}%`, forterOutcome: fmtPct(preAuthApprovalRate + forterPreAuthImprovement), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: preAuthApprovalRate, editableForterField: 'preAuthApprovalImprovement', rawForterValue: preAuthApprovalRate + forterPreAuthImprovement, valueType: 'percent' },
+    { formula: 'd', label: 'Pre-Auth Fraud Approval Rate (%)', customerInput: fmtPct(preAuthApprovalRate), forterImprovement: formatPctImprovementRel(preAuthApprovalRate, preAuthApprovalRate + forterPreAuthImprovement), forterOutcome: fmtPct(preAuthApprovalRate + forterPreAuthImprovement), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: preAuthApprovalRate, editableForterField: 'preAuthApprovalImprovement', rawForterValue: preAuthApprovalRate + forterPreAuthImprovement, valueType: 'percent' },
     { formula: 'e = a*d', label: 'Approved transactions (#)', customerInput: fmt(Math.round(custApprovedPreAuth)), forterImprovement: fmt(Math.round(fortApprovedPreAuth - custApprovedPreAuth)), forterOutcome: fmt(Math.round(fortApprovedPreAuth)), isCalculation: true },
     { formula: '', label: '3DS', customerInput: '', forterImprovement: '', forterOutcome: '' },
-    { formula: 'f', label: '% of Transactions that are Credit Cards (%)', customerInput: fmtPct(creditCardPct), forterImprovement: '0.0%', forterOutcome: fmtPct(creditCardPct), editableCustomerField: 'amerCreditCardPct', rawCustomerValue: creditCardPct, valueType: 'percent' },
+    { formula: 'f', label: '% of Transactions that are Credit Cards (%)', customerInput: fmtPct(creditCardPct), forterImprovement: '0.0% pts', forterOutcome: fmtPct(creditCardPct), editableCustomerField: 'amerCreditCardPct', rawCustomerValue: creditCardPct, valueType: 'percent' },
     { formula: 'g = e*f', label: 'Transactions that are credit cards - Volume (#)', customerInput: fmt(Math.round(custCCTx)), forterImprovement: '', forterOutcome: fmt(Math.round(fortCCTx)), isCalculation: true },
-    { formula: 'h', label: 'Challenge 3DS Rate (%)', customerInput: fmtPct(creditCard3DSPct), forterImprovement: `-${forter3DSReduction.toFixed(1)}%`, forterOutcome: fmtPct(Math.max(0, creditCard3DSPct - forter3DSReduction)), editableCustomerField: 'amer3DSChallengeRate', rawCustomerValue: creditCard3DSPct, editableForterField: 'threeDSReduction', rawForterValue: Math.max(0, creditCard3DSPct - forter3DSReduction), valueType: 'percent' },
+    { formula: 'h', label: 'Challenge 3DS Rate (%)', customerInput: fmtPct(creditCard3DSPct), forterImprovement: formatPctImprovementRel(creditCard3DSPct, Math.max(0, creditCard3DSPct - forter3DSReduction)), forterOutcome: fmtPct(Math.max(0, creditCard3DSPct - forter3DSReduction)), editableCustomerField: 'amer3DSChallengeRate', rawCustomerValue: creditCard3DSPct, editableForterField: 'threeDSReduction', rawForterValue: Math.max(0, creditCard3DSPct - forter3DSReduction), valueType: 'percent' },
     { formula: 'i = g*h', label: 'Credit card transactions using 3DS - Volume (#)', customerInput: fmt(Math.round(cust3DSTx)), forterImprovement: '', forterOutcome: fmt(Math.round(fort3DSTx)), isCalculation: true },
-    { formula: 'j', label: '3DS Failure & Abandonment Rate (%)', customerInput: fmtPct(threeDSFailureRate), forterImprovement: '0.0%', forterOutcome: fmtPct(threeDSFailureRate), editableCustomerField: 'amer3DSAbandonmentRate', rawCustomerValue: threeDSFailureRate, valueType: 'percent' },
+    { formula: 'j', label: '3DS Failure & Abandonment Rate (%)', customerInput: fmtPct(threeDSFailureRate), forterImprovement: '0.0% pts', forterOutcome: fmtPct(threeDSFailureRate), editableCustomerField: 'amer3DSAbandonmentRate', rawCustomerValue: threeDSFailureRate, valueType: 'percent' },
     { formula: 'k = i*j', label: '3DS failure & abandonment rate - Volume (#)', customerInput: fmt(Math.round(cust3DSFails)), forterImprovement: fmt(Math.round(fort3DSFails - cust3DSFails)), forterOutcome: fmt(Math.round(fort3DSFails)), isCalculation: true },
     { formula: '', label: 'Issuing bank', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'l = e-k', label: 'Transactions sent to issuing bank', customerInput: fmt(Math.round(custToBank)), forterImprovement: fmt(Math.round(fortToBank - custToBank)), forterOutcome: fmt(Math.round(fortToBank)), isCalculation: true },
-    { formula: 'm', label: 'Issuing Bank Decline Rate (%)', customerInput: fmtPct(issuingBankDeclineRate), forterImprovement: '0.0%', forterOutcome: fmtPct(issuingBankDeclineRate), editableCustomerField: 'amerIssuingBankDeclineRate', rawCustomerValue: issuingBankDeclineRate, valueType: 'percent' },
+    { formula: 'm', label: 'Issuing Bank Decline Rate (%)', customerInput: fmtPct(issuingBankDeclineRate), forterImprovement: '0.0% pts', forterOutcome: fmtPct(issuingBankDeclineRate), editableCustomerField: 'amerIssuingBankDeclineRate', rawCustomerValue: issuingBankDeclineRate, valueType: 'percent' },
     { formula: 'n = l*m', label: 'Issuing bank declines', customerInput: fmt(Math.round(custBankDeclines)), forterImprovement: fmt(Math.round(fortBankDeclines - custBankDeclines)), forterOutcome: fmt(Math.round(fortBankDeclines)), isCalculation: true },
     { formula: '', label: 'Post-auth fraud', customerInput: '', forterImprovement: '', forterOutcome: '' },
-    { formula: 'o', label: 'Post-Auth Approval Rate (%)', customerInput: fmtPct(postAuthApprovalRate), forterImprovement: `${forterPostAuthImprovement.toFixed(1)}%`, forterOutcome: fmtPct(fortPostAuth * 100), editableCustomerField: 'amerPostAuthApprovalRate', rawCustomerValue: postAuthApprovalRate, editableForterField: 'postAuthApprovalImprovement', rawForterValue: fortPostAuth * 100, valueType: 'percent' },
+    { formula: 'o', label: 'Post-Auth Approval Rate (%)', customerInput: fmtPct(postAuthApprovalRate), forterImprovement: formatPctImprovementRel(postAuthApprovalRate, fortPostAuth * 100), forterOutcome: fmtPct(fortPostAuth * 100), editableCustomerField: 'amerPostAuthApprovalRate', rawCustomerValue: postAuthApprovalRate, editableForterField: 'postAuthApprovalImprovement', rawForterValue: fortPostAuth * 100, valueType: 'percent' },
     { formula: 'p = (l-n)*o', label: 'Approved transactions (#)', customerInput: fmt(Math.round(custFinalApproved)), forterImprovement: fmt(Math.round(fortFinalApproved - custFinalApproved)), forterOutcome: fmt(Math.round(fortFinalApproved)), isCalculation: true },
     { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: '', forterOutcome: fmtCur(effectiveCompletedAOV), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, valueType: 'currency' },
     // Always show the non-deduplicated value first
@@ -512,7 +528,8 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     ...(deduplicationEnabled ? [
       { formula: 'q\' = q - dedup', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUpliftDeduplicated), forterOutcome: fmtCur(fortFinalValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
-    { formula: 'r', label: 'Completion rate (%)', customerInput: fmtPct(custCompletionRate), forterImprovement: `${(displayFortCompletionRate - custCompletionRate).toFixed(2)}%`, forterOutcome: fmtPct(displayFortCompletionRate), isCalculation: true },
+    // forterOutcome = r = q'/b when dedup enabled (displayFortCompletionRate from fortFinalValueDeduplicated)
+    { formula: 'r = q/b', label: 'Completion rate (%)', customerInput: fmtPct(custCompletionRate), forterImprovement: formatPctImprovementRel(custCompletionRate, displayFortCompletionRate, 2), forterOutcome: fmtPct(displayFortCompletionRate), isCalculation: true },
     { formula: 's', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: isMarketplace ? 'commissionRate' : 'amerGrossMarginPercent', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
     // For marketplaces: add Revenue row (GMV × Commission), then Gross Margin row, then Profitability (Revenue × Margin)
     // For retailers: skip Revenue, just show Profitability (GMV × Gross Margin)
@@ -545,7 +562,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: '', forterOutcome: fmtCur(displayFortFinalValue), isCalculation: true },
-    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: `${((fortCBRate - custCBRate) * 100).toFixed(1)}%`, forterOutcome: includesFraudCBCoverage ? '0.0%*' : fmtPct(fortCBRate * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: fortCBRate * 100, valueType: 'percent' },
+    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, fortCBRate * 100), forterOutcome: includesFraudCBCoverage ? '0.0%*' : fmtPct(fortCBRate * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: fortCBRate * 100, valueType: 'percent' },
     { 
       formula: 'c = a*b', 
       label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', 
@@ -584,6 +601,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
       deduplicatedProfitUplift: profitUpliftDeduplicated,
       deduplicationApplied: deduplicationEnabled,
       deduplicationBreakdown,
+      customerCompletedTransactionCount: custFinalApproved,
     },
     calculator2: { rows: calculator2Rows, costReduction: chargebackSavings },
   };
@@ -754,9 +772,9 @@ export function calculateChallenge7(inputs: Challenge7Inputs): Challenge7Results
     // Service chargebacks only when fraud coverage is enabled
     { formula: '', label: 'Service chargebacks', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'a', label: 'Est. value of service chargebacks ($)', customerInput: fmtCur(estServiceChargebacks), forterImprovement: '', forterOutcome: fmtCur(estServiceChargebacks), editableCustomerField: 'estServiceChargebackValue', rawCustomerValue: estServiceChargebacks, valueType: 'currency' },
-    { formula: 'b', label: 'Service chargeback dispute rate - Value (%)', customerInput: fmtPct(serviceDisputeRate), forterImprovement: `${forterServiceDisputeImprovement.toFixed(1)}%`, forterOutcome: fmtPct(Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement)), editableCustomerField: 'serviceDisputeRate', rawCustomerValue: serviceDisputeRate, editableForterField: 'serviceDisputeRateImprovement', rawForterValue: Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement), valueType: 'percent' },
+    { formula: 'b', label: 'Service chargeback dispute rate - Value (%)', customerInput: fmtPct(serviceDisputeRate), forterImprovement: formatPctImprovementRel(serviceDisputeRate, Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement)), forterOutcome: fmtPct(Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement)), editableCustomerField: 'serviceDisputeRate', rawCustomerValue: serviceDisputeRate, editableForterField: 'serviceDisputeRateImprovement', rawForterValue: Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement), valueType: 'percent' },
     { formula: 'c = a*b', label: 'Service chargebacks disputed ($)', customerInput: fmtCur(custServDisputed), forterImprovement: fmtCur(fortServDisputed - custServDisputed), forterOutcome: fmtCur(fortServDisputed), isCalculation: true },
-    { formula: 'd', label: 'Service chargeback win-rate - Value (%)', customerInput: fmtPct(serviceWinRate), forterImprovement: `${forterServiceWinChange.toFixed(1)}%`, forterOutcome: fmtPct(Math.max(0, serviceWinRate + forterServiceWinChange)), editableCustomerField: 'serviceWinRate', rawCustomerValue: serviceWinRate, editableForterField: 'serviceWinRateChange', rawForterValue: Math.max(0, serviceWinRate + forterServiceWinChange), valueType: 'percent' },
+    { formula: 'd', label: 'Service chargeback win-rate - Value (%)', customerInput: fmtPct(serviceWinRate), forterImprovement: formatPctImprovementRel(serviceWinRate, Math.max(0, serviceWinRate + forterServiceWinChange)), forterOutcome: fmtPct(Math.max(0, serviceWinRate + forterServiceWinChange)), editableCustomerField: 'serviceWinRate', rawCustomerValue: serviceWinRate, editableForterField: 'serviceWinRateChange', rawForterValue: Math.max(0, serviceWinRate + forterServiceWinChange), valueType: 'percent' },
     { formula: 'e = c*d', label: 'Service chargebacks won ($)', customerInput: fmtCur(custServWon), forterImprovement: fmtCur(fortServWon - custServWon), forterOutcome: fmtCur(fortServWon), valueDriver: 'cost', isCalculation: true },
     { formula: 'f = e/a', label: 'Recovery rate', customerInput: fmtPct(estServiceChargebacks > 0 ? (custServWon / estServiceChargebacks) * 100 : 0), forterImprovement: '', forterOutcome: fmtPct(estServiceChargebacks > 0 ? (fortServWon / estServiceChargebacks) * 100 : 0), isCalculation: true },
     { formula: '', label: '', customerInput: '', forterImprovement: '', forterOutcome: '', footnote: '*Fraud chargebacks excluded as Forter Fraud Coverage is enabled (liability handled separately)' },
@@ -773,16 +791,16 @@ export function calculateChallenge7(inputs: Challenge7Inputs): Challenge7Results
       rawCustomerValue: displayFraudChargebacks, 
       valueType: 'currency',
     },
-    { formula: 'b', label: 'Fraud chargeback dispute rate - Value (%)', customerInput: fmtPct(fraudDisputeRate), forterImprovement: `${forterFraudDisputeImprovement.toFixed(1)}%`, forterOutcome: fmtPct(Math.min(100, fraudDisputeRate + forterFraudDisputeImprovement)), editableCustomerField: 'fraudDisputeRate', rawCustomerValue: fraudDisputeRate, editableForterField: 'fraudDisputeRateImprovement', rawForterValue: Math.min(100, fraudDisputeRate + forterFraudDisputeImprovement), valueType: 'percent' },
+    { formula: 'b', label: 'Fraud chargeback dispute rate - Value (%)', customerInput: fmtPct(fraudDisputeRate), forterImprovement: formatPctImprovementRel(fraudDisputeRate, Math.min(100, fraudDisputeRate + forterFraudDisputeImprovement)), forterOutcome: fmtPct(Math.min(100, fraudDisputeRate + forterFraudDisputeImprovement)), editableCustomerField: 'fraudDisputeRate', rawCustomerValue: fraudDisputeRate, editableForterField: 'fraudDisputeRateImprovement', rawForterValue: Math.min(100, fraudDisputeRate + forterFraudDisputeImprovement), valueType: 'percent' },
     { formula: 'c = a*b', label: 'Fraud chargebacks disputed ($)', customerInput: fmtCur(custFraudDisputed), forterImprovement: fmtCur(fortFraudDisputed - custFraudDisputed), forterOutcome: fmtCur(fortFraudDisputed), isCalculation: true },
-    { formula: 'd', label: 'Fraud chargeback win rate (%)', customerInput: fmtPct(fraudWinRate), forterImprovement: `${forterFraudWinChange.toFixed(1)}%`, forterOutcome: fmtPct(Math.max(0, fraudWinRate + forterFraudWinChange)), editableCustomerField: 'fraudWinRate', rawCustomerValue: fraudWinRate, editableForterField: 'fraudWinRateChange', rawForterValue: Math.max(0, fraudWinRate + forterFraudWinChange), valueType: 'percent' },
+    { formula: 'd', label: 'Fraud chargeback win rate (%)', customerInput: fmtPct(fraudWinRate), forterImprovement: formatPctImprovementRel(fraudWinRate, Math.max(0, fraudWinRate + forterFraudWinChange)), forterOutcome: fmtPct(Math.max(0, fraudWinRate + forterFraudWinChange)), editableCustomerField: 'fraudWinRate', rawCustomerValue: fraudWinRate, editableForterField: 'fraudWinRateChange', rawForterValue: Math.max(0, fraudWinRate + forterFraudWinChange), valueType: 'percent' },
     { formula: 'e = c*d', label: 'Fraud chargebacks won ($)', customerInput: fmtCur(custFraudWon), forterImprovement: fmtCur(fortFraudWon - custFraudWon), forterOutcome: fmtCur(fortFraudWon), isCalculation: true },
     { formula: 'f = e/a', label: 'Recovery rate', customerInput: fmtPct(displayFraudChargebacks > 0 ? (custFraudWon / displayFraudChargebacks) * 100 : 0), forterImprovement: '', forterOutcome: fmtPct(displayFraudChargebacks > 0 ? (fortFraudWon / displayFraudChargebacks) * 100 : 0), isCalculation: true },
     { formula: '', label: 'Service chargebacks', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'g', label: 'Est. value of service chargebacks ($)', customerInput: fmtCur(estServiceChargebacks), forterImprovement: '', forterOutcome: fmtCur(estServiceChargebacks), editableCustomerField: 'estServiceChargebackValue', rawCustomerValue: estServiceChargebacks, valueType: 'currency' },
-    { formula: 'h', label: 'Service chargeback dispute rate - Value (%)', customerInput: fmtPct(serviceDisputeRate), forterImprovement: `${forterServiceDisputeImprovement.toFixed(1)}%`, forterOutcome: fmtPct(Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement)), editableCustomerField: 'serviceDisputeRate', rawCustomerValue: serviceDisputeRate, editableForterField: 'serviceDisputeRateImprovement', rawForterValue: Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement), valueType: 'percent' },
+    { formula: 'h', label: 'Service chargeback dispute rate - Value (%)', customerInput: fmtPct(serviceDisputeRate), forterImprovement: formatPctImprovementRel(serviceDisputeRate, Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement)), forterOutcome: fmtPct(Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement)), editableCustomerField: 'serviceDisputeRate', rawCustomerValue: serviceDisputeRate, editableForterField: 'serviceDisputeRateImprovement', rawForterValue: Math.min(100, serviceDisputeRate + forterServiceDisputeImprovement), valueType: 'percent' },
     { formula: 'i = g*h', label: 'Service chargebacks disputed ($)', customerInput: fmtCur(custServDisputed), forterImprovement: fmtCur(fortServDisputed - custServDisputed), forterOutcome: fmtCur(fortServDisputed), isCalculation: true },
-    { formula: 'j', label: 'Service chargeback win-rate - Value (%)', customerInput: fmtPct(serviceWinRate), forterImprovement: `${forterServiceWinChange.toFixed(1)}%`, forterOutcome: fmtPct(Math.max(0, serviceWinRate + forterServiceWinChange)), editableCustomerField: 'serviceWinRate', rawCustomerValue: serviceWinRate, editableForterField: 'serviceWinRateChange', rawForterValue: Math.max(0, serviceWinRate + forterServiceWinChange), valueType: 'percent' },
+    { formula: 'j', label: 'Service chargeback win-rate - Value (%)', customerInput: fmtPct(serviceWinRate), forterImprovement: formatPctImprovementRel(serviceWinRate, Math.max(0, serviceWinRate + forterServiceWinChange)), forterOutcome: fmtPct(Math.max(0, serviceWinRate + forterServiceWinChange)), editableCustomerField: 'serviceWinRate', rawCustomerValue: serviceWinRate, editableForterField: 'serviceWinRateChange', rawForterValue: Math.max(0, serviceWinRate + forterServiceWinChange), valueType: 'percent' },
     { formula: 'k = i*j', label: 'Service chargebacks won ($)', customerInput: fmtCur(custServWon), forterImprovement: fmtCur(fortServWon - custServWon), forterOutcome: fmtCur(fortServWon), isCalculation: true },
     { formula: 'l = k/g', label: 'Recovery rate', customerInput: fmtPct(estServiceChargebacks > 0 ? (custServWon / estServiceChargebacks) * 100 : 0), forterImprovement: '', forterOutcome: fmtPct(estServiceChargebacks > 0 ? (fortServWon / estServiceChargebacks) * 100 : 0), isCalculation: true },
     { formula: '', label: 'Total', customerInput: '', forterImprovement: '', forterOutcome: '' },
@@ -1053,7 +1071,7 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
     { formula: 'c = b/a', label: 'Average order value', customerInput: fmtCur(aov), forterImprovement: '', forterOutcome: fmtCur(aov), isCalculation: true },
     { formula: 'd', label: 'Abuse AoV multiplier (x)', customerInput: `${abuseAovMultiplier}x`, forterImprovement: '', forterOutcome: `${abuseAovMultiplier}x`, editableCustomerField: 'abuseAovMultiplier', rawCustomerValue: abuseAovMultiplier, valueType: 'number', readOnlyForterOutcome: true },
     { formula: 'e = c*d', label: 'Estimated Abusive AoV ($)', customerInput: fmtCur(abusiveAov), forterImprovement: '', forterOutcome: fmtCur(abusiveAov), isCalculation: true },
-    { formula: 'f', label: 'INR abuse population (%)', customerInput: fmtPct(egregiousINRAbusePct), forterImprovement: `${(fortINRAbusePct * 100 - egregiousINRAbusePct).toFixed(1)}%`, forterOutcome: fmtPct(fortINRAbusePct * 100), editableCustomerField: 'egregiousINRAbusePct', rawCustomerValue: egregiousINRAbusePct, editableForterField: 'forterEgregiousINRReduction', rawForterValue: fortINRAbusePct * 100, valueType: 'percent', footnote: 'abuse-benchmark-outcome' },
+    { formula: 'f', label: 'INR abuse population (%)', customerInput: fmtPct(egregiousINRAbusePct), forterImprovement: formatPctImprovementRel(egregiousINRAbusePct, fortINRAbusePct * 100), forterOutcome: fmtPct(fortINRAbusePct * 100), editableCustomerField: 'egregiousINRAbusePct', rawCustomerValue: egregiousINRAbusePct, editableForterField: 'forterEgregiousINRReduction', rawForterValue: fortINRAbusePct * 100, valueType: 'percent', footnote: 'abuse-benchmark-outcome' },
     { formula: 'g = a*f', label: 'Estimated # of INR abusers (#)', customerInput: fmt(Math.round(custINRAbusers)), forterImprovement: fmt(Math.round(fortINRAbusers - custINRAbusers)), forterOutcome: fmt(Math.round(fortINRAbusers)), isCalculation: true },
     { formula: 'h = e*g', label: 'GMV of INR abusers ($)', customerInput: fmtCur(custINRAbusersGMV), forterImprovement: fmtCur(fortINRAbusersGMV - custINRAbusersGMV), forterOutcome: fmtCur(fortINRAbusersGMV), isCalculation: true },
     { formula: '', label: 'Unit cost of INR abuse', customerInput: '', forterImprovement: '', forterOutcome: '' },
@@ -1190,10 +1208,10 @@ export function calculateChallenge10(inputs: Challenge10Inputs): Challenge10Resu
     { formula: 'a', label: 'eCommerce sales attempts / transaction attempts ($)', customerInput: fmtCur(a), forterImprovement: '', forterOutcome: fmtCur(a), editableCustomerField: 'amerAnnualGMV', rawCustomerValue: a, valueType: 'currency' },
     { formula: 'b', label: 'Promotion abuse as % of GMV (%)', customerInput: fmtPct(b), forterImprovement: '', forterOutcome: fmtPct(b) },
     { formula: 'c = -(a*b)', label: 'Estimated promotion abuse attempts', customerInput: fmtCur(c), forterImprovement: '-', forterOutcome: fmtCur(c), isCalculation: true },
-    { formula: 'd', label: 'Estimated Promotion Abuse Catch Rate Today (%)', customerInput: fmtPct(custCatchRate), forterImprovement: `${fmtPct(fortCatchRate - custCatchRate)}`, forterOutcome: fmtPct(fortCatchRate), editableCustomerField: 'promotionAbuseCatchRateToday', rawCustomerValue: custCatchRate, editableForterField: 'forterCatchRate', rawForterValue: fortCatchRate, valueType: 'percent' },
+    { formula: 'd', label: 'Estimated Promotion Abuse Catch Rate Today (%)', customerInput: fmtPct(custCatchRate), forterImprovement: formatPctImprovementRel(custCatchRate, fortCatchRate), forterOutcome: fmtPct(fortCatchRate), editableCustomerField: 'promotionAbuseCatchRateToday', rawCustomerValue: custCatchRate, editableForterField: 'forterCatchRate', rawForterValue: fortCatchRate, valueType: 'percent' },
     { formula: 'e', label: 'Abuse AoV multiplier (x)', customerInput: `${e}x`, forterImprovement: '', forterOutcome: `${e}x`, editableCustomerField: 'abuseAovMultiplier', rawCustomerValue: e, valueType: 'number', readOnlyForterOutcome: true },
     { formula: 'f = c*(1-d)*e', label: 'Promotion abuse GMV ($)', customerInput: fmtCur(custPromotionAbuseGMV), forterImprovement: fmtCur(fortPromotionAbuseGMV - custPromotionAbuseGMV), forterOutcome: fmtCur(fortPromotionAbuseGMV), isCalculation: true },
-    { formula: 'g', label: 'Average discount achieved by abusers (%)', customerInput: fmtPct(g), forterImprovement: '0%', forterOutcome: fmtPct(g), editableCustomerField: 'avgDiscountByAbusers', rawCustomerValue: g, valueType: 'percent' },
+    { formula: 'g', label: 'Average discount achieved by abusers (%)', customerInput: fmtPct(g), forterImprovement: '0% pts', forterOutcome: fmtPct(g), editableCustomerField: 'avgDiscountByAbusers', rawCustomerValue: g, valueType: 'percent' },
     { formula: 'h = f/(1-g)', label: 'Promotion abuse GMV (without discount) ($)', customerInput: fmtCur(custPromotionAbuseGMVWithoutDiscount), forterImprovement: fmtCur(fortPromotionAbuseGMVWithoutDiscount - custPromotionAbuseGMVWithoutDiscount), forterOutcome: fmtCur(fortPromotionAbuseGMVWithoutDiscount), isCalculation: true },
     { formula: 'i = h-f', label: 'Lost GMV due to promotion abuse ($)', customerInput: fmtCur(custLostGMV), forterImprovement: fmtCur(gmvImprovement), forterOutcome: fmtCur(fortLostGMV), valueDriver: 'revenue', isCalculation: true },
     ...(isMarketplace ? [{ formula: 'j', label: 'Commission / take rate (%)', customerInput: fmtPct(effectiveCommissionRate), forterImprovement: '', forterOutcome: fmtPct(effectiveCommissionRate), editableCustomerField: 'commissionRate' as const, rawCustomerValue: effectiveCommissionRate, valueType: 'percent' as const }] : []),
@@ -1289,7 +1307,7 @@ export function calculateChallenge9(inputs: Challenge9Inputs): Challenge9Results
   const calculator1Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Current eCommerce sales ($)', customerInput: fmtCur(custExpectedSales), forterImprovement: '', forterOutcome: fmtCur(custExpectedSales), editableCustomerField: 'amerAnnualGMV', rawCustomerValue: currentEcommerceSales, valueType: 'currency' },
     { formula: 'b', label: 'NPS increase from instant refunds', customerInput: '0', forterImprovement: `+${forterNpsIncrease}`, forterOutcome: `${forterNpsIncrease}`, editableForterField: 'npsIncreaseFromInstantRefunds', rawForterValue: forterNpsIncrease, valueType: 'number' },
-    { formula: 'c', label: 'LSE (NPS improvement benchmark - 1% per 7 NPS)', customerInput: '0.00%', forterImprovement: `${lseNPSBenchmark.toFixed(2)}%`, forterOutcome: `${lseNPSBenchmark.toFixed(2)}%` },
+    { formula: 'c', label: 'LSE (NPS improvement benchmark - 1% per 7 NPS)', customerInput: '0.00%', forterImprovement: `${lseNPSBenchmark.toFixed(2)}% pts`, forterOutcome: `${lseNPSBenchmark.toFixed(2)}%` },
     { formula: 'd = b/7*c', label: 'Expected sales uplift with instant refund (%)', customerInput: fmtPct(custSalesUpliftPct), forterImprovement: '', forterOutcome: fmtPct(forterSalesUpliftPct), isCalculation: true },
     { formula: 'e = a*(1+d)', label: 'Expected eCommerce sales', customerInput: fmtCur(custExpectedSales), forterImprovement: fmtCur(gmvUplift), forterOutcome: fmtCur(forterExpectedSales), valueDriver: 'revenue', isCalculation: true },
   ];
@@ -1325,7 +1343,7 @@ export function calculateChallenge9(inputs: Challenge9Inputs): Challenge9Results
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Expected Refunds - Volume (#)', customerInput: fmt(Math.round(expectedRefundsVolume)), forterImprovement: '', forterOutcome: fmt(Math.round(expectedRefundsVolume)), editableCustomerField: 'expectedRefundsVolume', rawCustomerValue: expectedRefundsVolume, valueType: 'number' },
-    { formula: 'b', label: '% of Refund Tickets to CS (%)', customerInput: fmtPct(pctRefundsToCS), forterImprovement: `${(-forterCSReduction).toFixed(1)}%`, forterOutcome: fmtPct(pctRefundsToCS * (1 - forterCSReduction / 100)), editableCustomerField: 'pctRefundsToCS', rawCustomerValue: pctRefundsToCS, valueType: 'percent' },
+    { formula: 'b', label: '% of Refund Tickets to CS (%)', customerInput: fmtPct(pctRefundsToCS), forterImprovement: formatPctImprovementRel(pctRefundsToCS, pctRefundsToCS * (1 - forterCSReduction / 100)), forterOutcome: fmtPct(pctRefundsToCS * (1 - forterCSReduction / 100)), editableCustomerField: 'pctRefundsToCS', rawCustomerValue: pctRefundsToCS, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Refund tickets / calls going to customer service', customerInput: fmt(Math.round(custCSContacts)), forterImprovement: fmt(Math.round(-csContactsReduction)), forterOutcome: fmt(Math.round(forterCSContacts)), isCalculation: true },
     { formula: 'd', label: 'Cost per CS Contact ($)', customerInput: fmtCur(costPerCSContact), forterImprovement: '', forterOutcome: fmtCur(costPerCSContact), editableCustomerField: 'costPerCSContact', rawCustomerValue: costPerCSContact, valueType: 'currency' },
     { formula: 'e = -c*d', label: 'Customer service cost ($)', customerInput: fmtCur(custCSCost), forterImprovement: fmtCur(costImprovement), forterOutcome: fmtCur(forterCSCost), valueDriver: 'cost', isCalculation: true },
@@ -1419,7 +1437,7 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
     { formula: 'a', label: 'Annual number of logins (#)', customerInput: fmt(Math.round(annualLogins)), forterImprovement: '', forterOutcome: fmt(Math.round(annualLogins)), editableCustomerField: 'monthlyLogins', rawCustomerValue: monthlyLogins, valueType: 'number' },
     { formula: 'b', label: 'Percent of fraudulent logins (%)', customerInput: fmtPct(pctFraudulentLogins), forterImprovement: '', forterOutcome: fmtPct(pctFraudulentLogins), editableForterField: 'pctFraudulentLogins', rawForterValue: pctFraudulentLogins, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Estimated ATO attempts (#)', customerInput: fmt(Math.round(estimatedATOAttempts)), forterImprovement: '', forterOutcome: fmt(Math.round(estimatedATOAttempts)), isCalculation: true },
-    { formula: 'd', label: 'ATO catch rate (%)', customerInput: '0%', forterImprovement: `+${atoCatchRate}%`, forterOutcome: fmtPct(atoCatchRate), editableForterField: 'atoCatchRate', rawForterValue: atoCatchRate, valueType: 'percent' },
+    { formula: 'd', label: 'ATO catch rate (%)', customerInput: '0%', forterImprovement: `+${atoCatchRate}% pts`, forterOutcome: fmtPct(atoCatchRate), editableForterField: 'atoCatchRate', rawForterValue: atoCatchRate, valueType: 'percent' },
     { formula: 'e = c*(1-d)', label: 'Successful ATO (#)', customerInput: fmt(Math.round(custSuccessfulATO)), forterImprovement: fmt(Math.round(forterSuccessfulATO - custSuccessfulATO)), forterOutcome: fmt(Math.round(forterSuccessfulATO)), isCalculation: true },
     { formula: '', label: 'Cost to appease', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'f', label: 'Average appeasement value (e.g. refunded points)', customerInput: fmtCur(avgAppeasementValue), forterImprovement: '', forterOutcome: fmtCur(avgAppeasementValue), editableCustomerField: 'avgAppeasementValue', rawCustomerValue: avgAppeasementValue, valueType: 'currency' },
@@ -1460,7 +1478,7 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
     { formula: 'a', label: 'Annual number of logins (#)', customerInput: fmt(Math.round(annualLogins)), forterImprovement: '', forterOutcome: fmt(Math.round(annualLogins)), editableCustomerField: 'monthlyLogins', rawCustomerValue: monthlyLogins, valueType: 'number' },
     { formula: 'b', label: 'Percent of fraudulent logins (%)', customerInput: fmtPct(pctFraudulentLogins), forterImprovement: '', forterOutcome: fmtPct(pctFraudulentLogins), editableForterField: 'pctFraudulentLogins', rawForterValue: pctFraudulentLogins, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Estimated ATO attempts (#)', customerInput: fmt(Math.round(estimatedATOAttempts)), forterImprovement: '', forterOutcome: fmt(Math.round(estimatedATOAttempts)), isCalculation: true },
-    { formula: 'd', label: 'ATO catch rate (%)', customerInput: '0%', forterImprovement: `+${atoCatchRate}%`, forterOutcome: fmtPct(atoCatchRate), editableForterField: 'atoCatchRate', rawForterValue: atoCatchRate, valueType: 'percent' },
+    { formula: 'd', label: 'ATO catch rate (%)', customerInput: '0%', forterImprovement: `+${atoCatchRate}% pts`, forterOutcome: fmtPct(atoCatchRate), editableForterField: 'atoCatchRate', rawForterValue: atoCatchRate, valueType: 'percent' },
     { formula: 'e = c*(1-d)', label: 'Successful ATO (#)', customerInput: fmt(Math.round(custSuccessfulATOPositive)), forterImprovement: fmt(Math.round(forterSuccessfulATOPositive - custSuccessfulATOPositive)), forterOutcome: fmt(Math.round(forterSuccessfulATOPositive)), isCalculation: true },
     { formula: 'f', label: 'Customer lifetime value (CLV) - GMV ($)', customerInput: fmtCur(customerLTV), forterImprovement: '', forterOutcome: fmtCur(customerLTV), editableCustomerField: 'customerLTV', rawCustomerValue: customerLTV, valueType: 'currency' },
     { formula: 'g', label: 'Churn likelihood from ATO (%)', customerInput: fmtPct(churnLikelihoodFromATO), forterImprovement: '', forterOutcome: fmtPct(churnLikelihoodFromATO), editableForterField: 'churnLikelihoodFromATO', rawForterValue: churnLikelihoodFromATO, valueType: 'percent' },
@@ -1546,7 +1564,7 @@ export function calculateChallenge14_15(inputs: Challenge14_15Inputs): Challenge
 
   const calculator1Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of sign-ups (#)', customerInput: fmt(Math.round(annualSignups)), forterImprovement: '', forterOutcome: fmt(Math.round(annualSignups)), editableCustomerField: 'monthlySignups', rawCustomerValue: monthlySignups, valueType: 'number' },
-    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: `${(-forterFraudulentSignupReduction).toFixed(1)}%`, forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
+    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: formatPctImprovementRel(pctFraudulentSignups, forterFraudPct * 100), forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
     { formula: 'c = a*b', label: 'Estimated duplicate accounts annually (#)', customerInput: fmt(Math.round(custDuplicateAccounts)), forterImprovement: fmt(Math.round(forterDuplicateAccounts - custDuplicateAccounts)), forterOutcome: fmt(Math.round(forterDuplicateAccounts)), isCalculation: true },
     { formula: 'd', label: 'Average new member bonus / discount ($)', customerInput: fmtCur(avgNewMemberBonus), forterImprovement: '', forterOutcome: fmtCur(avgNewMemberBonus), editableCustomerField: 'avgNewMemberBonus', rawCustomerValue: avgNewMemberBonus, valueType: 'currency' },
     { formula: 'e = -c*d', label: 'Marketing loss of duplicate accounts ($)', customerInput: fmtCur(custMarketingLoss), forterImprovement: fmtCur(marketingImprovement), forterOutcome: fmtCur(forterMarketingLoss), valueDriver: 'cost', isCalculation: true },
@@ -1561,7 +1579,7 @@ export function calculateChallenge14_15(inputs: Challenge14_15Inputs): Challenge
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of sign-ups (#)', customerInput: fmt(Math.round(annualSignups)), forterImprovement: '', forterOutcome: fmt(Math.round(annualSignups)), editableCustomerField: 'monthlySignups', rawCustomerValue: monthlySignups, valueType: 'number' },
-    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: `${(-forterFraudulentSignupReduction).toFixed(1)}%`, forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
+    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: formatPctImprovementRel(pctFraudulentSignups, forterFraudPct * 100), forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
     { formula: 'c = a*b', label: 'Estimated duplicate accounts annually (#)', customerInput: fmt(Math.round(custDuplicateAccounts)), forterImprovement: fmt(Math.round(forterDuplicateAccounts - custDuplicateAccounts)), forterOutcome: fmt(Math.round(forterDuplicateAccounts)), isCalculation: true },
     { formula: 'd', label: 'Number of digital communications per year to users (#)', customerInput: fmt(numDigitalCommunicationsPerYear), forterImprovement: '', forterOutcome: fmt(numDigitalCommunicationsPerYear), editableCustomerField: 'numDigitalCommunicationsPerYear', rawCustomerValue: numDigitalCommunicationsPerYear, valueType: 'number' },
     { formula: 'e', label: 'Average cost per outreach (email, SMS) ($)', customerInput: fmtCur(avgCostPerOutreach), forterImprovement: '', forterOutcome: fmtCur(avgCostPerOutreach), editableCustomerField: 'avgCostPerOutreach', rawCustomerValue: avgCostPerOutreach, valueType: 'currency' },
@@ -1583,7 +1601,7 @@ export function calculateChallenge14_15(inputs: Challenge14_15Inputs): Challenge
 
   const calculator3Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of sign-ups (#)', customerInput: fmt(Math.round(annualSignups)), forterImprovement: '', forterOutcome: fmt(Math.round(annualSignups)), editableCustomerField: 'monthlySignups', rawCustomerValue: monthlySignups, valueType: 'number' },
-    { formula: 'b', label: '% of new accounts going through KYC (%)', customerInput: fmtPct(pctAccountsGoingThroughKYC), forterImprovement: `${(-forterKYCReduction).toFixed(1)}%`, forterOutcome: fmtPct(forterKYCPct * 100), editableCustomerField: 'pctAccountsGoingThroughKYC', rawCustomerValue: pctAccountsGoingThroughKYC, editableForterField: 'forterKYCReduction', rawForterValue: forterKYCPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
+    { formula: 'b', label: '% of new accounts going through KYC (%)', customerInput: fmtPct(pctAccountsGoingThroughKYC), forterImprovement: formatPctImprovementRel(pctAccountsGoingThroughKYC, forterKYCPct * 100), forterOutcome: fmtPct(forterKYCPct * 100), editableCustomerField: 'pctAccountsGoingThroughKYC', rawCustomerValue: pctAccountsGoingThroughKYC, editableForterField: 'forterKYCReduction', rawForterValue: forterKYCPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
     { formula: 'c = a*b', label: 'Annual number of KYC checks (#)', customerInput: fmt(Math.round(custKYCChecks)), forterImprovement: fmt(Math.round(forterKYCChecks - custKYCChecks)), forterOutcome: fmt(Math.round(forterKYCChecks)), isCalculation: true },
     { formula: 'd', label: 'Average KYC cost per new account ($)', customerInput: fmtCur(avgKYCCostPerAccount), forterImprovement: '', forterOutcome: fmtCur(avgKYCCostPerAccount), editableCustomerField: 'avgKYCCostPerAccount', rawCustomerValue: avgKYCCostPerAccount, valueType: 'currency' },
     { formula: 'e = -c*d', label: 'KYC costs ($)', customerInput: fmtCur(custKYCCost), forterImprovement: fmtCur(kycImprovement), forterOutcome: fmtCur(forterKYCCost), valueDriver: 'cost', isCalculation: true },
@@ -1594,6 +1612,92 @@ export function calculateChallenge14_15(inputs: Challenge14_15Inputs): Challenge
     calculator2: { rows: calculator2Rows, costReduction: reactivationCostReduction },
     calculator3: { rows: calculator3Rows, costReduction: kycCostReduction },
   };
+}
+
+
+// ============================================================
+// COMPLETED TRANSACTION COUNT (for refund volume formula)
+// ============================================================
+
+/** Form fields needed to compute current-state completed transaction count (for Expected Refund volume = attempts × completion rate × refund rate) */
+export interface FormDataForCompletionCount {
+  amerGrossAttempts?: number;
+  amerAnnualGMV?: number;
+  amerPreAuthApprovalRate?: number;
+  amerPostAuthApprovalRate?: number;
+  amerCreditCardPct?: number;
+  amer3DSChallengeRate?: number;
+  amer3DSAbandonmentRate?: number;
+  amerIssuingBankDeclineRate?: number;
+  completedAOV?: number;
+  amerGrossMarginPercent?: number;
+  isMarketplace?: boolean;
+  commissionRate?: number;
+  fraudCBRate?: number;
+  baseCurrency?: string;
+}
+
+/**
+ * Returns current-state completed transaction count for refund volume formula.
+ * Expected Refund volume = Transaction attempts (volume) × Completion rate × Refund rate.
+ * When payment challenges (1 or 2/4/5) are selected, uses the same completion logic as the payments calculator (full funnel for 245, approval rate for 1).
+ */
+export function getCompletedTransactionCount(
+  formData: FormDataForCompletionCount,
+  isChallenge1Selected: boolean,
+  isChallenge245Selected: boolean
+): number {
+  const transactionAttempts = formData.amerGrossAttempts ?? 0;
+  if (transactionAttempts <= 0) return 0;
+  if (!isChallenge1Selected && !isChallenge245Selected) return transactionAttempts;
+
+  if (isChallenge245Selected) {
+    const inputs: Challenge245Inputs = {
+      transactionAttempts,
+      transactionAttemptsValue: formData.amerAnnualGMV ?? 0,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      preAuthApprovalRate: formData.amerPreAuthApprovalRate ?? 0,
+      postAuthApprovalRate: formData.amerPostAuthApprovalRate ?? 0,
+      creditCardPct: formData.amerCreditCardPct ?? 0,
+      creditCard3DSPct: formData.amer3DSChallengeRate ?? 0,
+      threeDSFailureRate: formData.amer3DSAbandonmentRate ?? 0,
+      issuingBankDeclineRate: formData.amerIssuingBankDeclineRate ?? 0,
+      fraudChargebackRate: formData.fraudCBRate ?? 0,
+      isMarketplace: formData.isMarketplace ?? false,
+      commissionRate: formData.commissionRate ?? 100,
+      currencyCode: formData.baseCurrency || 'USD',
+      completedAOV: formData.completedAOV,
+      forterPreAuthImprovement: 0,
+      forterPostAuthImprovement: 0,
+      forter3DSReduction: 0,
+      forterChargebackReduction: 0,
+      forterTargetCBRate: formData.fraudCBRate ?? 0,
+      forterTargetPostAuthRate: formData.amerPostAuthApprovalRate,
+    };
+    const result = calculateChallenge245(inputs);
+    return result.calculator1.customerCompletedTransactionCount;
+  }
+
+  if (isChallenge1Selected) {
+    const approvalRate = formData.amerPreAuthApprovalRate ?? 95;
+    const inputs: Challenge1Inputs = {
+      transactionAttempts,
+      transactionAttemptsValue: formData.amerAnnualGMV ?? 0,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
+      approvalRate,
+      fraudChargebackRate: formData.fraudCBRate ?? 0,
+      isMarketplace: formData.isMarketplace ?? false,
+      commissionRate: formData.commissionRate ?? 100,
+      currencyCode: formData.baseCurrency || 'USD',
+      completedAOV: formData.completedAOV,
+      forterApprovalRateImprovement: 0,
+      forterChargebackReduction: 0,
+    };
+    const result = calculateChallenge1(inputs);
+    return result.calculator1.customerCompletedTransactionCount;
+  }
+
+  return transactionAttempts;
 }
 
 

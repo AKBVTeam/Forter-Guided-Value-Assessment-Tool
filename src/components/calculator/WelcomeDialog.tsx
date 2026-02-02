@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, FolderOpen, Trash2, ArrowRight } from "lucide-react";
+import { Plus, FolderOpen, Trash2, ArrowRight, Copy } from "lucide-react";
 import { CalculatorData } from "@/pages/Index";
 
 export interface SavedAnalysis {
@@ -34,6 +34,9 @@ export const WelcomeDialog = ({ open, onStartNew, onLoadAnalysis }: WelcomeDialo
   const [newAnalysisName, setNewAnalysisName] = useState("");
   const [authorName, setAuthorName] = useState("");
   const [errors, setErrors] = useState<{ analysisName?: string; authorName?: string }>({});
+  const [duplicateTarget, setDuplicateTarget] = useState<SavedAnalysis | null>(null);
+  const [duplicateName, setDuplicateName] = useState("");
+  const [duplicateAuthorName, setDuplicateAuthorName] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("forter_saved_analyses");
@@ -84,6 +87,42 @@ export const WelcomeDialog = ({ open, onStartNew, onLoadAnalysis }: WelcomeDialo
     );
   };
 
+  const handleDuplicateClick = (analysis: SavedAnalysis, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const baseName = analysis.name || (analysis.data as CalculatorData & { _analysisName?: string })._analysisName || "Untitled";
+    const author = analysis.authorName || (analysis.data as CalculatorData & { _authorName?: string })._authorName || "";
+    setDuplicateTarget(analysis);
+    setDuplicateName(`${baseName.trim()} (copy)`);
+    setDuplicateAuthorName(author || (typeof localStorage !== "undefined" ? localStorage.getItem("forter_author_name") || "" : ""));
+  };
+
+  const handleDuplicateConfirm = () => {
+    if (!duplicateTarget) return;
+    const name = duplicateName.trim();
+    const author = duplicateAuthorName.trim();
+    if (!name || name.length < 3) return;
+    if (!author || author.length < 2 || author.length > 50) return;
+    const newId = Date.now().toString();
+    const duplicatedData: CalculatorData = {
+      ...duplicateTarget.data,
+      _analysisId: newId,
+      _analysisName: name,
+      _authorName: author,
+      _lastUpdatedAt: new Date().toISOString(),
+      _changelogHistory: [],
+    } as CalculatorData;
+    onLoadAnalysis(duplicatedData, duplicateTarget.customerLogoUrl);
+    setDuplicateTarget(null);
+    setDuplicateName("");
+    setDuplicateAuthorName("");
+  };
+
+  const handleDuplicateCancel = () => {
+    setDuplicateTarget(null);
+    setDuplicateName("");
+    setDuplicateAuthorName("");
+  };
+
   const validateForm = () => {
     const newErrors: { analysisName?: string; authorName?: string } = {};
     
@@ -122,6 +161,7 @@ export const WelcomeDialog = ({ open, onStartNew, onLoadAnalysis }: WelcomeDialo
   };
 
   return (
+    <>
     <Dialog open={open}>
       <DialogContent
         className="sm:max-w-lg"
@@ -162,7 +202,7 @@ export const WelcomeDialog = ({ open, onStartNew, onLoadAnalysis }: WelcomeDialo
                       {savedAnalyses.map((analysis) => (
                         <div
                           key={analysis.id}
-                          className="flex items-center justify-between p-3 rounded-md bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
+                          className="flex items-center justify-between p-3 rounded-md bg-muted/50 hover:bg-muted cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]"
                           onClick={() => handleLoad(analysis)}
                         >
                           <div className="flex-1 min-w-0">
@@ -177,15 +217,26 @@ export const WelcomeDialog = ({ open, onStartNew, onLoadAnalysis }: WelcomeDialo
                               </div>
                             )}
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
-                            onClick={(e) => handleDelete(analysis.id, e)}
-                            title="Delete analysis"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => handleDuplicateClick(analysis, e)}
+                              title="Duplicate analysis"
+                            >
+                              <Copy className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={(e) => handleDelete(analysis.id, e)}
+                              title="Delete analysis"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -262,5 +313,66 @@ export const WelcomeDialog = ({ open, onStartNew, onLoadAnalysis }: WelcomeDialo
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Name your duplicate dialog */}
+    <Dialog open={!!duplicateTarget} onOpenChange={(open) => !open && handleDuplicateCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Name your duplicate</DialogTitle>
+          <DialogDescription>
+            Edit the name for the duplicated analysis. You can change it later.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label htmlFor="duplicate-name">Analysis name</Label>
+            <Input
+              id="duplicate-name"
+              value={duplicateName}
+              onChange={(e) => setDuplicateName(e.target.value)}
+              placeholder="e.g., Acme Corp Value Assessment (copy)"
+              onKeyDown={(e) => e.key === "Enter" && handleDuplicateConfirm()}
+            />
+            {duplicateName.trim().length > 0 && duplicateName.trim().length < 3 && (
+              <p className="text-xs text-destructive">Name must be at least 3 characters</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="duplicate-author">Author name</Label>
+            <Input
+              id="duplicate-author"
+              value={duplicateAuthorName}
+              onChange={(e) => setDuplicateAuthorName(e.target.value)}
+              placeholder="e.g., John Smith"
+            />
+            {duplicateAuthorName.trim().length > 0 && (duplicateAuthorName.trim().length < 2 || duplicateAuthorName.trim().length > 50) && (
+              <p className="text-xs text-destructive">
+                {duplicateAuthorName.trim().length < 2 ? "Author name must be at least 2 characters" : "Author name must be less than 50 characters"}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-3 justify-end">
+            <Button variant="outline" onClick={handleDuplicateCancel}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDuplicateConfirm}
+              disabled={
+                !duplicateName.trim() ||
+                duplicateName.trim().length < 3 ||
+                !duplicateAuthorName.trim() ||
+                duplicateAuthorName.trim().length < 2 ||
+                duplicateAuthorName.trim().length > 50
+              }
+              className="gap-2"
+            >
+              Continue
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  </>
   );
 };

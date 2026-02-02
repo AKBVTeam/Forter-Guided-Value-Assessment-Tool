@@ -3,11 +3,11 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle2, AlertCircle, ArrowRight, Settings2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CheckCircle2, AlertCircle, Settings2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { NumericInput } from "./NumericInput";
 import { PercentageInput } from "./PercentageInput";
+import { cn } from "@/lib/utils";
 import { CalculatorData } from "@/pages/Index";
 import { ForterKPIs, defaultForterKPIs } from "./ForterKPIConfig";
 import { AbuseBenchmarks, defaultAbuseBenchmarks } from "./AbuseBenchmarksModal";
@@ -20,6 +20,10 @@ export interface RequiredInput {
   type: 'currency' | 'percentage' | 'number';
   /** If true, field is optional (e.g. Completed AOV); not counted as missing when empty */
   optional?: boolean;
+  /** Slider min for percentage type (default 0) */
+  min?: number;
+  /** Slider max for percentage type (default 100) */
+  max?: number;
 }
 
 // Define Forter KPI inputs per calculator type
@@ -29,6 +33,10 @@ export interface ForterKPIInput {
   description: string;
   type: 'percentage' | 'number';
   defaultValue: number;
+  /** Slider min for percentage type (default 0) */
+  min?: number;
+  /** Slider max for percentage type (default 100) */
+  max?: number;
 }
 
 // Abuse benchmark fields (stored in forterKPIs.abuseBenchmarks) - for returns/INR abuse calculators
@@ -38,6 +46,10 @@ export interface AbuseBenchmarkInput {
   description: string;
   type: 'currency' | 'percentage' | 'number';
   defaultValue?: number;
+  /** Slider min for percentage type (default 0) */
+  min?: number;
+  /** Slider max for percentage type (default 100) */
+  max?: number;
 }
 
 export interface CalculatorInputsConfig {
@@ -64,7 +76,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     ],
     forterKPIs: [
       { id: 'approvalRateImprovement', label: 'Target Fraud approval rate (%)', description: 'Expected approval rate with Forter', type: 'percentage', defaultValue: 99 },
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud chargeback rate with Forter (for chargeback calc)', type: 'percentage', defaultValue: 0.25 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud chargeback rate with Forter (for chargeback calc)', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'chargeback': {
@@ -73,11 +85,11 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     requiredInputs: [
       { id: 'amerAnnualGMV', label: 'Transaction Attempts ($)', description: 'Total annual gross merchandise value', type: 'currency' },
       { id: 'amerGrossAttempts', label: 'Transaction Attempts (#)', description: 'Total number of annual transaction attempts', type: 'number' },
-      { id: 'fraudCBRate', label: 'Gross Fraud Chargeback Rate (%)', description: 'Current fraud chargeback rate as % of GMV', type: 'percentage' },
+      { id: 'fraudCBRate', label: 'Gross Fraud Chargeback Rate (%)', description: 'Current fraud chargeback rate as % of GMV', type: 'percentage', min: 0, max: 10 },
       { id: 'fraudCBAOV', label: 'Fraud Chargeback AOV ($)', description: 'Average order value for fraud chargebacks', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c1-chargeback': {
@@ -86,11 +98,11 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     requiredInputs: [
       { id: 'amerAnnualGMV', label: 'Transaction Attempts ($)', description: 'Total annual gross merchandise value', type: 'currency' },
       { id: 'amerGrossAttempts', label: 'Transaction Attempts (#)', description: 'Total number of annual transaction attempts', type: 'number' },
-      { id: 'fraudCBRate', label: 'Gross Fraud Chargeback Rate (%)', description: 'Current fraud chargeback rate as % of GMV', type: 'percentage' },
+      { id: 'fraudCBRate', label: 'Gross Fraud Chargeback Rate (%)', description: 'Current fraud chargeback rate as % of GMV', type: 'percentage', min: 0, max: 10 },
       { id: 'fraudCBAOV', label: 'Fraud Chargeback AOV ($)', description: 'Average order value for fraud chargebacks', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c245-revenue': {
@@ -112,7 +124,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'preAuthApprovalImprovement', label: 'Target Pre-Auth Fraud Approval Rate (%)', description: 'Expected approval rate with Forter', type: 'percentage', defaultValue: 99 },
       { id: 'postAuthApprovalImprovement', label: 'Target Post-Auth Fraud Approval Rate (%)', description: 'Expected post-auth approval rate with Forter', type: 'percentage', defaultValue: 100 },
       { id: 'threeDSReduction', label: 'Target 3DS Rate (%)', description: 'Expected 3DS challenge rate with Forter', type: 'percentage', defaultValue: 10 },
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c245-chargeback': {
@@ -123,13 +135,13 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'amerGrossAttempts', label: 'Transaction Attempts (#)', description: 'Total number of annual transaction attempts', type: 'number' },
       { id: 'amerPreAuthApprovalRate', label: 'Pre-Auth Fraud Approval Rate (%)', description: 'Current approval rate after fraud screening', type: 'percentage' },
       { id: 'amerPostAuthApprovalRate', label: 'Post-Auth Fraud Approval Rate (%)', description: 'Current post-auth approval rate', type: 'percentage' },
-      { id: 'fraudCBRate', label: 'Gross Fraud Chargeback Rate (%)', description: 'Current fraud chargeback rate as % of GMV', type: 'percentage' },
+      { id: 'fraudCBRate', label: 'Gross Fraud Chargeback Rate (%)', description: 'Current fraud chargeback rate as % of GMV', type: 'percentage', min: 0, max: 10 },
       { id: 'fraudCBAOV', label: 'Fraud Chargeback AOV ($)', description: 'Average order value for fraud chargebacks', type: 'currency' },
     ],
     forterKPIs: [
       { id: 'preAuthApprovalImprovement', label: 'Target Pre-Auth Fraud Approval Rate (%)', description: 'Expected approval rate with Forter', type: 'percentage', defaultValue: 99 },
       { id: 'postAuthApprovalImprovement', label: 'Target Post-Auth Fraud Approval Rate (%)', description: 'Expected post-auth approval rate with Forter', type: 'percentage', defaultValue: 100 },
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c3-review': {
@@ -331,11 +343,11 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     calculatorName: 'Reduce re-activation costs',
     requiredInputs: [
       { id: 'monthlySignups', label: 'Monthly Number of Sign-ups (#)', description: 'Number of new account signups per month', type: 'number' },
-      { id: 'pctFraudulentSignups', label: 'Percent of Fraudulent Sign-ups (%)', description: 'Percentage of signups that are fraudulent (e.g. duplicate accounts)', type: 'percentage' },
       { id: 'numDigitalCommunicationsPerYear', label: 'Digital Communications per Year (#)', description: 'Number of digital communications (email, SMS) sent per year to users', type: 'number' },
       { id: 'avgCostPerOutreach', label: 'Avg. Cost per Outreach ($)', description: 'Average cost per outreach (email, SMS)', type: 'currency' },
     ],
     forterKPIs: [
+      { id: 'pctFraudulentSignups', label: 'Percent of Fraudulent Sign-ups (e.g. duplicate) (%)', description: 'Estimated benchmark: % of signups that are fraudulent (Forter assumption)', type: 'percentage', defaultValue: 10 },
       { id: 'forterFraudulentSignupReduction', label: 'Fraud Signup Reduction (%)', description: 'Expected reduction in fraudulent signups with Forter', type: 'percentage', defaultValue: 95 },
     ],
   },
@@ -346,7 +358,6 @@ interface CalculatorInputsTabProps {
   formData: CalculatorData;
   onFormDataChange: (field: keyof CalculatorData, value: number) => void;
   onForterKPIChange?: (field: keyof ForterKPIs, value: number | AbuseBenchmarks) => void;
-  onGoToCalculator: () => void;
   currency?: string;
 }
 
@@ -355,7 +366,6 @@ export const CalculatorInputsTab = ({
   formData,
   onFormDataChange,
   onForterKPIChange,
-  onGoToCalculator,
   currency = 'USD',
 }: CalculatorInputsTabProps) => {
   const config = CALCULATOR_REQUIRED_INPUTS[calculatorId];
@@ -448,14 +458,14 @@ export const CalculatorInputsTab = ({
             </div>
             <p className="text-xs text-muted-foreground ml-6">{input.description}</p>
           </div>
-          <div className="w-40 flex-shrink-0">
+          <div className={cn("flex-shrink-0", input.type === 'percentage' ? "min-w-[260px] w-[260px]" : "w-40")}>
             {input.type === 'percentage' ? (
               <PercentageInput
                 value={value ?? 0}
                 onChange={(v) => onFormDataChange(input.id, v)}
-                min={0}
-                max={100}
-                className={isHighlighted ? 'border-amber-300 focus:border-amber-500' : ''}
+                min={input.min ?? 0}
+                max={input.max ?? 100}
+                className={cn('text-right', isHighlighted ? 'border-amber-300 focus:border-amber-500' : '')}
               />
             ) : (
               <NumericInput
@@ -463,7 +473,7 @@ export const CalculatorInputsTab = ({
                 onChange={(v) => onFormDataChange(input.id, v)}
                 placeholder={input.type === 'currency' ? currencySymbol + '0' : '0'}
                 formatWithCommas={true}
-                className={isHighlighted ? 'border-amber-300 focus:border-amber-500' : ''}
+                className={cn('text-right', isHighlighted ? 'border-amber-300 focus:border-amber-500' : '')}
               />
             )}
           </div>
@@ -501,14 +511,14 @@ export const CalculatorInputsTab = ({
             </div>
             <p className="text-xs text-muted-foreground ml-6">{kpiInput.description}</p>
           </div>
-          <div className="w-40 flex-shrink-0">
+          <div className={cn("flex-shrink-0", kpiInput.type === 'percentage' ? "min-w-[260px] w-[260px]" : "w-40")}>
             {kpiInput.type === 'percentage' ? (
               <PercentageInput
                 value={value ?? kpiInput.defaultValue}
                 onChange={(v) => onForterKPIChange?.(kpiInput.id, v)}
-                min={0}
-                max={100}
-                className={!isComplete ? 'border-amber-300 focus:border-amber-500' : ''}
+                min={kpiInput.min ?? 0}
+                max={kpiInput.max ?? 100}
+                className={cn('text-right', !isComplete ? 'border-amber-300 focus:border-amber-500' : '')}
               />
             ) : (
               <NumericInput
@@ -516,7 +526,7 @@ export const CalculatorInputsTab = ({
                 onChange={(v) => onForterKPIChange?.(kpiInput.id, v)}
                 placeholder="0"
                 formatWithCommas={true}
-                className={!isComplete ? 'border-amber-300 focus:border-amber-500' : ''}
+                className={cn('text-right', !isComplete ? 'border-amber-300 focus:border-amber-500' : '')}
               />
             )}
           </div>
@@ -560,14 +570,14 @@ export const CalculatorInputsTab = ({
             </div>
             <p className="text-xs text-muted-foreground ml-6">{bmInput.description}</p>
           </div>
-          <div className="w-40 flex-shrink-0">
+          <div className={cn("flex-shrink-0", bmInput.type === 'percentage' ? "min-w-[260px] w-[260px]" : "w-40")}>
             {bmInput.type === 'percentage' ? (
               <PercentageInput
                 value={value ?? bmInput.defaultValue ?? 0}
                 onChange={handleChange}
-                min={0}
-                max={100}
-                className={!isComplete ? 'border-amber-300 focus:border-amber-500' : ''}
+                min={bmInput.min ?? 0}
+                max={bmInput.max ?? 100}
+                className={cn('text-right', !isComplete ? 'border-amber-300 focus:border-amber-500' : '')}
               />
             ) : (
               <NumericInput
@@ -575,7 +585,7 @@ export const CalculatorInputsTab = ({
                 onChange={handleChange}
                 placeholder={bmInput.type === 'currency' ? currencySymbol + '0' : '0'}
                 formatWithCommas={true}
-                className={!isComplete ? 'border-amber-300 focus:border-amber-500' : ''}
+                className={cn('text-right', !isComplete ? 'border-amber-300 focus:border-amber-500' : '')}
               />
             )}
           </div>
@@ -653,25 +663,6 @@ export const CalculatorInputsTab = ({
           </div>
         </>
       )}
-      
-      {/* Go to Calculator Button */}
-      <div className="flex justify-center pt-2">
-        <Button 
-          size="lg"
-          onClick={onGoToCalculator}
-          className="gap-2"
-        >
-          {isComplete ? (
-            <>
-              Go to Calculator <ArrowRight className="w-4 h-4" />
-            </>
-          ) : (
-            <>
-              Save & Continue <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +7,8 @@ import { CalculatorData, PersistedChangelogEntry } from "@/pages/Index";
 import { InvestmentInputs } from "@/lib/roiCalculations";
 
 const MAX_CHANGELOG_ENTRIES = 500;
+/** Delay (ms) after last edit before a change is recorded as "completed" (avoids logging every keystroke) */
+const CHANGELOG_COMMIT_DEBOUNCE_MS = 1500;
 
 interface ChangelogPanelProps {
   currentData: CalculatorData;
@@ -102,7 +104,26 @@ const fieldLabels: Record<string, string> = {
   emeaFraudCBAOV: "EMEA Fraud CB AOV ($)",
   apacFraudCBAOV: "APAC Fraud CB AOV ($)",
   serviceCBAOV: "Service CB AOV ($)",
+  // Metadata / bureaucratic (user-friendly labels only; some excluded from changelog)
+  _pathwayMode: "Assessment type",
+  _analysisName: "Analysis name",
+  _authorName: "Report prepared by",
+  baseCurrency: "Base currency",
+  useCaseNotes: "Use case notes",
 };
+
+// Fields to exclude from changelog (internal IDs, UI state, or too technical)
+const excludedCustomerKeys = new Set([
+  "forterKPIs",
+  "abuseBenchmarks",
+  "selectedChallenges",
+  "_changelogHistory",
+  "_lastUpdatedAt",
+  "_analysisId",
+  "_valueSummaryViewed",
+  "customBenefitNames",
+  "standaloneCalculators",
+]);
 
 // Investment input labels
 const investmentFieldLabels: Record<string, string> = {
@@ -148,12 +169,20 @@ const investmentFieldLabels: Record<string, string> = {
   "accountProtection.signupCostPerAPICall": "Account Protection - Cost per Sign-up API Call ($)",
 };
 
-const formatValue = (value: unknown, field?: string): string => {
+/** User-friendly display for changelog values (including bureaucratic fields) */
+const formatChangelogValue = (value: unknown, field?: string): string => {
   if (value === undefined || value === null || value === "") return "Not set";
-  if (typeof value === "boolean") {
-    if (field === "isMarketplace") return value ? "Marketplace" : "Retailer";
-    return value ? "Yes" : "No";
+  // Bureaucratic / metadata fields: show human-readable text
+  if (field === "_pathwayMode") {
+    const v = String(value).toLowerCase();
+    if (v === "manual") return "Guided Value Assessment";
+    if (v === "custom") return "Custom Value Assessment";
+    return String(value);
   }
+  if (field === "isMarketplace" && typeof value === "boolean") {
+    return value ? "Marketplace" : "Retailer";
+  }
+  if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (value === 0) return "0";
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
@@ -212,6 +241,58 @@ const flattenInvestmentInputs = (inputs: InvestmentInputs | undefined): Record<s
   return flat;
 };
 
+function computeCustomerDiff(
+  currentData: CalculatorData,
+  prevData: CalculatorData,
+  isEqual: (a: unknown, b: unknown) => boolean
+): PersistedChangelogEntry[] {
+  const keys = new Set<string>([
+    ...Object.keys(prevData),
+    ...Object.keys(currentData),
+  ]);
+  const newEntries: PersistedChangelogEntry[] = [];
+  keys.forEach((key) => {
+    if (excludedCustomerKeys.has(key)) return;
+    const currValue = currentData[key as keyof CalculatorData];
+    const prevValue = prevData[key as keyof CalculatorData];
+    if (!isEqual(currValue, prevValue)) {
+      newEntries.push({
+        field: key,
+        label: fieldLabels[key] || key,
+        oldValue: prevValue as string | number | boolean | undefined,
+        newValue: currValue as string | number | boolean | undefined,
+        timestamp: new Date().toISOString(),
+        category: 'customer',
+      });
+    }
+  });
+  return newEntries;
+}
+
+function computeInvestmentDiff(
+  currFlat: Record<string, unknown>,
+  prevFlat: Record<string, unknown>,
+  isEqual: (a: unknown, b: unknown) => boolean
+): PersistedChangelogEntry[] {
+  const keys = new Set<string>([...Object.keys(prevFlat), ...Object.keys(currFlat)]);
+  const newEntries: PersistedChangelogEntry[] = [];
+  keys.forEach((key) => {
+    const currValue = currFlat[key];
+    const prevValue = prevFlat[key];
+    if (!isEqual(currValue, prevValue)) {
+      newEntries.push({
+        field: `inv_${key}`,
+        label: investmentFieldLabels[key] || key,
+        oldValue: prevValue as string | number | boolean | undefined,
+        newValue: currValue as string | number | boolean | undefined,
+        timestamp: new Date().toISOString(),
+        category: 'investment',
+      });
+    }
+  });
+  return newEntries;
+}
+
 export const ChangelogPanel = ({ 
   currentData, 
   initialData,
@@ -223,12 +304,20 @@ export const ChangelogPanel = ({
   const prevDataRef = useRef<CalculatorData>(initialData);
   const prevInvestmentRef = useRef<Record<string, unknown>>(flattenInvestmentInputs(initialInvestmentInputs));
   const analysisIdRef = useRef<string | undefined>(initialData._analysisId);
+  const currentDataRef = useRef<CalculatorData>(currentData);
+  const currentInvestmentFlatRef = useRef<Record<string, unknown>>(flattenInvestmentInputs(currentInvestmentInputs));
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceInvestmentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistedChangelogRef = useRef(persistedChangelog);
+  const onChangelogUpdateRef = useRef(onChangelogUpdate);
+  persistedChangelogRef.current = persistedChangelog;
+  onChangelogUpdateRef.current = onChangelogUpdate;
 
-  const isEqual = (a: unknown, b: unknown) => {
+  const isEqual = useCallback((a: unknown, b: unknown) => {
     const sa = a === undefined ? "__undefined__" : JSON.stringify(a);
     const sb = b === undefined ? "__undefined__" : JSON.stringify(b);
     return sa === sb;
-  };
+  }, []);
 
   // Reset baseline when analysis changes (e.g. load different analysis)
   useEffect(() => {
@@ -236,87 +325,75 @@ export const ChangelogPanel = ({
       analysisIdRef.current = initialData._analysisId;
       prevDataRef.current = { ...initialData };
       prevInvestmentRef.current = flattenInvestmentInputs(initialInvestmentInputs);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      if (debounceInvestmentTimerRef.current) {
+        clearTimeout(debounceInvestmentTimerRef.current);
+        debounceInvestmentTimerRef.current = null;
+      }
     }
   }, [initialData._analysisId, initialData, initialInvestmentInputs]);
 
-  // Track customer data changes and append to persisted history (activity since inception)
+  // Track customer data changes; only record after user has stopped editing (debounce)
   useEffect(() => {
+    currentDataRef.current = currentData;
     const prevData = prevDataRef.current;
-    const excluded = new Set(["forterKPIs", "abuseBenchmarks", "selectedChallenges", "_changelogHistory", "_lastUpdatedAt"]);
+    const newEntries = computeCustomerDiff(currentData, prevData, isEqual);
 
-    const keys = new Set<string>([
-      ...Object.keys(initialData),
-      ...Object.keys(currentData),
-      ...Object.keys(prevData),
-    ]);
+    if (newEntries.length === 0 || !onChangelogUpdate) return;
 
-    const newEntries: PersistedChangelogEntry[] = [];
-
-    keys.forEach((key) => {
-      if (excluded.has(key)) return;
-
-      const currValue = currentData[key as keyof CalculatorData];
-      const prevValue = prevData[key as keyof CalculatorData];
-
-      if (!isEqual(currValue, prevValue)) {
-        newEntries.push({
-          field: key,
-          label: fieldLabels[key] || key,
-          oldValue: prevValue as string | number | boolean | undefined,
-          newValue: currValue as string | number | boolean | undefined,
-          timestamp: new Date().toISOString(),
-          category: 'customer',
-        });
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      const latest = currentDataRef.current;
+      const entries = computeCustomerDiff(latest, prevDataRef.current, isEqual);
+      if (entries.length > 0 && onChangelogUpdateRef.current) {
+        const merged = [...(persistedChangelogRef.current || []), ...entries];
+        const capped = merged.slice(-MAX_CHANGELOG_ENTRIES);
+        onChangelogUpdateRef.current(capped);
       }
-    });
+      prevDataRef.current = { ...latest };
+    }, CHANGELOG_COMMIT_DEBOUNCE_MS);
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    };
+  }, [currentData, isEqual, onChangelogUpdate]);
 
-    if (newEntries.length > 0 && onChangelogUpdate) {
-      const merged = [...(persistedChangelog || []), ...newEntries];
-      const capped = merged.slice(-MAX_CHANGELOG_ENTRIES);
-      onChangelogUpdate(capped);
-    }
-
-    prevDataRef.current = { ...currentData };
-  }, [currentData, initialData, persistedChangelog, onChangelogUpdate]);
-
-  // Track investment input changes and append to persisted history
+  // Track investment input changes; only record after user has stopped editing (debounce)
   useEffect(() => {
     if (!currentInvestmentInputs || !initialInvestmentInputs || !onChangelogUpdate) return;
-    
+
     const currFlat = flattenInvestmentInputs(currentInvestmentInputs);
+    currentInvestmentFlatRef.current = currFlat;
     const prevFlat = prevInvestmentRef.current;
+    const newEntries = computeInvestmentDiff(currFlat, prevFlat, isEqual);
 
-    const keys = new Set<string>([
-      ...Object.keys(prevFlat),
-      ...Object.keys(currFlat),
-    ]);
+    if (newEntries.length === 0) return;
 
-    const newEntries: PersistedChangelogEntry[] = [];
-
-    keys.forEach((key) => {
-      const currValue = currFlat[key];
-      const prevValue = prevFlat[key];
-
-      if (!isEqual(currValue, prevValue)) {
-        newEntries.push({
-          field: `inv_${key}`,
-          label: investmentFieldLabels[key] || key,
-          oldValue: prevValue as string | number | boolean | undefined,
-          newValue: currValue as string | number | boolean | undefined,
-          timestamp: new Date().toISOString(),
-          category: 'investment',
-        });
+    if (debounceInvestmentTimerRef.current) clearTimeout(debounceInvestmentTimerRef.current);
+    debounceInvestmentTimerRef.current = setTimeout(() => {
+      debounceInvestmentTimerRef.current = null;
+      const latest = currentInvestmentFlatRef.current;
+      const entries = computeInvestmentDiff(latest, prevInvestmentRef.current, isEqual);
+      if (entries.length > 0 && onChangelogUpdateRef.current) {
+        const merged = [...(persistedChangelogRef.current || []), ...entries];
+        const capped = merged.slice(-MAX_CHANGELOG_ENTRIES);
+        onChangelogUpdateRef.current(capped);
       }
-    });
-
-    if (newEntries.length > 0) {
-      const merged = [...(persistedChangelog || []), ...newEntries];
-      const capped = merged.slice(-MAX_CHANGELOG_ENTRIES);
-      onChangelogUpdate(capped);
-    }
-
-    prevInvestmentRef.current = { ...currFlat };
-  }, [currentInvestmentInputs, initialInvestmentInputs, persistedChangelog, onChangelogUpdate]);
+      prevInvestmentRef.current = { ...(latest || {}) };
+    }, CHANGELOG_COMMIT_DEBOUNCE_MS);
+    return () => {
+      if (debounceInvestmentTimerRef.current) {
+        clearTimeout(debounceInvestmentTimerRef.current);
+        debounceInvestmentTimerRef.current = null;
+      }
+    };
+  }, [currentInvestmentInputs, initialInvestmentInputs, isEqual, onChangelogUpdate]);
 
   // Display: full history since inception (persisted + any just-added), sorted by timestamp desc
   const displayChangelog = (persistedChangelog || []).slice().sort(
@@ -364,14 +441,20 @@ export const ChangelogPanel = ({
                         )}
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(entry.timestamp).toLocaleTimeString()}
+                        {(() => {
+                          const d = new Date(entry.timestamp);
+                          const day = d.getDate().toString().padStart(2, "0");
+                          const month = d.toLocaleString("en", { month: "short" });
+                          const year = d.getFullYear().toString().slice(-2);
+                          return `${day}-${month}-${year}, ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+                        })()}
                       </span>
                     </div>
                     <div className="text-muted-foreground text-xs mt-1">
-                      <span className="line-through">{formatValue(entry.oldValue, entry.field)}</span>
+                      <span className="line-through">{formatChangelogValue(entry.oldValue, entry.field)}</span>
                       <span className="mx-2">→</span>
                       <span className="text-foreground font-medium">
-                        {formatValue(entry.newValue, entry.field)}
+                        {formatChangelogValue(entry.newValue, entry.field)}
                       </span>
                     </div>
                   </div>

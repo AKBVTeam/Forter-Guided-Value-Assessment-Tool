@@ -27,8 +27,9 @@ import {
   chargebackRecoveryPricing,
 } from "@/lib/roiCalculations";
 import { getCurrencySymbol, getExchangeRateFromUSD, convertFromUSD, convertCurrencyViaUSD } from "@/lib/benchmarkData";
-import { Calculator, Settings, DollarSign, ChevronDown, ChevronUp, Info, Plus, Trash2, ExternalLink } from "lucide-react";
+import { Calculator, Settings, DollarSign, ChevronDown, ChevronUp, Info, Plus, Trash2, ExternalLink, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface InvestmentModalProps {
   open: boolean;
@@ -51,9 +52,10 @@ export function InvestmentModal({
 }: InvestmentModalProps) {
   const [localInputs, setLocalInputs] = useState<InvestmentInputs>(investmentInputs);
   const [activeTab, setActiveTab] = useState<'guided' | 'manual'>('guided');
-  const customModeInitializedRef = useRef(false);
+  /** First time the modal is opened (per session): turn all product toggles off so user opts in. */
+  const investmentModalFirstOpenRef = useRef(false);
   
-  // Collapsible sections - all collapsed by default
+  // Collapsible sections - default all closed; persist when modal stays mounted (close/reopen)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     fraudManagement: false,
     paymentOptimization: false,
@@ -190,25 +192,16 @@ export function InvestmentModal({
       const updated = { ...prev };
       const changedFields: string[] = [];
       
-      // In custom mode, show all solutions but start unchecked
-      // Otherwise, set enabled flags based on selected challenges
-      if (isCustomMode) {
-        // Only set to false on first open
-        if (!customModeInitializedRef.current) {
-          updated.fraudManagement.enabled = false;
-          updated.paymentOptimization.enabled = false;
-          updated.disputeManagement.enabled = false;
-          updated.abusePrevention.enabled = false;
-          updated.accountProtection.enabled = false;
-          customModeInitializedRef.current = true;
-        }
-      } else {
-        updated.fraudManagement.enabled = enabledSolutions.fraudManagement;
-        updated.paymentOptimization.enabled = enabledSolutions.paymentOptimization;
-        updated.disputeManagement.enabled = enabledSolutions.disputeManagement;
-        updated.abusePrevention.enabled = enabledSolutions.abusePrevention;
-        updated.accountProtection.enabled = enabledSolutions.accountProtection;
+      // On first open only: turn all product toggles off so user opts in
+      if (!investmentModalFirstOpenRef.current) {
+        investmentModalFirstOpenRef.current = true;
+        updated.fraudManagement.enabled = false;
+        updated.paymentOptimization.enabled = false;
+        updated.disputeManagement.enabled = false;
+        updated.abusePrevention.enabled = false;
+        updated.accountProtection.enabled = false;
       }
+      // Otherwise: keep persisted enabled state from prev (don't overwrite from enabledSolutions)
       
       // Fraud Management - ALWAYS sync volume fields
       if (enabledSolutions.fraudManagement) {
@@ -319,6 +312,24 @@ export function InvestmentModal({
   }, [open, baseCurrency, formData.amerGrossAttempts, formData.amerAnnualGMV, formData.amerCreditCardPct, formData.segmentationEnabled, formData.segments]);
 
   const costs = calculateInvestmentCosts(localInputs, formData);
+
+  // Required solution state: needs input (off or $0) vs filled (on and > $0)
+  const fraudMgmtCost = (costs.breakdown['Fraud Management'] || 0) + (costs.breakdown['Fraud CB Coverage'] || 0);
+  const paymentOptCost = costs.breakdown['Payment Optimization'] || 0;
+  const disputeMgmtCost = costs.breakdown['Dispute Management'] || 0;
+  const abusePrevCost = costs.breakdown['Abuse Prevention'] || 0;
+  const accountProtCost = (costs.breakdown['Login Protection'] || 0) + (costs.breakdown['Sign-up Protection'] || 0);
+
+  const reqFraudNeedsInput = enabledSolutions.fraudManagement && (!localInputs.fraudManagement.enabled || fraudMgmtCost === 0);
+  const reqFraudFilled = enabledSolutions.fraudManagement && localInputs.fraudManagement.enabled && fraudMgmtCost > 0;
+  const reqPaymentNeedsInput = enabledSolutions.paymentOptimization && (!localInputs.paymentOptimization.enabled || paymentOptCost === 0);
+  const reqPaymentFilled = enabledSolutions.paymentOptimization && localInputs.paymentOptimization.enabled && paymentOptCost > 0;
+  const reqDisputeNeedsInput = enabledSolutions.disputeManagement && (!localInputs.disputeManagement.enabled || disputeMgmtCost === 0);
+  const reqDisputeFilled = enabledSolutions.disputeManagement && localInputs.disputeManagement.enabled && disputeMgmtCost > 0;
+  const reqAbuseNeedsInput = enabledSolutions.abusePrevention && (!localInputs.abusePrevention.enabled || abusePrevCost === 0);
+  const reqAbuseFilled = enabledSolutions.abusePrevention && localInputs.abusePrevention.enabled && abusePrevCost > 0;
+  const reqAccountNeedsInput = enabledSolutions.accountProtection && (!localInputs.accountProtection.enabled || accountProtCost === 0);
+  const reqAccountFilled = enabledSolutions.accountProtection && localInputs.accountProtection.enabled && accountProtCost > 0;
 
   // handleSave removed - auto-save via useEffect
 
@@ -539,7 +550,10 @@ export function InvestmentModal({
 
             {/* Fraud Management */}
             {(enabledSolutions.fraudManagement || isCustomMode) && (
-              <Card className="overflow-hidden">
+              <Card className={cn(
+                "overflow-hidden transition-colors",
+                reqFraudNeedsInput && "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30 ring-2 ring-amber-500/20 dark:ring-amber-500/30"
+              )}>
                 <button
                   onClick={() => toggleSection('fraudManagement')}
                   className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
@@ -550,7 +564,23 @@ export function InvestmentModal({
                       onCheckedChange={(checked) => updateFraudManagement('enabled', checked)}
                       onClick={(e) => e.stopPropagation()}
                     />
+                    {reqFraudNeedsInput && (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" aria-hidden />
+                    )}
                     <span className="font-medium">Fraud Management</span>
+                    {enabledSolutions.fraudManagement && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs font-normal shrink-0",
+                          reqFraudFilled
+                            ? "border-green-300 bg-green-100 text-green-800 dark:border-green-700 dark:bg-green-950/50 dark:text-green-200"
+                            : "text-primary border-primary/50 bg-primary/5"
+                        )}
+                      >
+                        Required Solution
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     {localInputs.fraudManagement.enabled && (
@@ -566,7 +596,7 @@ export function InvestmentModal({
                   </div>
                 </button>
                 
-                {expandedSections.fraudManagement && localInputs.fraudManagement.enabled && (
+                {expandedSections.fraudManagement && (
                   <div className="px-4 pb-4 space-y-4 border-t pt-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -660,7 +690,10 @@ export function InvestmentModal({
 
             {/* Payment Optimization */}
             {(enabledSolutions.paymentOptimization || isCustomMode) && (
-              <Card className="overflow-hidden">
+              <Card className={cn(
+                "overflow-hidden transition-colors",
+                reqPaymentNeedsInput && "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30 ring-2 ring-amber-500/20 dark:ring-amber-500/30"
+              )}>
                 <button
                   onClick={() => toggleSection('paymentOptimization')}
                   className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
@@ -671,7 +704,23 @@ export function InvestmentModal({
                       onCheckedChange={(checked) => updatePaymentOptimization('enabled', checked)}
                       onClick={(e) => e.stopPropagation()}
                     />
+                    {reqPaymentNeedsInput && (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" aria-hidden />
+                    )}
                     <span className="font-medium">Payment Optimization</span>
+                    {enabledSolutions.paymentOptimization && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs font-normal shrink-0",
+                          reqPaymentFilled
+                            ? "border-green-300 bg-green-100 text-green-800 dark:border-green-700 dark:bg-green-950/50 dark:text-green-200"
+                            : "text-primary border-primary/50 bg-primary/5"
+                        )}
+                      >
+                        Required Solution
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     {localInputs.paymentOptimization.enabled && (
@@ -687,7 +736,7 @@ export function InvestmentModal({
                   </div>
                 </button>
                 
-                {expandedSections.paymentOptimization && localInputs.paymentOptimization.enabled && (
+                {expandedSections.paymentOptimization && (
                   <div className="px-4 pb-4 space-y-4 border-t pt-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -743,7 +792,10 @@ export function InvestmentModal({
 
             {/* Dispute Management */}
             {(enabledSolutions.disputeManagement || isCustomMode) && (
-              <Card className="overflow-hidden">
+              <Card className={cn(
+                "overflow-hidden transition-colors",
+                reqDisputeNeedsInput && "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30 ring-2 ring-amber-500/20 dark:ring-amber-500/30"
+              )}>
                 <button
                   onClick={() => toggleSection('disputeManagement')}
                   className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
@@ -754,7 +806,23 @@ export function InvestmentModal({
                       onCheckedChange={(checked) => updateDisputeManagement('enabled', checked)}
                       onClick={(e) => e.stopPropagation()}
                     />
+                    {reqDisputeNeedsInput && (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" aria-hidden />
+                    )}
                     <span className="font-medium">Dispute Management</span>
+                    {enabledSolutions.disputeManagement && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs font-normal shrink-0",
+                          reqDisputeFilled
+                            ? "border-green-300 bg-green-100 text-green-800 dark:border-green-700 dark:bg-green-950/50 dark:text-green-200"
+                            : "text-primary border-primary/50 bg-primary/5"
+                        )}
+                      >
+                        Required Solution
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     {localInputs.disputeManagement.enabled && (
@@ -770,7 +838,7 @@ export function InvestmentModal({
                   </div>
                 </button>
                 
-                {expandedSections.disputeManagement && localInputs.disputeManagement.enabled && (
+                {expandedSections.disputeManagement && (
                   <div className="px-4 pb-4 space-y-4 border-t pt-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -803,9 +871,12 @@ export function InvestmentModal({
               </Card>
             )}
 
-            {/* Abuse Prevention */}
+            {/* Policy Abuse Prevention */}
             {(enabledSolutions.abusePrevention || isCustomMode) && (
-              <Card className="overflow-hidden">
+              <Card className={cn(
+                "overflow-hidden transition-colors",
+                reqAbuseNeedsInput && "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30 ring-2 ring-amber-500/20 dark:ring-amber-500/30"
+              )}>
                 <button
                   onClick={() => toggleSection('abusePrevention')}
                   className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
@@ -816,7 +887,23 @@ export function InvestmentModal({
                       onCheckedChange={(checked) => updateAbusePrevention('enabled', checked)}
                       onClick={(e) => e.stopPropagation()}
                     />
-                    <span className="font-medium">Abuse Prevention</span>
+                    {reqAbuseNeedsInput && (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" aria-hidden />
+                    )}
+                    <span className="font-medium">Policy Abuse Prevention</span>
+                    {enabledSolutions.abusePrevention && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs font-normal shrink-0",
+                          reqAbuseFilled
+                            ? "border-green-300 bg-green-100 text-green-800 dark:border-green-700 dark:bg-green-950/50 dark:text-green-200"
+                            : "text-primary border-primary/50 bg-primary/5"
+                        )}
+                      >
+                        Required Solution
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     {localInputs.abusePrevention.enabled && (
@@ -832,7 +919,7 @@ export function InvestmentModal({
                   </div>
                 </button>
                 
-                {expandedSections.abusePrevention && localInputs.abusePrevention.enabled && (
+                {expandedSections.abusePrevention && (
                   <div className="px-4 pb-4 space-y-4 border-t pt-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -868,7 +955,7 @@ export function InvestmentModal({
                     </div>
                     {/* Solution Total */}
                     <div className="mt-4 p-3 bg-muted/50 rounded-lg flex items-center justify-between">
-                      <span className="text-sm font-medium text-muted-foreground">Abuse Prevention Total</span>
+                      <span className="text-sm font-medium text-muted-foreground">Policy Abuse Prevention Total</span>
                       <span className="text-lg font-semibold text-primary">
                         {formatCurrency(costs.breakdown['Abuse Prevention'] || 0)}
                       </span>
@@ -880,7 +967,10 @@ export function InvestmentModal({
 
             {/* Account Protection */}
             {(enabledSolutions.accountProtection || isCustomMode) && (
-              <Card className="overflow-hidden">
+              <Card className={cn(
+                "overflow-hidden transition-colors",
+                reqAccountNeedsInput && "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30 ring-2 ring-amber-500/20 dark:ring-amber-500/30"
+              )}>
                 <button
                   onClick={() => toggleSection('accountProtection')}
                   className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
@@ -891,7 +981,23 @@ export function InvestmentModal({
                       onCheckedChange={(checked) => updateAccountProtection('enabled', checked)}
                       onClick={(e) => e.stopPropagation()}
                     />
+                    {reqAccountNeedsInput && (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0" aria-hidden />
+                    )}
                     <span className="font-medium">Account Protection</span>
+                    {enabledSolutions.accountProtection && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs font-normal shrink-0",
+                          reqAccountFilled
+                            ? "border-green-300 bg-green-100 text-green-800 dark:border-green-700 dark:bg-green-950/50 dark:text-green-200"
+                            : "text-primary border-primary/50 bg-primary/5"
+                        )}
+                      >
+                        Required Solution
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     {localInputs.accountProtection.enabled && (
@@ -907,7 +1013,7 @@ export function InvestmentModal({
                   </div>
                 </button>
                 
-                {expandedSections.accountProtection && localInputs.accountProtection.enabled && (
+                {expandedSections.accountProtection && (
                   <div className="px-4 pb-4 space-y-4 border-t pt-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-2">

@@ -46,8 +46,6 @@ export function PrintTabButton({
         backgroundColor: '#ffffff',
       });
       
-      const imgData = canvas.toDataURL('image/png');
-      
       // Create PDF in landscape
       const pdf = new jsPDF({
         orientation: 'landscape',
@@ -60,26 +58,48 @@ export function PrintTabButton({
       const margin = 10;
       const headerHeight = 8;
 
-      // Add analysis name at top of PDF
-      pdf.setFontSize(10);
-      pdf.setTextColor(100, 100, 100);
-      pdf.text(`Analysis: ${analysisName}`, margin, margin + 4);
-
-      // Scale image to fit page below the header
       const contentTop = margin + headerHeight;
+      const availableWidth = pageWidth - (margin * 2);
       const availableHeight = pageHeight - (margin * 2) - headerHeight;
-      const imgWidth = pageWidth - (margin * 2);
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      let finalWidth = imgWidth;
-      let finalHeight = imgHeight;
-      
-      if (imgHeight > availableHeight) {
-        finalHeight = availableHeight;
-        finalWidth = (canvas.width * finalHeight) / canvas.height;
+
+      // Fill page width: image height when drawn at full width (in mm)
+      const imgHeightAtFullWidth = (canvas.height * availableWidth) / canvas.width;
+      const numPages = Math.max(1, Math.ceil(imgHeightAtFullWidth / availableHeight));
+
+      // Scale factor: canvas pixels per mm when drawn at availableWidth
+      const canvasPxPerMm = canvas.width / availableWidth;
+      const sliceHeightPx = availableHeight * canvasPxPerMm;
+
+      for (let pageIndex = 0; pageIndex < numPages; pageIndex++) {
+        if (pageIndex > 0) {
+          pdf.addPage('a4', 'l');
+        }
+
+        // Add analysis name at top of each page
+        pdf.setFontSize(10);
+        pdf.setTextColor(100, 100, 100);
+        pdf.text(`Analysis: ${analysisName}${numPages > 1 ? ` (page ${pageIndex + 1}/${numPages})` : ''}`, margin, margin + 4);
+
+        const sourceY = pageIndex * sliceHeightPx;
+        const sourceH = Math.min(sliceHeightPx, canvas.height - sourceY);
+
+        if (sourceH <= 0) continue;
+
+        // Create a slice canvas for this page
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = Math.ceil(sourceH);
+        const ctx = sliceCanvas.getContext('2d');
+        if (!ctx) continue;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(canvas, 0, sourceY, canvas.width, sourceH, 0, 0, canvas.width, sourceH);
+        const sliceData = sliceCanvas.toDataURL('image/png');
+
+        // Draw slice to fill page width; height may be less on last page
+        const drawHeightMm = (sourceH / canvasPxPerMm);
+        pdf.addImage(sliceData, 'PNG', margin, contentTop, availableWidth, drawHeightMm);
       }
-      
-      pdf.addImage(imgData, 'PNG', margin, contentTop, finalWidth, finalHeight);
       
       // Save with formatted filename
       const dateStr = formatDateMMDDYY();

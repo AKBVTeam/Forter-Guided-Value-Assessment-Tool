@@ -12,11 +12,15 @@ import { ChangelogPanel } from "@/components/calculator/ChangelogPanel";
 import { SaveAsDialog } from "@/components/calculator/SaveAsDialog";
 import { OpenAnalysisButton } from "@/components/calculator/OpenAnalysisButton";
 import { WelcomeDialog } from "@/components/calculator/WelcomeDialog";
+import {
+  WhatIsBusinessValueModal,
+  getHasSeenWhatIsBusinessValue,
+} from "@/components/calculator/WhatIsBusinessValueModal";
 
 import { AutoSaveIndicator } from "@/components/calculator/AutoSaveIndicator";
 import { AuthButton } from "@/components/calculator/AuthButton";
 import { Badge } from "@/components/ui/badge";
-import { FilePlus } from "lucide-react";
+import { FilePlus, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -192,13 +196,20 @@ export type CalculatorData = {
   
   // Strategic objectives (selected during discovery)
   selectedObjectives?: ('revenue_growth' | 'customer_experience' | 'automation' | 'cost_reduction' | 'risk_mitigation')[];
-  
+  /** Free-form notes for use case discovery and challenges (persisted with analysis) */
+  useCaseNotes?: string;
+
   // Analysis metadata (used for auto-save and reload)
   _analysisId?: string;
   _analysisName?: string;
   _authorName?: string;
   _pathwayMode?: 'manual' | 'custom'; // Tracks which pathway was used for this analysis
+  /** True if user has viewed Value Summary (unlocks ROI tab); persisted so ROI stays unlocked when switching back to this analysis */
+  _valueSummaryViewed?: boolean;
+  /** True after we've applied the one-time default of "Show in millions" for analyses with annual impact > $10m */
+  _showInMillionsDefaultApplied?: boolean;
   _lastUpdatedAt?: string; // ISO string of the most recent save/change to this analysis
+  _startedAt?: string; // ISO string when this analysis was first started (for display)
   /** Changelog since inception: all modified inputs across sessions (persisted with analysis) */
   _changelogHistory?: PersistedChangelogEntry[];
   /** Custom display names for standard benefit/calculator names (custom pathway only) */
@@ -243,6 +254,7 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(true);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [showWhatIsBusinessValueModal, setShowWhatIsBusinessValueModal] = useState(false);
   const initialDataRef = useRef<CalculatorData>({ forterKPIs: defaultForterKPIs });
   
   // Navigation state for chat-driven tab changes
@@ -299,6 +311,18 @@ const Index = () => {
     },
   });
 
+  const dateFormat = { year: "numeric" as const, month: "long" as const, day: "numeric" as const };
+  // Analysis started display: when this analysis was first started (same format as last updated)
+  const startedDisplay = useMemo(() => {
+    const raw = (calculatorData as any)._startedAt;
+    if (!raw) return "—";
+    try {
+      const d = new Date(raw);
+      return isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, dateFormat);
+    } catch {
+      return "—";
+    }
+  }, [calculatorData]);
   // Last updated display: use the most recent change date for the current analysis
   const lastUpdatedDisplay = useMemo(() => {
     const id = (calculatorData as any)._analysisId;
@@ -307,7 +331,7 @@ const Index = () => {
     if (!raw) return "—";
     try {
       const d = new Date(raw);
-      return isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+      return isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, dateFormat);
     } catch {
       return "—";
     }
@@ -397,12 +421,14 @@ const Index = () => {
     const analysisId = Date.now().toString();
     
     // Store the initial analysis name, author, and ID for auto-save; reset changelog for new analysis
+    const now = new Date().toISOString();
     const newData = { 
       ...calculatorData,
       _analysisName: analysisName,
       _authorName: authorName,
       _analysisId: analysisId,
-      _lastUpdatedAt: new Date().toISOString(),
+      _startedAt: now,
+      _lastUpdatedAt: now,
       _changelogHistory: [], // New analysis: track activity since inception only for this analysis
     };
     console.log('[Index handleStartNew] newData._pathwayMode after spread:', (newData as any)._pathwayMode);
@@ -461,6 +487,11 @@ const Index = () => {
           onStartNew={handleStartNew}
           onLoadAnalysis={handleLoadAnalysis}
         />
+        <WhatIsBusinessValueModal
+          open={showWhatIsBusinessValueModal}
+          onOpenChange={setShowWhatIsBusinessValueModal}
+          markAsSeenOnClose
+        />
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Main content area - scrollable */}
           <div className={`flex-1 flex flex-col transition-all duration-300 overflow-y-auto`}>
@@ -471,7 +502,9 @@ const Index = () => {
                   <div className="flex items-center gap-8">
                     <div className="flex flex-col">
                       <img src={forterLogo} alt="Forter" className="h-10 object-contain" />
-                      <span className="text-[10px] text-muted-foreground mt-0.5">Last Updated: {lastUpdatedDisplay}</span>
+                      <span className="text-[10px] text-muted-foreground mt-0.5">Guided Value Assessment Version 1.0 (2026)</span>
+                      <span className="text-[10px] text-muted-foreground">Analysis Started: {startedDisplay}</span>
+                      <span className="text-[10px] text-muted-foreground">Analysis Last Updated: {lastUpdatedDisplay}</span>
                     </div>
                     {customerLogoUrl && (
                       <img src={customerLogoUrl} alt="Customer" className="h-10 object-contain" />
@@ -486,7 +519,7 @@ const Index = () => {
                     <SaveAsDialog
                       currentData={calculatorData}
                       customerLogoUrl={customerLogoUrl}
-                      onSaveAs={(newId, newName) => {
+                      onSaveAs={(newId, newName, authorName) => {
                         // Update ONLY metadata fields - keep all existing data including selectedChallenges
                         // Use a ref update to prevent triggering the child's "load analysis" effect
                         setCalculatorData(prev => {
@@ -494,6 +527,8 @@ const Index = () => {
                             ...prev,
                             _analysisId: newId,
                             _analysisName: newName,
+                            _authorName: authorName,
+                            _startedAt: new Date().toISOString(),
                             _lastUpdatedAt: new Date().toISOString(),
                           } as CalculatorData;
                           // Also update the initialDataRef so the change detection doesn't see it as "loaded"
@@ -502,6 +537,21 @@ const Index = () => {
                         });
                       }}
                     />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => setShowWhatIsBusinessValueModal(true)}
+                          className="size-8 rounded-full flex items-center justify-center text-sm font-semibold bg-amber-100 hover:bg-amber-200/90 text-amber-700 hover:text-amber-800 border border-amber-200/80 cursor-pointer transition-colors shrink-0"
+                          aria-label="Forter Guided Value Assessment Overview"
+                        >
+                          ?
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Forter Guided Value Assessment Overview</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
@@ -527,17 +577,17 @@ const Index = () => {
               <div className="max-w-4xl w-full space-y-8">
                 <div className="text-center space-y-4">
                   <h1 className="text-5xl font-bold text-primary">
-                    Guided Value Assessment
+                    Guided Value Assessment (GVA)
                   </h1>
                   <p className="text-xl text-muted-foreground">
-                    Collaborative model to help identify relevant challenges, quantify the business value of resolving these with Forter's solution
+                    Turn discovery insights into a robust, benchmark-validated ROI model in minutes
                   </p>
                 </div>
 
                 {/* Mode Selection */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <Card
-                    className="p-8 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all relative"
+                    className="p-8 cursor-pointer hover:shadow-lg hover:border-sky-300 hover:bg-sky-50/80 dark:hover:bg-sky-950/30 transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] relative ring-2 ring-sky-300/50 dark:ring-sky-600/40 bg-sky-50/60 dark:bg-sky-950/25 border-sky-200/80 dark:border-sky-800/50"
                     onClick={() => {
                       console.log('[Index] Clicking Guided Pathway button');
                       setShowWelcomeDialog(false);
@@ -553,6 +603,9 @@ const Index = () => {
                         }
                         return next;
                       });
+                      if (!getHasSeenWhatIsBusinessValue()) {
+                        setShowWhatIsBusinessValueModal(true);
+                      }
                     }}
                   >
                     <div className="absolute top-3 right-3">
@@ -565,14 +618,14 @@ const Index = () => {
                       Enter metrics directly through a structured form
                     </p>
                     <ul className="space-y-2 text-sm text-muted-foreground">
-                      <li>• Quick data entry</li>
-                      <li>• Full visibility of all fields</li>
-                      <li>• Direct control over inputs</li>
+                      <li>• Identify use cases, enter metrics, see value</li>
+                      <li>• Forter benchmarks and KPIs included</li>
+                      <li>• One path from discovery to ROI</li>
                     </ul>
                   </Card>
 
                   <Card
-                    className="p-8 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all relative"
+                    className="p-8 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] relative"
                     onClick={() => {
                       console.log('[Index] Clicking Custom Pathway button');
                       setShowWelcomeDialog(false);
@@ -588,6 +641,9 @@ const Index = () => {
                         }
                         return next;
                       });
+                      if (!getHasSeenWhatIsBusinessValue()) {
+                        setShowWhatIsBusinessValueModal(true);
+                      }
                     }}
                   >
                     <div className="absolute top-3 right-3">
@@ -600,7 +656,7 @@ const Index = () => {
                       Skip to Value Summary and add custom calculations directly
                     </p>
                     <ul className="space-y-2 text-sm text-muted-foreground">
-                      <li>• Custom calculations only</li>
+                      <li>• Manual access to standard benefit library</li>
                       <li>• Link to external spreadsheets</li>
                       <li>• Access calculator benefit library</li>
                     </ul>
@@ -680,7 +736,9 @@ const Index = () => {
                 <div className="flex items-center gap-8">
                   <div className="flex flex-col">
                     <img src={forterLogo} alt="Forter" className="h-10 object-contain" />
-                    <span className="text-[10px] text-muted-foreground mt-0.5">Last Updated: {lastUpdatedDisplay}</span>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">Guided Value Assessment Version 1.0 (2026)</span>
+                    <span className="text-[10px] text-muted-foreground">Analysis Started: {startedDisplay}</span>
+                    <span className="text-[10px] text-muted-foreground">Analysis Last Updated: {lastUpdatedDisplay}</span>
                   </div>
                   {customerLogoUrl && (
                     <img src={customerLogoUrl} alt="Customer" className="h-10 object-contain" />
@@ -696,12 +754,15 @@ const Index = () => {
                   <SaveAsDialog
                     currentData={calculatorData}
                     customerLogoUrl={customerLogoUrl}
-                    onSaveAs={(newId, newName) => {
+                    onSaveAs={(newId, newName, authorName) => {
+                      const now = new Date().toISOString();
                       setCalculatorData(prev => ({
                         ...prev,
                         _analysisId: newId,
                         _analysisName: newName,
-                        _lastUpdatedAt: new Date().toISOString(),
+                        _authorName: authorName,
+                        _startedAt: now,
+                        _lastUpdatedAt: now,
                       } as CalculatorData));
                     }}
                   />
@@ -713,6 +774,21 @@ const Index = () => {
                       setCalculatorData((prev) => ({ ...prev, _changelogHistory: entries }))
                     }
                   />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setShowWhatIsBusinessValueModal(true)}
+                        className="size-8 rounded-full flex items-center justify-center text-sm font-semibold bg-amber-100 hover:bg-amber-200/90 text-amber-700 hover:text-amber-800 border border-amber-200/80 cursor-pointer transition-colors shrink-0"
+                        aria-label="Forter Guided Value Assessment Overview"
+                      >
+                        ?
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Forter Guided Value Assessment Overview</p>
+                    </TooltipContent>
+                  </Tooltip>
                   <div className="w-px h-6 bg-border mx-1" />
                   <AuthButton />
                 </div>
@@ -737,7 +813,8 @@ const Index = () => {
             {/* Content */}
             <ManualInputForm 
               onComplete={handleDataComplete} 
-              onFieldChange={handleFieldChange} 
+              onFieldChange={handleFieldChange}
+              onBulkUpdate={handleBulkUpdate}
               initialData={calculatorData}
               customerLogoUrl={customerLogoUrl}
               onLogoUpload={handleLogoUpload}
@@ -747,6 +824,12 @@ const Index = () => {
             />
           </div>
         </div>
+
+        <WhatIsBusinessValueModal
+          open={showWhatIsBusinessValueModal}
+          onOpenChange={setShowWhatIsBusinessValueModal}
+          markAsSeenOnClose
+        />
         
         {/* Chat side panel - consistent 380px width */}
         {showChatPanel && (

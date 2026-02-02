@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   Ban,
   Building,
+  Camera,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   CreditCard,
   Download,
   ExternalLink,
+  Expand,
   FileText,
   Info,
   Pencil,
@@ -30,6 +32,9 @@ import {
   UserCheck,
   X,
   Zap,
+  Loader2,
+  Lock,
+  ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -44,13 +49,15 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EditableCalculatorDisplay } from "./EditableCalculatorDisplay";
 import { CalculatorData, CustomCalculation, type StandaloneCalculator } from "@/pages/Index";
-import { ForterKPIs, defaultForterKPIs } from "./ForterKPIConfig";
+import { ForterKPIs, defaultForterKPIs, type ForterKPIFocusSection } from "./ForterKPIConfig";
 import { getChallengeBenefitContent } from "@/lib/challengeBenefitContent";
 import {
   calculateChallenge1,
   calculateChallenge245,
+  getCompletedTransactionCount,
   calculateChallenge3,
   calculateChallenge7,
   calculateChallenge8,
@@ -77,12 +84,13 @@ import {
 } from "@/lib/calculations";
 import { defaultAbuseBenchmarks } from "./AbuseBenchmarksModal";
 import { getCurrencySymbol } from "@/lib/benchmarkData";
-import { SegmentCalculatorTabs, computeSegmentedAggregateValue, computeSegmentedAggregateDeduplicationBreakdown } from "./SegmentCalculatorTabs";
+import { SegmentCalculatorTabs, computeSegmentedAggregateValue, computeSegmentedAggregateRows, computeSegmentedAggregateDeduplicationBreakdown } from "./SegmentCalculatorTabs";
 import { BenefitSelector, BENEFIT_OPTIONS } from "./BenefitSelector";
 import { CalculatorInputsTab, hasCalculatorMissingInputs, getCalculatorCompletionPercentage, CALCULATOR_REQUIRED_INPUTS } from "./CalculatorInputsTab";
 import { runStandaloneCalculator, STANDALONE_CALC_SECTION } from "@/lib/runStandaloneCalculator";
 import { MarginPromptDialog } from "./MarginPromptDialog";
 import { generateCalculatorSlide } from "@/lib/reportGeneration";
+import { toast } from "sonner";
 import {
   BarChart,
   Bar,
@@ -128,15 +136,57 @@ function applyCustomBenefitNames<T extends { id: string; label: string; calculat
   });
 }
 
+/** Clickable performance highlight row that navigates to the corresponding Forter KPI section */
+function PerformanceHighlightRow({
+  label,
+  badge,
+  section,
+  onNavigateToForterKPI,
+  isLast,
+}: {
+  label: string;
+  badge: string;
+  section: ForterKPIFocusSection;
+  onNavigateToForterKPI?: (section: ForterKPIFocusSection) => void;
+  isLast?: boolean;
+}) {
+  const baseClassName = `flex justify-between items-center py-2 w-full ${isLast ? "" : "border-b"} ${onNavigateToForterKPI ? "cursor-pointer hover:bg-muted/50 transition-colors rounded-sm" : ""}`;
+  const content = (
+    <>
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+        {badge}
+      </Badge>
+    </>
+  );
+  if (onNavigateToForterKPI) {
+    return (
+      <button
+        type="button"
+        className={`${baseClassName} text-left`}
+        onClick={() => onNavigateToForterKPI(section)}
+        title="Go to Forter KPI input"
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className={baseClassName}>{content}</div>;
+}
+
 export interface ValueTotals {
   gmvUplift: number;
   costReduction: number;
   riskMitigation: number;
   ebitdaContribution: number;
-  // Breakdowns for ROI tab sub-calculations
-  gmvUpliftBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
-  costReductionBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
-  riskMitigationBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
+  // Breakdowns for ROI tab sub-calculations (calculatorId = driver id for opening benefit modal)
+  gmvUpliftBreakdown?: Array<{ label: string; value: number; challengeId?: string; calculatorId?: string }>;
+  costReductionBreakdown?: Array<{ label: string; value: number; challengeId?: string; calculatorId?: string }>;
+  riskMitigationBreakdown?: Array<{ label: string; value: number; challengeId?: string; calculatorId?: string }>;
+  /** True when every enabled benefit driver has completed inputs and shows a quantitative value (not TBD). Used for summary tab completion. */
+  allBenefitDriversHaveQuantitativeValue?: boolean;
+  /** Fraction (0-1) of enabled benefit drivers that have quantitative value. Used for partial summary tab progress. */
+  benefitDriversQuantitativeFraction?: number;
 }
 
 interface ValueSummaryOptionAProps {
@@ -156,6 +206,11 @@ interface ValueSummaryOptionAProps {
   // Investment inputs for fraud coverage sync
   investmentInputs?: import("@/lib/roiCalculations").InvestmentInputs;
   onInvestmentInputsChange?: (inputs: import("@/lib/roiCalculations").InvestmentInputs) => void;
+  /** When a performance highlight is clicked, navigate to Forter KPI tab and focus this section (may open modals) */
+  onNavigateToForterKPI?: (section: ForterKPIFocusSection) => void;
+  /** When set, open the benefit modal for this calculator id (e.g. from ROI tab); clear on modal close */
+  openBenefitCalculatorId?: string | null;
+  onBenefitModalClose?: () => void;
 }
 
 export const ValueSummaryOptionA = ({
@@ -166,7 +221,7 @@ export const ValueSummaryOptionA = ({
   onCustomCalculationsChange,
   onSegmentInputChange,
   onSegmentKPIChange,
-  showInMillions: showInMillionsProp = true,
+  showInMillions: showInMillionsProp = false,
   onShowInMillionsChange,
   onSelectUseCases,
   onTotalsChange,
@@ -174,17 +229,43 @@ export const ValueSummaryOptionA = ({
   isCustomMode = false,
   investmentInputs,
   onInvestmentInputsChange,
+  onNavigateToForterKPI,
+  openBenefitCalculatorId,
+  onBenefitModalClose,
 }: ValueSummaryOptionAProps) => {
   const forterKPIs = formData.forterKPIs || defaultForterKPIs;
   const [businessGrowthOpen, setBusinessGrowthOpen] = useState(true);
   const [riskAvoidanceOpen, setRiskAvoidanceOpen] = useState(true);
   const [riskMitigationOpen, setRiskMitigationOpen] = useState(true);
   const [selectedCalculatorId, setSelectedCalculatorId] = useState<string | null>(null);
+  const [ebitdaChartModalOpen, setEbitdaChartModalOpen] = useState(false);
   const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator'>('summary');
+  const calculatorDialogRef = useRef<HTMLDivElement>(null);
+  const [isCapturingBenefitPdf, setIsCapturingBenefitPdf] = useState(false);
+
+  // When parent requests opening the benefit modal (e.g. from ROI tab), sync and open
+  useEffect(() => {
+    if (openBenefitCalculatorId != null && openBenefitCalculatorId !== '') {
+      setSelectedCalculatorId(openBenefitCalculatorId);
+      setCalculatorModalTab('summary');
+    }
+  }, [openBenefitCalculatorId]);
 
   // Duplicate (standalone) calculator helpers – standard pathway only
   const isDuplicateCalculator = (id: string) => !!(formData.standaloneCalculators?.[id]);
   const getSourceCalculatorId = (id: string) => formData.standaloneCalculators?.[id]?.sourceCalculatorId ?? id;
+
+  /** When uplift is 0, show TBD unless enough inputs are entered to justify a 0 result (no improvement). */
+  const normalizeZeroValueDriver = (driver: ValueDriver, data: CalculatorData): ValueDriver => {
+    if (driver.value !== 0 || driver.isTBD || driver.id.startsWith("custom-")) return driver;
+    const sourceId = data.standaloneCalculators?.[driver.id]?.sourceCalculatorId ?? driver.id;
+    const applicableFormData = data.standaloneCalculators?.[driver.id]
+      ? { ...data, ...data.standaloneCalculators[driver.id].inputs }
+      : data;
+    const hasSufficientInputs = getCalculatorCompletionPercentage(sourceId, applicableFormData) === 100;
+    if (hasSufficientInputs) return driver;
+    return { ...driver, isTBD: true };
+  };
   const handleDuplicateCalculator = (driver: ValueDriver) => {
     const sourceId = getSourceCalculatorId(driver.id);
     const config = CALCULATOR_REQUIRED_INPUTS[sourceId];
@@ -357,7 +438,7 @@ export const ValueSummaryOptionA = ({
   const customCalculations = formData.customCalculations || [];
   
   // Use prop if provided, otherwise default to true
-  const showInMillions = showInMillionsProp ?? true;
+  const showInMillions = showInMillionsProp ?? false;
   const handleShowInMillionsChange = (checked: boolean) => {
     if (onShowInMillionsChange) {
       onShowInMillionsChange(checked);
@@ -900,6 +981,23 @@ export const ValueSummaryOptionA = ({
       deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
     );
   }, [isSegmentationEnabled, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  // Aggregated calculator rows for Total view (used for completion rate when segment analysis is enabled)
+  const segmentedC1AggregateRows = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge1Selected || isChallenge245Selected) return [];
+    return computeSegmentedAggregateRows(
+      formData, forterKPIs, "c1", "revenue",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  const segmentedC245AggregateRows = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge245Selected) return [];
+    return computeSegmentedAggregateRows(
+      formData, forterKPIs, "c245", "revenue",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
   
   // Aggregated deduplication breakdown for segmented analysis
   const segmentedDeduplicationBreakdown = useMemo(() => {
@@ -1076,15 +1174,10 @@ export const ValueSummaryOptionA = ({
   const challenge9Results = useMemo(() => {
     if (!isChallenge9Selected) return null;
 
-    // Calculate approved transactions: use formData only; default to 0 when unset
-    const grossAttempts = formData.amerGrossAttempts ?? 0;
-    const hasPaymentChallenges = isChallenge1Selected || isChallenge245Selected;
-    const approvalRate = hasPaymentChallenges ? (formData.amerPreAuthApprovalRate ?? 0) : 100;
-    const approvedTransactions = grossAttempts * (approvalRate / 100);
-    
-    const currentEcommerceSales = hasPaymentChallenges 
-      ? (formData.amerAnnualGMV ?? 0) * (approvalRate / 100)
-      : (formData.amerAnnualGMV ?? 0);
+    // Completed transactions = Transaction attempts × Completion rate (same as payments calculator)
+    const completedCount = getCompletedTransactionCount(formData, isChallenge1Selected, isChallenge245Selected);
+    const effectiveAOV = formData.completedAOV ?? ((formData.amerGrossAttempts ?? 0) > 0 ? (formData.amerAnnualGMV ?? 0) / (formData.amerGrossAttempts ?? 1) : 0);
+    const currentEcommerceSales = completedCount * effectiveAOV;
 
     const inputs: Challenge9Inputs = {
       currentEcommerceSales,
@@ -1254,19 +1347,25 @@ export const ValueSummaryOptionA = ({
       
       if (shouldShowDriver) {
         if (challenge1Results) {
-          // Show driver with results
-          const currentApproval = formData.amerPreAuthApprovalRate || 95;
-          const targetApproval = forterKPIs.approvalRateIsAbsolute 
-            ? forterKPIs.approvalRateImprovement 
-            : currentApproval + forterKPIs.approvalRateImprovement;
-          const percentChange = currentApproval > 0 
-            ? ((targetApproval - currentApproval) / currentApproval) * 100 
+          // Completion rate: when segment analysis is enabled use aggregated rows (same as Total calculator); otherwise use global calculator row
+          const rowsForCompletion = isSegmentationEnabled && segmentedC1AggregateRows.length > 0
+            ? segmentedC1AggregateRows
+            : challenge1Results.calculator1.rows;
+          const completionRateRow = rowsForCompletion.find((r) => r.label === "Completion rate (%)");
+          const parsePct = (s: string) => (s ? parseFloat(String(s).replace("%", "").trim()) : 0) || 0;
+          const currentCompletion = completionRateRow ? parsePct(completionRateRow.customerInput) : 0;
+          const targetCompletion = completionRateRow ? parsePct(completionRateRow.forterOutcome) : 0;
+          const percentChange = currentCompletion > 0
+            ? ((targetCompletion - currentCompletion) / currentCompletion) * 100
             : 0;
 
           // Use segmented total if available; otherwise use global result
           const driverValue = (isSegmentationEnabled && segmentedC1RevenueTotal !== null)
             ? segmentedC1RevenueTotal
             : challenge1Results.calculator1.revenueUplift;
+          const rowsForCalculator = isSegmentationEnabled && segmentedC1AggregateRows.length > 0
+            ? segmentedC1AggregateRows
+            : challenge1Results.calculator1.rows;
 
           drivers.push({
             id: "c1-revenue",
@@ -1274,11 +1373,11 @@ export const ValueSummaryOptionA = ({
             value: driverValue,
             enabled: getDriverEnabled("c1-revenue"),
             calculatorTitle: "Reduce false declines and approve more transactions",
-            calculatorRows: challenge1Results.calculator1.rows,
+            calculatorRows: rowsForCalculator,
             performanceHighlight: {
-              label: "Approval Rate",
-              current: currentApproval,
-              target: Math.min(100, targetApproval),
+              label: "Completion rate",
+              current: Math.round(currentCompletion * 10) / 10,
+              target: Math.round(targetCompletion * 10) / 10,
               unit: "%",
               percentChange,
             },
@@ -1298,14 +1397,12 @@ export const ValueSummaryOptionA = ({
     }
 
     // Challenge 2/4/5: Optimize payment funnel
-    // In custom mode, ONLY show if c45 benefit is explicitly enabled AND c1 is NOT enabled (mutual exclusivity)
-    // In standard mode, show if challenge 245 is selected and challenge 1 is not selected
-    // In custom mode, do NOT show if no benefits are selected (empty state)
-    // IMPORTANT: In custom mode, don't check challenge selection - only check enabledBenefitIds
+    // In standard mode: show whenever challenge 2/4/5 is selected.
+    // In custom mode: show if c45 benefit is enabled OR challenge 2/4/5 is selected (so selecting the challenge shows the benefit), and c1 is NOT enabled.
     const shouldShowC245 = !isCustomMode 
-      ? (isChallenge245Selected && !isChallenge1Selected)  // Standard mode: show if challenge selected
-      : (hasC45 && !hasC1);  // Custom mode: ONLY check enabledBenefitIds, ignore challenge selection
-    const shouldShowC245Always = isCustomMode && hasC45 && !hasC1;
+      ? isChallenge245Selected  // Standard mode: show whenever challenge 2/4/5 is selected
+      : ((hasC45 || isChallenge245Selected) && !hasC1);  // Custom mode: show when challenge 2/4/5 selected or c45 enabled, and c1 not enabled
+    const shouldShowC245Always = isCustomMode && (hasC45 || isChallenge245Selected) && !hasC1;
     
     // Debug logging for c245 visibility
     if (isCustomMode && (hasC45 || shouldShowC245)) {
@@ -1336,9 +1433,9 @@ export const ValueSummaryOptionA = ({
     // Show c245-revenue driver if visibility conditions are met
     if (shouldShowC245) {
       // In custom mode, always show if c45 benefit is enabled
-      // In standard mode, show if challenge is selected
+      // In standard mode, show whenever challenge 2/4/5 is selected
       const shouldShowDriver = !isCustomMode 
-        ? (isChallenge245Selected && !isChallenge1Selected)  // Standard mode: show if challenge selected
+        ? isChallenge245Selected  // Standard mode: show whenever challenge 2/4/5 is selected
         : true;  // Custom mode: if shouldShowC245 is true, we should show the driver
       
       // In custom mode, also show TBD driver if no results yet
@@ -1347,67 +1444,41 @@ export const ValueSummaryOptionA = ({
       
       if (shouldShowDriver && !isRemoved) {
         if (challenge245Results) {
-          // Calculate completion rate for performance highlight
-        const transactionAttempts = formData.amerGrossAttempts || 0;
-        const preAuthRate = formData.amerPreAuthApprovalRate || 95;
-        const postAuthRate = formData.amerPostAuthApprovalRate || 98;
-        const ccPct = formData.amerCreditCardPct || 80;
-        const threeDSPct = formData.amer3DSChallengeRate ?? 50;
-        const threeDSFail = formData.amer3DSAbandonmentRate ?? 15;
-        const bankDecline = formData.amerIssuingBankDeclineRate || 15;
+          // Completion rate: when segment analysis is enabled use aggregated rows (same as Total calculator); otherwise use global calculator row
+          const rowsForCompletion = isSegmentationEnabled && segmentedC245AggregateRows.length > 0
+            ? segmentedC245AggregateRows
+            : challenge245Results.calculator1.rows;
+          const completionRateRow = rowsForCompletion.find((r) => r.label === "Completion rate (%)");
+          const parsePct = (s: string) => (s ? parseFloat(String(s).replace("%", "").trim()) : 0) || 0;
+          const currentCompletion = completionRateRow ? parsePct(completionRateRow.customerInput) : 0;
+          const targetCompletion = completionRateRow ? parsePct(completionRateRow.forterOutcome) : 0;
+          const percentChange = currentCompletion > 0
+            ? ((targetCompletion - currentCompletion) / currentCompletion) * 100
+            : 0;
 
-        // Current completion rate calculation
-        const custPreAuth = transactionAttempts * (preAuthRate / 100);
-        const custPostAuth = custPreAuth * (postAuthRate / 100);
-        const custCC = custPostAuth * (ccPct / 100);
-        const custNonCC = custPostAuth * ((100 - ccPct) / 100);
-        const cust3DSChallenged = custCC * (threeDSPct / 100);
-        const cust3DSNonChallenged = custCC * ((100 - threeDSPct) / 100);
-        const cust3DSPassed = cust3DSChallenged * ((100 - threeDSFail) / 100);
-        const custPassedToBank = cust3DSNonChallenged + cust3DSPassed + custNonCC;
-        const custBankApproved = custPassedToBank * ((100 - bankDecline) / 100);
-        const custCompletionRate = transactionAttempts > 0 ? (custBankApproved / transactionAttempts) * 100 : 0;
+          // Use segmented total if available; otherwise use global result
+          const driverValue = (isSegmentationEnabled && segmentedC245RevenueTotal !== null)
+            ? segmentedC245RevenueTotal
+            : challenge245Results.calculator1.revenueUplift;
+          const rowsForCalculator = isSegmentationEnabled && segmentedC245AggregateRows.length > 0
+            ? segmentedC245AggregateRows
+            : challenge245Results.calculator1.rows;
 
-        // Forter completion rate
-        const fortPreAuthRate = Math.min(100, preAuthRate + (forterKPIs.preAuthIncluded !== false ? (forterKPIs.preAuthApprovalIsAbsolute ? forterKPIs.preAuthApprovalImprovement - preAuthRate : forterKPIs.preAuthApprovalImprovement) : 0));
-        const fortPostAuthRate = Math.min(100, postAuthRate + (forterKPIs.postAuthIncluded !== false ? (forterKPIs.postAuthApprovalIsAbsolute ? forterKPIs.postAuthApprovalImprovement - postAuthRate : forterKPIs.postAuthApprovalImprovement) : 0));
-        const fort3DSRate = Math.max(0, threeDSPct - (forterKPIs.threeDSReductionIsAbsolute ? threeDSPct - forterKPIs.threeDSReduction : forterKPIs.threeDSReduction));
-        
-        const fortPreAuth = transactionAttempts * (fortPreAuthRate / 100);
-        const fortPostAuth = fortPreAuth * (fortPostAuthRate / 100);
-        const fortCC = fortPostAuth * (ccPct / 100);
-        const fortNonCC = fortPostAuth * ((100 - ccPct) / 100);
-        const fort3DSChallenged = fortCC * (fort3DSRate / 100);
-        const fort3DSNonChallenged = fortCC * ((100 - fort3DSRate) / 100);
-        const fort3DSPassed = fort3DSChallenged * ((100 - threeDSFail) / 100);
-        const fortPassedToBank = fort3DSNonChallenged + fort3DSPassed + fortNonCC;
-        const fortBankApproved = fortPassedToBank * ((100 - bankDecline) / 100);
-        const fortCompletionRate = transactionAttempts > 0 ? (fortBankApproved / transactionAttempts) * 100 : 0;
-
-        const percentChange = custCompletionRate > 0 
-          ? ((fortCompletionRate - custCompletionRate) / custCompletionRate) * 100 
-          : 0;
-
-        // Use segmented total if available; otherwise use global result
-        const driverValue = (isSegmentationEnabled && segmentedC245RevenueTotal !== null)
-          ? segmentedC245RevenueTotal
-          : challenge245Results.calculator1.revenueUplift;
-
-        drivers.push({
-          id: "c245-revenue",
-          label: "Optimize payment funnel",
-          value: driverValue,
-          enabled: getDriverEnabled("c245-revenue"),
-          calculatorTitle: "Reduce false declines and optimize payments",
-          calculatorRows: challenge245Results.calculator1.rows,
-          performanceHighlight: {
-            label: "Payments Conversion",
-            current: Math.round(custCompletionRate * 10) / 10,
-            target: Math.round(fortCompletionRate * 10) / 10,
-            unit: "%",
-            percentChange,
-          },
-        });
+          drivers.push({
+            id: "c245-revenue",
+            label: "Optimize payment funnel",
+            value: driverValue,
+            enabled: getDriverEnabled("c245-revenue"),
+            calculatorTitle: "Reduce false declines and optimize payments",
+            calculatorRows: rowsForCalculator,
+            performanceHighlight: {
+              label: "Completion rate",
+              current: Math.round(currentCompletion * 10) / 10,
+              target: Math.round(targetCompletion * 10) / 10,
+              unit: "%",
+              percentChange,
+            },
+          });
         } else {
           // Show TBD driver when benefit is enabled but no results yet
           drivers.push({
@@ -1509,8 +1580,8 @@ export const ValueSummaryOptionA = ({
       }
       return !isRemoved;
     });
-    return applyCustomBenefitNames(filtered, formData.customBenefitNames);
-  }, [challenge1Results, challenge245Results, challenge9Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge9Selected, isCustomMode, enabledBenefitIds, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+    return applyCustomBenefitNames(filtered, formData.customBenefitNames).map(d => normalizeZeroValueDriver(d, formData));
+  }, [challenge1Results, challenge245Results, challenge9Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge9Selected, isCustomMode, enabledBenefitIds, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled, isSegmentationEnabled, segmentedC1AggregateRows, segmentedC245AggregateRows]);
 
   const riskAvoidanceDrivers: ValueDriver[] = useMemo(() => {
     const drivers: ValueDriver[] = [];
@@ -1565,7 +1636,7 @@ export const ValueSummaryOptionA = ({
         calculatorTitle: "Reduce fraud chargebacks",
         calculatorRows: challenge1Results.calculator2.rows,
         performanceHighlight: {
-          label: "Chargeback Rate",
+          label: "Fraud Chargeback Rate",
           current: currentCB,
           target: Math.max(0, targetCB),
           unit: "%",
@@ -1594,7 +1665,7 @@ export const ValueSummaryOptionA = ({
         calculatorTitle: "Reduce fraud chargebacks",
         calculatorRows: challenge245Results.calculator2.rows,
         performanceHighlight: {
-          label: "Chargeback Rate",
+          label: "Fraud Chargeback Rate",
           current: currentCB,
           target: Math.max(0, targetCB),
           unit: "%",
@@ -1987,7 +2058,7 @@ export const ValueSummaryOptionA = ({
     // Filter out drivers that have been removed (driverStates[driverId] === 'removed')
     // false = disabled but visible (switch off), 'removed' = completely removed (X button)
     const filtered = drivers.filter(driver => driverStates[driver.id] !== 'removed');
-    return applyCustomBenefitNames(filtered, formData.customBenefitNames);
+    return applyCustomBenefitNames(filtered, formData.customBenefitNames).map(d => normalizeZeroValueDriver(d, formData));
   }, [challenge1Results, challenge245Results, challenge3Results, challenge7Results, challenge9Results, challenge12_13Results, challenge14_15Results, customCalculations, totalRecoveryMetrics, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge3Selected, isChallenge7Selected, isChallenge9Selected, isChallenge12_13Selected, isChallenge14_15Selected, isCustomMode, Array.from(enabledBenefitIds).sort().join(','), deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
 
   const riskMitigationDrivers: ValueDriver[] = useMemo(() => {
@@ -2172,7 +2243,7 @@ export const ValueSummaryOptionA = ({
     // Filter out drivers that have been removed (driverStates[driverId] === 'removed')
     // false = disabled but visible (switch off), 'removed' = completely removed (X button)
     const filtered = drivers.filter(driver => driverStates[driver.id] !== 'removed');
-    return applyCustomBenefitNames(filtered, formData.customBenefitNames);
+    return applyCustomBenefitNames(filtered, formData.customBenefitNames).map(d => normalizeZeroValueDriver(d, formData));
   }, [challenge8Results, challenge10Results, challenge12_13Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge8Selected, isChallenge10_11Selected, isChallenge12_13Selected, isCustomMode, Array.from(enabledBenefitIds).sort().join(','), deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
 
   // Combine all drivers for lookup
@@ -2268,12 +2339,11 @@ export const ValueSummaryOptionA = ({
   const grossMarginPercent = formData.amerGrossMarginPercent || 50;
   const isMarketplace = formData.isMarketplace || false;
   const commissionRate = formData.commissionRate || 100;
-  const effectiveMarginPercent = isMarketplace ? commissionRate : grossMarginPercent;
-  
-  // Apply margin to standard GMV drivers (normal calculation path)
-  const standardGmvProfitability = standardGrowthTotal * (effectiveMarginPercent / 100);
-  // Custom GMV calculations already entered as GMV - apply the gross margin stored in formData
-  // (the same margin shown in the modal: amerGrossMarginPercent, with commission if marketplace)
+  // EBITDA from GMV: retailer = GMV × gross margin; marketplace = GMV × commission × gross margin (both applied)
+  const standardGmvProfitability = isMarketplace
+    ? standardGrowthTotal * (commissionRate / 100) * (grossMarginPercent / 100)
+    : standardGrowthTotal * (grossMarginPercent / 100);
+  // Custom GMV calculations already entered as GMV - apply the same margin logic
   const customGmvProfitability = customGmvTotal * (isMarketplace ? (commissionRate / 100) : 1) * (grossMarginPercent / 100);
   const gmvProfitability = standardGmvProfitability + customGmvProfitability;
   const ebitdaContribution = gmvProfitability + riskAvoidanceTotal + riskMitigationTotal;
@@ -2291,6 +2361,7 @@ export const ValueSummaryOptionA = ({
       .map(d => ({
         label: d.label,
         value: d.value,
+        calculatorId: d.id,
         challengeId: d.id.startsWith('c1-') ? '1' : 
                     d.id.startsWith('c245-') ? '2' :
                     d.id.startsWith('c9-') ? '9' : undefined,
@@ -2301,6 +2372,7 @@ export const ValueSummaryOptionA = ({
       .map(d => ({
         label: d.label,
         value: d.value,
+        calculatorId: d.id,
         challengeId: d.id.startsWith('c1-') ? '1' :
                     d.id.startsWith('c245-') ? '2' :
                     d.id.startsWith('c3-') ? '3' :
@@ -2315,10 +2387,16 @@ export const ValueSummaryOptionA = ({
       .map(d => ({
         label: d.label,
         value: d.value,
+        calculatorId: d.id,
         challengeId: d.id.startsWith('c8-') ? '8' :
                     d.id.startsWith('c10-') ? '10' :
                     d.id.startsWith('c13-') ? '13' : undefined,
       }));
+
+    const enabledDrivers = [...businessGrowthDrivers, ...riskAvoidanceDrivers, ...riskMitigationDrivers].filter(d => d.enabled);
+    const driversWithQuantitativeValue = enabledDrivers.filter(d => !d.isTBD).length;
+    const allBenefitDriversHaveQuantitativeValue = enabledDrivers.length > 0 && driversWithQuantitativeValue === enabledDrivers.length;
+    const benefitDriversQuantitativeFraction = enabledDrivers.length > 0 ? driversWithQuantitativeValue / enabledDrivers.length : 0;
 
     onTotalsChangeRef.current?.({
       gmvUplift: businessGrowthTotal,
@@ -2328,6 +2406,8 @@ export const ValueSummaryOptionA = ({
       gmvUpliftBreakdown,
       costReductionBreakdown,
       riskMitigationBreakdown,
+      allBenefitDriversHaveQuantitativeValue,
+      benefitDriversQuantitativeFraction,
     });
   }, [businessGrowthTotal, riskAvoidanceTotal, riskMitigationTotal, ebitdaContribution, businessGrowthDrivers, riskAvoidanceDrivers, riskMitigationDrivers]);
 
@@ -2344,142 +2424,93 @@ export const ValueSummaryOptionA = ({
     challenge14_15Results ||
     hasTBDDrivers;
 
-  // Waterfall chart data - limit to top 5 bars + "Other" bucket to prevent overlap
-  const MAX_CHART_BARS = 5;
-  
-  const waterfallData = useMemo(() => {
+  // Waterfall chart: inline top 4 + Other; modal top 10 + Other
+  const MAX_INLINE_CHART_BARS = 4;
+  const MAX_FULL_CHART_BARS = 10;
+
+  type WaterfallEntry = { name: string; value: number; base: number; isTotal: boolean };
+
+  const sortedWaterfallRawData = useMemo(() => {
     const rawData: { name: string; value: number; base: number; isTotal: boolean; originalLabel: string }[] = [];
-    
     const toMultiLine = (label: string) => label.split(" ").join("\n");
-    
-    // Helper to get benefit title from challengeBenefitContent, falling back to calculatorTitle/label
-    const getBenefitLabel = (driver: { id: string; calculatorTitle?: string; label: string }) => {
-      const content = getChallengeBenefitContent(driver.id);
-      return content?.benefitTitle ?? driver.calculatorTitle ?? driver.label;
-    };
-    
-    // Calculate margin multiplier for GMV uplift items
-    const marginMultiplier = (formData.isMarketplace ? (formData.commissionRate || 100) : (formData.amerGrossMarginPercent || 50)) / 100;
+    const getBenefitLabel = (driver: { id: string; calculatorTitle?: string; label: string }) =>
+      driver.calculatorTitle ?? driver.label ?? getChallengeBenefitContent(driver.id)?.benefitTitle ?? driver.label;
+    // EBITDA from GMV: retailer = GMV × gross margin; marketplace = GMV × commission × gross margin
+    const marginMultiplier = formData.isMarketplace
+      ? ((formData.commissionRate || 100) / 100) * ((formData.amerGrossMarginPercent || 50) / 100)
+      : (formData.amerGrossMarginPercent || 50) / 100;
 
-    // Get non-custom business growth drivers and their total (to apply margin)
     const nonCustomGrowthDrivers = businessGrowthDrivers.filter(d => !d.id.startsWith('custom-'));
-    const nonCustomGrowthTotal = nonCustomGrowthDrivers.reduce((sum, d) => sum + (d.enabled ? d.value : 0), 0);
-    const nonCustomGrowthProfitability = nonCustomGrowthTotal * marginMultiplier;
-    
-    // Add non-custom business growth as a single bar (with margin applied)
-    if (nonCustomGrowthProfitability > 0) {
-      const primaryGrowthLabel = getBenefitLabel(nonCustomGrowthDrivers[0]);
-
-      rawData.push({
-        name: toMultiLine(primaryGrowthLabel),
-        originalLabel: primaryGrowthLabel,
-        value: nonCustomGrowthProfitability,
-        base: 0,
-        isTotal: false,
-      });
-    }
-    
-    // Add custom GMV uplift calculations as separate bars (with margin applied)
+    nonCustomGrowthDrivers.forEach((driver) => {
+      if (driver.enabled && driver.value > 0) {
+        const ebitdaValue = driver.value * marginMultiplier;
+        const label = getBenefitLabel(driver);
+        rawData.push({ name: toMultiLine(label), originalLabel: label, value: ebitdaValue, base: 0, isTotal: false });
+      }
+    });
     const customGmvDrivers = businessGrowthDrivers.filter(d => d.id.startsWith('custom-'));
     customGmvDrivers.forEach((driver) => {
       if (driver.enabled && driver.value > 0) {
         const ebitdaValue = driver.value * marginMultiplier;
         const label = driver.calculatorTitle ?? driver.label;
-        rawData.push({
-          name: toMultiLine(label),
-          originalLabel: label,
-          value: ebitdaValue,
-          base: 0,
-          isTotal: false,
-        });
+        rawData.push({ name: toMultiLine(label), originalLabel: label, value: ebitdaValue, base: 0, isTotal: false });
       }
     });
-
     riskAvoidanceDrivers.forEach((driver) => {
       if (driver.enabled && driver.value > 0) {
         const label = getBenefitLabel(driver);
-        rawData.push({
-          name: toMultiLine(label),
-          originalLabel: label,
-          value: driver.value,
-          base: 0,
-          isTotal: false,
-        });
+        rawData.push({ name: toMultiLine(label), originalLabel: label, value: driver.value, base: 0, isTotal: false });
       }
     });
-
     riskMitigationDrivers.forEach((driver) => {
       if (driver.enabled && driver.value > 0) {
         const label = getBenefitLabel(driver);
-        rawData.push({
-          name: toMultiLine(label),
-          originalLabel: label,
-          value: driver.value,
-          base: 0,
-          isTotal: false,
-        });
+        rawData.push({ name: toMultiLine(label), originalLabel: label, value: driver.value, base: 0, isTotal: false });
       }
     });
+    return [...rawData].sort((a, b) => b.value - a.value);
+  }, [businessGrowthDrivers, riskAvoidanceDrivers, riskMitigationDrivers, formData.isMarketplace, formData.commissionRate, formData.amerGrossMarginPercent]);
 
-    // Sort by value descending to get top contributors
-    const sortedData = [...rawData].sort((a, b) => b.value - a.value);
-    
-    // If we have more than MAX_CHART_BARS, bucket the rest into "Other"
-    let chartData: { name: string; value: number; base: number; isTotal: boolean }[] = [];
-    
-    if (sortedData.length > MAX_CHART_BARS) {
-      const topBars = sortedData.slice(0, MAX_CHART_BARS);
-      const otherBars = sortedData.slice(MAX_CHART_BARS);
+  const buildWaterfallChartData = (sortedData: { name: string; value: number }[], maxBars: number): WaterfallEntry[] => {
+    const chartData: WaterfallEntry[] = [];
+    if (sortedData.length > maxBars) {
+      const topBars = sortedData.slice(0, maxBars);
+      const otherBars = sortedData.slice(maxBars);
       const otherTotal = otherBars.reduce((sum, item) => sum + item.value, 0);
-      
-      // Build waterfall with running totals
       let runningTotal = 0;
       topBars.forEach((item) => {
-        chartData.push({
-          name: item.name,
-          value: item.value,
-          base: runningTotal,
-          isTotal: false,
-        });
+        chartData.push({ name: item.name, value: item.value, base: runningTotal, isTotal: false });
         runningTotal += item.value;
       });
-      
-      // Add "Other" bucket
       if (otherTotal > 0) {
-        chartData.push({
-          name: `Other\n(${otherBars.length})`,
-          value: otherTotal,
-          base: runningTotal,
-          isTotal: false,
-        });
+        chartData.push({ name: `Other\n(${otherBars.length})`, value: otherTotal, base: runningTotal, isTotal: false });
         runningTotal += otherTotal;
       }
     } else {
-      // Build waterfall with running totals
       let runningTotal = 0;
       sortedData.forEach((item) => {
-        chartData.push({
-          name: item.name,
-          value: item.value,
-          base: runningTotal,
-          isTotal: false,
-        });
+        chartData.push({ name: item.name, value: item.value, base: runningTotal, isTotal: false });
         runningTotal += item.value;
       });
     }
-
-    // Add EBITDA total bar
-    if (chartData.length > 0) {
-      chartData.push({
-        name: "EBITDA\nContribution",
-        value: ebitdaContribution,
-        base: 0,
-        isTotal: true,
-      });
-    }
-
     return chartData;
-  }, [businessGrowthDrivers, businessGrowthTotal, gmvProfitability, riskAvoidanceDrivers, riskMitigationDrivers, ebitdaContribution]);
+  };
+
+  const waterfallData = useMemo(() => {
+    const chartData = buildWaterfallChartData(sortedWaterfallRawData, MAX_INLINE_CHART_BARS);
+    if (chartData.length > 0) {
+      chartData.push({ name: "EBITDA\nContribution", value: ebitdaContribution, base: 0, isTotal: true });
+    }
+    return chartData;
+  }, [sortedWaterfallRawData, ebitdaContribution]);
+
+  const fullWaterfallData = useMemo(() => {
+    const chartData = buildWaterfallChartData(sortedWaterfallRawData, MAX_FULL_CHART_BARS);
+    if (chartData.length > 0) {
+      chartData.push({ name: "EBITDA\nContribution", value: ebitdaContribution, base: 0, isTotal: true });
+    }
+    return chartData;
+  }, [sortedWaterfallRawData, ebitdaContribution]);
 
   const currencyCode = formData.baseCurrency || "USD";
   const currencySymbol = getCurrencySymbol(currencyCode);
@@ -2505,6 +2536,43 @@ export const ValueSummaryOptionA = ({
     return formatted;
   };
 
+  /** Round quarterly cost to a friendly readable number and return display string + tooltip copy */
+  const getQuarterlyCostDisplay = (quarterly: number): { displayFormatted: string; exactFormatted: string; roundingNote: string } => {
+    const abs = Math.abs(quarterly);
+    let step: number;
+    let roundingNote: string;
+    if (abs >= 10_000_000) {
+      step = 1_000_000;
+      roundingNote = showInMillions ? "Rounded down to nearest million for readability." : "Rounded down to nearest 1M for readability.";
+    } else if (abs >= 1_000_000) {
+      step = 100_000;
+      roundingNote = "Rounded down to nearest 100K for readability.";
+    } else if (abs >= 100_000) {
+      step = 25_000;
+      roundingNote = "Rounded down to nearest 25K for readability.";
+    } else if (abs >= 10_000) {
+      step = 5_000;
+      roundingNote = "Rounded down to nearest 5K for readability.";
+    } else if (abs >= 1_000) {
+      step = 1_000;
+      roundingNote = "Rounded down to nearest 1K for readability.";
+    } else if (abs >= 100) {
+      step = 100;
+      roundingNote = "Rounded down to nearest 100 for readability.";
+    } else {
+      step = 50;
+      roundingNote = "Rounded down to nearest 50 for readability.";
+    }
+    const rounded = Math.floor(quarterly / step) * step;
+    const exactFormatted = showInMillions
+      ? `${currencySymbol}${(quarterly / 1_000_000).toFixed(2)}M`
+      : new Intl.NumberFormat("en-US", { style: "currency", currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(quarterly);
+    const displayFormatted = showInMillions
+      ? `~${currencySymbol}${(rounded / 1_000_000).toFixed(1)}M`
+      : `~${new Intl.NumberFormat("en-US", { style: "currency", currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(rounded)}`;
+    return { displayFormatted, exactFormatted, roundingNote };
+  };
+
   const handleDriverToggle = (driverId: string, enabled: boolean) => {
     // Switch should only toggle enabled state, not remove the driver
     // Use 'removed' for X button removal, false/true/undefined for enabled/disabled
@@ -2520,18 +2588,22 @@ export const ValueSummaryOptionA = ({
     });
   };
 
-  // Check if margin data is needed for a calculator
+  // Check if margin data is needed for a calculator (only show "Additional Information needed" when actually missing)
   const needsMarginData = (driverId: string): boolean => {
-    // GMV-related calculators need margin/business type info
     const gmvCalculators = ['c1-revenue', 'c245-revenue', 'c10-promotions'];
-    if (!gmvCalculators.includes(driverId)) return false;
-    
-    // Check if we have the required data
-    const hasGrossMargin = formData.amerGrossMarginPercent !== undefined && formData.amerGrossMarginPercent > 0;
-    const hasBusinessType = formData.isMarketplace !== undefined;
-    const hasCommission = !formData.isMarketplace || (formData.commissionRate !== undefined && formData.commissionRate > 0);
-    
-    return !hasGrossMargin || !hasBusinessType || !hasCommission;
+    const sourceId = getSourceCalculatorId(driverId);
+    if (!gmvCalculators.includes(sourceId)) return false;
+
+    const margin = formData.amerGrossMarginPercent;
+    const hasGrossMargin = margin != null && Number(margin) > 0;
+    const isRetailer = formData.isMarketplace === false || formData.isMarketplace === 0;
+    const isMarketplace = formData.isMarketplace === true || formData.isMarketplace === 1;
+    const commission = formData.commissionRate;
+    const hasCommissionForMarketplace = isMarketplace && commission != null && Number(commission) > 0;
+
+    if (hasGrossMargin && (isRetailer || hasCommissionForMarketplace)) return false;
+    if (hasGrossMargin && !isMarketplace && formData.isMarketplace === undefined) return false;
+    return true;
   };
 
   const handleDriverClick = (driver: ValueDriver) => {
@@ -3000,17 +3072,29 @@ export const ValueSummaryOptionA = ({
     );
   }
 
-  // Check which highlights should be shown based on enabled drivers
-  const showApprovalRate = (challenge1Results && driverStates["c1-revenue"] !== 'removed') || 
-                           (challenge245Results && driverStates["c245-revenue"] !== 'removed');
-  const show3DS = challenge245Results && driverStates["c245-revenue"] !== 'removed';
-  const showChargeback = (challenge1Results && driverStates["c1-chargeback"] !== 'removed') || 
-                         (challenge245Results && driverStates["c245-chargeback"] !== 'removed');
-  const showManualReview = challenge3Results && driverStates["c3-review"] !== 'removed';
-  const showDispute = challenge7Results && driverStates["c7-disputes"] !== 'removed';
-  const showAbuse = challenge8Results && (driverStates["c8-returns"] !== 'removed' || driverStates["c8-inr"] !== 'removed');
-  const showInstantRefundsNPS = challenge9Results && driverStates["c9-cx-uplift"] !== 'removed';
-  const showInstantRefundsCS = challenge9Results && driverStates["c9-cs-opex"] !== 'removed';
+  // Check which highlights should be shown based on enabled drivers (only when metric is an improvement)
+  const approvalImprovement = challenge245Results ? forterKPIs.preAuthApprovalImprovement : forterKPIs.approvalRateImprovement;
+  const showApprovalRate = ((challenge1Results && driverStates["c1-revenue"] !== 'removed') || (challenge245Results && driverStates["c245-revenue"] !== 'removed')) && (approvalImprovement ?? 0) > 0;
+  const threeDSCurrent = formData.amer3DSChallengeRate || 30;
+  const threeDSTarget = forterKPIs.threeDSReduction ?? 0;
+  const threeDSDecreasePct = threeDSCurrent > 0 ? Math.round(((threeDSCurrent - threeDSTarget) / threeDSCurrent) * 100) : 0;
+  const show3DS = challenge245Results && driverStates["c245-revenue"] !== 'removed' && threeDSDecreasePct > 0;
+  const chargebackCurrent = formData.fraudCBRate || 0.5;
+  const chargebackReductionBps = forterKPIs.chargebackReductionIsAbsolute
+    ? Math.round((chargebackCurrent - (forterKPIs.chargebackReduction ?? 0)) * 100)
+    : Math.round(chargebackCurrent * (forterKPIs.chargebackReduction ?? 50) / 100 * 100);
+  const showChargeback = ((challenge1Results && driverStates["c1-chargeback"] !== 'removed') || (challenge245Results && driverStates["c245-chargeback"] !== 'removed')) && chargebackReductionBps > 0;
+  const manualReviewCurrent = formData.manualReviewPct || 5;
+  const manualReviewTarget = forterKPIs.manualReviewReduction ?? 0;
+  const manualReviewDecreasePct = manualReviewCurrent > 0 ? Math.round(((manualReviewCurrent - manualReviewTarget) / manualReviewCurrent) * 100) : 0;
+  const showManualReview = challenge3Results && driverStates["c3-review"] !== 'removed' && manualReviewDecreasePct > 0;
+  const recoveryIncreasePct = totalRecoveryMetrics && totalRecoveryMetrics.current > 0
+    ? Math.round(((totalRecoveryMetrics.target - totalRecoveryMetrics.current) / totalRecoveryMetrics.current) * 100)
+    : 0;
+  const showDispute = challenge7Results && driverStates["c7-disputes"] !== 'removed' && recoveryIncreasePct > 0;
+  const showAbuse = challenge8Results && (driverStates["c8-returns"] !== 'removed' || driverStates["c8-inr"] !== 'removed') && (forterKPIs.forterCatchRate ?? 0) > 0;
+  const showInstantRefundsNPS = challenge9Results && driverStates["c9-cx-uplift"] !== 'removed' && (forterKPIs.npsIncreaseFromInstantRefunds ?? 0) > 0;
+  const showInstantRefundsCS = challenge9Results && driverStates["c9-cs-opex"] !== 'removed' && (forterKPIs.instantRefundPct ?? 0) > 0;
   const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDispute || showAbuse || showInstantRefundsNPS || showInstantRefundsCS;
 
   return (
@@ -3022,7 +3106,7 @@ export const ValueSummaryOptionA = ({
           {/* GMV Uplift Section */}
           {businessGrowthDrivers.length > 0 && (
             <Collapsible open={businessGrowthOpen} onOpenChange={setBusinessGrowthOpen}>
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]">
                 <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-2">
                     {businessGrowthOpen ? (
@@ -3042,7 +3126,7 @@ export const ValueSummaryOptionA = ({
                       return (
                         <div
                           key={driver.id}
-                          className={`p-4 border-b last:border-b-0 ${
+                          className={`p-4 border-b last:border-b-0 transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                             !driver.enabled && "opacity-50"
                           }`}
                         >
@@ -3155,28 +3239,28 @@ export const ValueSummaryOptionA = ({
                               )}
                             </div>
                             <div className="text-right">
-                              <span className={`font-semibold whitespace-nowrap ${driver.isTBD ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
-                                {driver.isTBD ? 'TBD' : formatCurrency(driver.value)}
+                              <span className={`font-semibold whitespace-nowrap ${(driver.isTBD && driver.value === 0) ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
+                                {(driver.isTBD && driver.value === 0) ? 'TBC' : formatCurrency(driver.value)}
                               </span>
                               {isCustom && (
                                 <p className="text-[10px] text-amber-600">custom value</p>
                               )}
-                              {driver.isTBD && !isCustom && (
+                              {(driver.isTBD && driver.value === 0) && !isCustom && (
                                 <p className="text-[10px] text-muted-foreground">enter inputs to calculate</p>
                               )}
                               {!driver.isTBD && driver.value === 0 && !isCustom && (
                                 <p className="text-[10px] text-muted-foreground">no improvement from current</p>
                               )}
-                              {!isCustom && !driver.isTBD && driver.value !== 0 && deduplicationEnabled && (driver.id === "c1-revenue" || driver.id === "c245-revenue") && (
+                              {!isCustom && driver.value !== 0 && deduplicationEnabled && (driver.id === "c1-revenue" || driver.id === "c245-revenue") && (
                                 <p className="text-[10px] text-muted-foreground">deduplicated impact</p>
                               )}
-                              {!isCustom && !driver.isTBD && driver.value !== 0 && isSegmentationEnabled && (driver.id === "c1-revenue" || driver.id === "c1-chargeback" || driver.id === "c245-revenue" || driver.id === "c245-chargeback") && (
+                              {!isCustom && driver.value !== 0 && isSegmentationEnabled && (driver.id === "c1-revenue" || driver.id === "c1-chargeback" || driver.id === "c245-revenue" || driver.id === "c245-chargeback") && (
                                 <p className="text-[10px] text-primary">Sum of Segments</p>
                               )}
                             </div>
                           </div>
                           {/* Inline performance highlight comment */}
-                          {driver.enabled && !isCustom && !driver.isTBD && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
+                          {driver.enabled && !isCustom && (driver.value > 0 || !driver.isTBD) && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
                         </div>
                       );
                     })}
@@ -3203,7 +3287,7 @@ export const ValueSummaryOptionA = ({
           {/* Cost Reduction Section */}
           {riskAvoidanceDrivers.length > 0 && (
             <Collapsible open={riskAvoidanceOpen} onOpenChange={setRiskAvoidanceOpen}>
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]">
                 <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-2">
                     {riskAvoidanceOpen ? (
@@ -3223,7 +3307,7 @@ export const ValueSummaryOptionA = ({
                       return (
                         <div
                           key={driver.id}
-                          className={`p-4 border-b last:border-b-0 ${
+                          className={`p-4 border-b last:border-b-0 transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                             !driver.enabled && "opacity-50"
                           }`}
                         >
@@ -3336,13 +3420,13 @@ export const ValueSummaryOptionA = ({
                               )}
                             </div>
                             <div className="text-right">
-                              <span className={`font-semibold whitespace-nowrap ${driver.isTBD ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
-                                {driver.isTBD ? 'TBD' : formatCurrency(driver.value)}
+                              <span className={`font-semibold whitespace-nowrap ${(driver.isTBD && driver.value === 0) ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
+                                {(driver.isTBD && driver.value === 0) ? 'TBC' : formatCurrency(driver.value)}
                               </span>
                               {isCustom && (
                                 <p className="text-[10px] text-amber-600">custom value</p>
                               )}
-                              {driver.isTBD && !isCustom && (
+                              {(driver.isTBD && driver.value === 0) && !isCustom && (
                                 <p className="text-[10px] text-muted-foreground">enter inputs to calculate</p>
                               )}
                               {!driver.isTBD && driver.value === 0 && !isCustom && (
@@ -3351,7 +3435,7 @@ export const ValueSummaryOptionA = ({
                             </div>
                           </div>
                           {/* Inline performance highlight comment */}
-                          {driver.enabled && !isCustom && !driver.isTBD && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
+                          {driver.enabled && !isCustom && (driver.value > 0 || !driver.isTBD) && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
                         </div>
                       );
                     })}
@@ -3370,7 +3454,7 @@ export const ValueSummaryOptionA = ({
           {/* Risk Mitigation Section */}
           {riskMitigationDrivers.length > 0 && (
             <Collapsible open={riskMitigationOpen} onOpenChange={setRiskMitigationOpen}>
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]">
                 <CollapsibleTrigger className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-2">
                     {riskMitigationOpen ? (
@@ -3390,7 +3474,7 @@ export const ValueSummaryOptionA = ({
                       return (
                         <div
                           key={driver.id}
-                          className={`p-4 border-b last:border-b-0 ${
+                          className={`p-4 border-b last:border-b-0 transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                             !driver.enabled && "opacity-50"
                           }`}
                         >
@@ -3503,13 +3587,13 @@ export const ValueSummaryOptionA = ({
                               )}
                             </div>
                             <div className="text-right">
-                              <span className={`font-semibold whitespace-nowrap ${driver.isTBD ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
-                                {driver.isTBD ? 'TBD' : formatCurrency(driver.value)}
+                              <span className={`font-semibold whitespace-nowrap ${(driver.isTBD && driver.value === 0) ? 'text-muted-foreground italic' : driver.value === 0 ? 'text-muted-foreground' : ''}`}>
+                                {(driver.isTBD && driver.value === 0) ? 'TBC' : formatCurrency(driver.value)}
                               </span>
                               {isCustom && (
                                 <p className="text-[10px] text-amber-600">custom value</p>
                               )}
-                              {driver.isTBD && !isCustom && (
+                              {(driver.isTBD && driver.value === 0) && !isCustom && (
                                 <p className="text-[10px] text-muted-foreground">enter inputs to calculate</p>
                               )}
                               {!driver.isTBD && driver.value === 0 && !isCustom && (
@@ -3518,7 +3602,7 @@ export const ValueSummaryOptionA = ({
                             </div>
                           </div>
                           {/* Inline performance highlight comment */}
-                          {driver.enabled && !isCustom && !driver.isTBD && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
+                          {driver.enabled && !isCustom && (driver.value > 0 || !driver.isTBD) && !isCustomMode && renderPerformanceHighlight(driver.performanceHighlight)}
                         </div>
                       );
                     })}
@@ -3638,6 +3722,53 @@ export const ValueSummaryOptionA = ({
             </div>
           </Card>
 
+          {/* Quarterly cost of inaction - custom path: below value call-out */}
+          {isCustomMode && ebitdaContribution > 0 && (() => {
+            const quarterlyEbitda = ebitdaContribution / 4;
+            const { displayFormatted, exactFormatted, roundingNote } = getQuarterlyCostDisplay(quarterlyEbitda);
+            const quarterlyGmv = businessGrowthTotal / 4;
+            const gmvDisplay = businessGrowthTotal > 0 ? getQuarterlyCostDisplay(quarterlyGmv) : null;
+            return (
+              <Card className="p-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-2 mb-1">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+                  <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Quarterly Cost of Inaction
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 rounded p-0.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                        <Info className="w-4 h-4 shrink-0" aria-label="Calculation breakdown" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs p-3">
+                      <p className="font-medium mb-1">Calculation</p>
+                      {gmvDisplay && (
+                        <p className="text-muted-foreground text-sm">
+                          Annual GMV uplift ÷ 4 = {formatCurrency(businessGrowthTotal)} ÷ 4 = {gmvDisplay.exactFormatted} in foregone GMV per quarter.
+                        </p>
+                      )}
+                      <p className="text-muted-foreground text-sm">
+                        Annual EBITDA uplift ÷ 4 = {formatCurrency(ebitdaContribution)} ÷ 4 = {exactFormatted} EBITDA lost per quarter.
+                      </p>
+                      <p className="text-muted-foreground text-sm mt-1">{roundingNote} Values shown above are approximate.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="pl-6 space-y-1">
+                  {gmvDisplay && (
+                    <p className="text-xl font-bold text-amber-800 dark:text-amber-200">
+                      {gmvDisplay.displayFormatted} in foregone GMV per quarter
+                    </p>
+                  )}
+                  <p className="text-xl font-bold text-amber-800 dark:text-amber-200">
+                    {displayFormatted} EBITDA lost per quarter
+                  </p>
+                </div>
+              </Card>
+            );
+          })()}
+
           {/* Performance Highlights (keeping current design) */}
           {hasAnyHighlight && (
             <Card className="p-4">
@@ -3648,119 +3779,144 @@ export const ValueSummaryOptionA = ({
               <div className="space-y-2">
                 {/* Approval Rate */}
                 {showApprovalRate && (
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-sm text-muted-foreground">Approval Rate with Forter</span>
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                      {challenge245Results 
-                        ? forterKPIs.preAuthApprovalImprovement 
-                        : forterKPIs.approvalRateImprovement}%
-                    </Badge>
-                  </div>
+                  <PerformanceHighlightRow
+                    label="Approval Rate with Forter"
+                    badge={`${challenge245Results ? forterKPIs.preAuthApprovalImprovement : forterKPIs.approvalRateImprovement}%`}
+                    section={challenge245Results ? "c245" : "c1"}
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
                 )}
-                {/* 3DS Reduction */}
-                {show3DS && (() => {
-                  const current3DSRate = formData.amer3DSChallengeRate || 30;
-                  const target3DSRate = forterKPIs.threeDSReduction ?? 0;
-                  const percentageDecrease = current3DSRate > 0 
-                    ? Math.round(((current3DSRate - target3DSRate) / current3DSRate) * 100)
-                    : 0;
-                  
-                  return (
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-sm text-muted-foreground">3DS Reduction</span>
-                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                        {percentageDecrease}%
-                      </Badge>
-                    </div>
-                  );
-                })()}
-                {/* Chargeback Reduction */}
-                {showChargeback && (() => {
-                  const currentCBRate = formData.fraudCBRate || 0.5;
-                  let cbRateReduction: number;
-                  if (forterKPIs.chargebackReductionIsAbsolute) {
-                    const targetCBRate = forterKPIs.chargebackReduction ?? 0;
-                    cbRateReduction = currentCBRate - targetCBRate;
-                  } else {
-                    cbRateReduction = currentCBRate * (forterKPIs.chargebackReduction ?? 50) / 100;
-                  }
-                  const bpsReduction = Math.round(cbRateReduction * 100);
-                  
-                  return (
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-sm text-muted-foreground">Chargeback Reduction</span>
-                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                        {bpsReduction}bps
-                      </Badge>
-                    </div>
-                  );
-                })()}
-                {/* Manual Review */}
-                {showManualReview && (() => {
-                  const currentManualReviewRate = formData.manualReviewPct || 5;
-                  const targetManualReviewRate = forterKPIs.manualReviewReduction ?? 0;
-                  const percentageDecrease = currentManualReviewRate > 0 
-                    ? Math.round(((currentManualReviewRate - targetManualReviewRate) / currentManualReviewRate) * 100)
-                    : 0;
-                  
-                  return (
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-sm text-muted-foreground">Manual Review Eliminated</span>
-                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                        {percentageDecrease}%
-                      </Badge>
-                    </div>
-                  );
-                })()}
-                {/* Recovery Rate Increase */}
-                {showDispute && totalRecoveryMetrics && (() => {
-                  const percentIncrease = totalRecoveryMetrics.current > 0
-                    ? Math.round(((totalRecoveryMetrics.target - totalRecoveryMetrics.current) / totalRecoveryMetrics.current) * 100)
-                    : 0;
-                  return (
-                    <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-sm text-muted-foreground">Recovery Rate Increase</span>
-                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                        +{percentIncrease}%
-                      </Badge>
-                    </div>
-                  );
-                })()}
+                {/* 3DS Reduction - only shown when percentageDecrease > 0 (improvement) */}
+                {show3DS && (
+                  <PerformanceHighlightRow
+                    label="3DS Reduction"
+                    badge={`${threeDSDecreasePct}%`}
+                    section="c245"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
+                )}
+                {/* Fraud Chargeback Reduction - only shown when bpsReduction > 0 (improvement) */}
+                {showChargeback && (
+                  <PerformanceHighlightRow
+                    label="Fraud Chargeback Reduction"
+                    badge={`${chargebackReductionBps}bps`}
+                    section={challenge245Results ? "c245" : "c1"}
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
+                )}
+                {/* Manual Review - only shown when percentageDecrease > 0 (improvement) */}
+                {showManualReview && (
+                  <PerformanceHighlightRow
+                    label="Manual Review Eliminated"
+                    badge={`${manualReviewDecreasePct}%`}
+                    section="manual-review"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
+                )}
+                {/* Recovery Rate Increase - only shown when percentIncrease > 0 (improvement) */}
+                {showDispute && totalRecoveryMetrics && (
+                  <PerformanceHighlightRow
+                    label="Recovery Rate Increase"
+                    badge={`+${recoveryIncreasePct}%`}
+                    section="disputes"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
+                )}
                 {/* Abuse Blocked */}
                 {showAbuse && (
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-sm text-muted-foreground">Abuse Catch Rate</span>
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                      {forterKPIs.forterCatchRate ?? 90}%
-                    </Badge>
-                  </div>
+                  <PerformanceHighlightRow
+                    label="Abuse Catch Rate"
+                    badge={`${forterKPIs.forterCatchRate ?? 90}%`}
+                    section="abuse"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
                 )}
                 {/* Expected NPS Increase */}
                 {showInstantRefundsNPS && (
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-sm text-muted-foreground">Expected NPS increase</span>
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                      +{forterKPIs.npsIncreaseFromInstantRefunds || 10} pts
-                    </Badge>
-                  </div>
+                  <PerformanceHighlightRow
+                    label="Expected NPS increase"
+                    badge={`+${forterKPIs.npsIncreaseFromInstantRefunds || 10} pts`}
+                    section="instant-refunds"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
                 )}
                 {/* Expected % of instant refunds */}
                 {showInstantRefundsCS && (
-                  <div className="flex justify-between items-center py-2 border-b last:border-b-0">
-                    <span className="text-sm text-muted-foreground">Expected % of instant refunds</span>
-                    <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                      {forterKPIs.forterCSReduction || 78}%
-                    </Badge>
-                  </div>
+                  <PerformanceHighlightRow
+                    label="Expected % of instant refunds"
+                    badge={`${forterKPIs.forterCSReduction || 78}%`}
+                    section="instant-refunds"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                    isLast
+                  />
                 )}
               </div>
             </Card>
           )}
 
+          {/* Quarterly cost of inaction - guided path: above EBITDA attribution chart */}
+          {!isCustomMode && ebitdaContribution > 0 && (() => {
+            const quarterlyEbitda = ebitdaContribution / 4;
+            const { displayFormatted, exactFormatted, roundingNote } = getQuarterlyCostDisplay(quarterlyEbitda);
+            const quarterlyGmv = businessGrowthTotal / 4;
+            const gmvDisplay = businessGrowthTotal > 0 ? getQuarterlyCostDisplay(quarterlyGmv) : null;
+            return (
+              <Card className="p-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-2 mb-1">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+                  <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Quarterly Cost of Inaction
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 rounded p-0.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                        <Info className="w-4 h-4 shrink-0" aria-label="Calculation breakdown" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs p-3">
+                      <p className="font-medium mb-1">Calculation</p>
+                      {gmvDisplay && (
+                        <p className="text-muted-foreground text-sm">
+                          Annual GMV uplift ÷ 4 = {formatCurrency(businessGrowthTotal)} ÷ 4 = {gmvDisplay.exactFormatted} in foregone GMV per quarter.
+                        </p>
+                      )}
+                      <p className="text-muted-foreground text-sm">
+                        Annual EBITDA uplift ÷ 4 = {formatCurrency(ebitdaContribution)} ÷ 4 = {exactFormatted} EBITDA lost per quarter.
+                      </p>
+                      <p className="text-muted-foreground text-sm mt-1">{roundingNote} Values shown above are approximate.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="pl-6 space-y-1">
+                  {gmvDisplay && (
+                    <p className="text-xl font-bold text-amber-800 dark:text-amber-200">
+                      {gmvDisplay.displayFormatted} in foregone GMV per quarter
+                    </p>
+                  )}
+                  <p className="text-xl font-bold text-amber-800 dark:text-amber-200">
+                    {displayFormatted} EBITDA lost per quarter
+                  </p>
+                </div>
+              </Card>
+            );
+          })()}
+
           {/* Waterfall Chart */}
           {waterfallData.length > 0 && (
             <Card className="p-4">
-              <p className="text-sm font-semibold mb-3">Forter Annual EBITDA Attribution</p>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <p className="text-sm font-semibold">Forter Annual EBITDA Attribution</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEbitdaChartModalOpen(true)}
+                  className="gap-1.5 shrink-0"
+                >
+                  <Expand className="h-3.5 w-3.5" />
+                  Expand
+                </Button>
+              </div>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
@@ -3820,9 +3976,9 @@ export const ValueSummaryOptionA = ({
                           const { x, y, width, value, index } = props as any;
                           const entry = waterfallData[index];
                           const color = entry?.isTotal ? "#22c55e" : "#1a1a1a";
-                          const formattedValue = showInMillions 
+                          const formattedValue = showInMillions
                             ? `${currencySymbol}${(Number(value) / 1_000_000).toFixed(1)}M`
-                            : `${currencySymbol}${Math.round(Number(value)).toLocaleString()}`;
+                            : `${currencySymbol}${Math.round(Number(value) / 1000).toLocaleString()}K`;
                           return (
                             <text
                               x={Number(x) + Number(width) / 2}
@@ -3846,20 +4002,253 @@ export const ValueSummaryOptionA = ({
         </div>
       </div>
 
+      {/* EBITDA Attribution – full chart modal */}
+      <Dialog open={ebitdaChartModalOpen} onOpenChange={setEbitdaChartModalOpen}>
+        <DialogContent className="!max-w-none w-[min(95vw,64rem)] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Forter Annual EBITDA Attribution</DialogTitle>
+            <DialogDescription>
+              Full breakdown of value drivers contributing to EBITDA. Top {MAX_FULL_CHART_BARS} shown; remainder in Other.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="h-[28rem] min-h-[24rem] pr-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={fullWaterfallData}
+                margin={{ top: 24, right: 24, left: 24, bottom: 100 }}
+                barCategoryGap="20%"
+              >
+                <XAxis
+                  dataKey="name"
+                  tick={(props) => {
+                    const { x, y, payload } = props;
+                    const lines = payload.value.split("\n");
+                    return (
+                      <g transform={`translate(${x},${y})`}>
+                        {lines.map((line: string, i: number) => (
+                          <text key={i} x={0} y={i * 14} dy={10} textAnchor="middle" fill="hsl(var(--foreground))" fontSize={11}>
+                            {line}
+                          </text>
+                        ))}
+                      </g>
+                    );
+                  }}
+                  interval={0}
+                  height={90}
+                  tickLine={false}
+                  axisLine={{ stroke: "hsl(var(--border))" }}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tickFormatter={(v) =>
+                    showInMillions ? `${currencySymbol}${(v / 1_000_000).toFixed(1)}M` : `${currencySymbol}${Math.round(v / 1000)}K`
+                  }
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                <Bar dataKey="base" stackId="stack" fill="transparent" />
+                <Bar dataKey="value" stackId="stack" radius={[4, 4, 0, 0]}>
+                  {fullWaterfallData.map((entry, index) => (
+                    <Cell key={`full-cell-${index}`} fill={entry.isTotal ? "#22c55e" : "#1a1a1a"} />
+                  ))}
+                  <LabelList
+                    dataKey="value"
+                    position="top"
+                    content={(props) => {
+                      const { x, y, width, value, index } = props as any;
+                      const entry = fullWaterfallData[index];
+                      const color = entry?.isTotal ? "#22c55e" : "#1a1a1a";
+                      const formattedValue = showInMillions
+                        ? `${currencySymbol}${(Number(value) / 1_000_000).toFixed(1)}M`
+                        : `${currencySymbol}${Math.round(Number(value) / 1000).toLocaleString()}K`;
+                      return (
+                        <text
+                          x={Number(x) + Number(width) / 2}
+                          y={Number(y) - 8}
+                          textAnchor="middle"
+                          fill={color}
+                          fontSize={12}
+                          fontWeight={600}
+                        >
+                          {formattedValue}
+                        </text>
+                      );
+                    }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Calculator Dialog */}
       <Dialog
         open={selectedCalculatorId !== null}
-        onOpenChange={() => setSelectedCalculatorId(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedCalculatorId(null);
+            onBenefitModalClose?.();
+          }
+        }}
       >
-        <DialogContent className="!max-w-none w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent ref={calculatorDialogRef} className="!max-w-none w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-0">
-            <div className="flex items-center justify-between pr-8">
+            <div className="flex items-center justify-between pr-8 w-full">
               <div>
                 <DialogTitle>{selectedCalculator?.title}</DialogTitle>
                 <DialogDescription className="sr-only">
                   Calculator breakdown for {selectedCalculator?.title}
                 </DialogDescription>
               </div>
+              <div className="flex items-center gap-2">
+              {/* Screenshot (PDF): icon-only button; PDF is saved via browser download (e.g. Downloads folder) */}
+              {selectedCalculatorId && selectedCalculator && (() => {
+                const captureBenefitPdf = async () => {
+                  setIsCapturingBenefitPdf(true);
+                  const tabsInOrder = ['summary', 'inputs', 'calculator'] as const;
+                  const prevTab = calculatorModalTab;
+                  try {
+                    const html2canvas = (await import('html2canvas')).default;
+                    const { jsPDF } = await import('jspdf');
+                    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    const margin = 10;
+                    let hadPage = false;
+                    for (const tab of tabsInOrder) {
+                      setCalculatorModalTab(tab);
+                      await new Promise((r) => setTimeout(r, 400));
+                      const dialogEl = calculatorDialogRef.current;
+                      const section = dialogEl?.querySelector(`[data-benefit-pdf="${tab}"]`);
+                      if (!section || !(section instanceof HTMLElement)) continue;
+                      // Single capture of the section: expand dialog and section so full content is visible (no scroll-stitch to avoid blanks)
+                      const el = section as HTMLElement;
+                      const dialogPrevOverflow = dialogEl.style.overflow;
+                      const dialogPrevMaxHeight = dialogEl.style.maxHeight;
+                      const dialogPrevHeight = dialogEl.style.height;
+                      dialogEl.style.overflow = 'visible';
+                      dialogEl.style.maxHeight = 'none';
+                      dialogEl.style.height = 'auto';
+                      const prevHeight = el.style.height;
+                      const prevOverflow = el.style.overflow;
+                      const prevMaxHeight = el.style.maxHeight;
+                      const prevMinHeight = el.style.minHeight;
+                      el.style.overflow = 'visible';
+                      el.style.maxHeight = 'none';
+                      el.style.minHeight = '0';
+                      el.style.height = 'auto';
+                      await new Promise((r) => setTimeout(r, 150));
+                      // Expand inner scrollables (e.g. calculator table's max-h-[600px] overflow-auto) so full content is captured
+                      const innerScrollables: { el: HTMLElement; overflow: string; overflowY: string; maxHeight: string; height: string; minHeight: string }[] = [];
+                      el.querySelectorAll('*').forEach((node) => {
+                        if (node instanceof HTMLElement) {
+                          const style = window.getComputedStyle(node);
+                          const overflowY = style.overflowY;
+                          if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && node.scrollHeight > node.clientHeight) {
+                            innerScrollables.push({
+                              el: node,
+                              overflow: node.style.overflow,
+                              overflowY: node.style.overflowY,
+                              maxHeight: node.style.maxHeight,
+                              height: node.style.height,
+                              minHeight: node.style.minHeight,
+                            });
+                            node.style.overflow = 'visible';
+                            node.style.overflowY = 'visible';
+                            node.style.maxHeight = 'none';
+                            node.style.minHeight = '0';
+                            node.style.height = 'auto';
+                          }
+                        }
+                      });
+                      await new Promise((r) => setTimeout(r, 120));
+                      const fullHeight = Math.max(el.scrollHeight, el.offsetHeight, el.clientHeight);
+                      el.style.height = `${fullHeight}px`;
+                      await new Promise((r) => setTimeout(r, 100));
+                      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+                      innerScrollables.forEach(({ el: innerEl, overflow, overflowY, maxHeight, height, minHeight }) => {
+                        innerEl.style.overflow = overflow;
+                        innerEl.style.overflowY = overflowY;
+                        innerEl.style.maxHeight = maxHeight;
+                        innerEl.style.height = height;
+                        innerEl.style.minHeight = minHeight;
+                      });
+                      el.style.height = prevHeight;
+                      el.style.overflow = prevOverflow;
+                      el.style.maxHeight = prevMaxHeight;
+                      el.style.minHeight = prevMinHeight;
+                      dialogEl.style.overflow = dialogPrevOverflow;
+                      dialogEl.style.maxHeight = dialogPrevMaxHeight;
+                      dialogEl.style.height = dialogPrevHeight;
+                      const imgW = pageWidth - margin * 2;
+                      const availableH = pageHeight - margin * 2;
+                      const canvasPxPerMm = canvas.width / imgW;
+                      const sliceHeightPx = availableH * canvasPxPerMm;
+                      const numPages = Math.max(1, Math.ceil(canvas.height / sliceHeightPx));
+                      for (let pageIndex = 0; pageIndex < numPages; pageIndex++) {
+                        if (hadPage || pageIndex > 0) pdf.addPage('a4', 'p');
+                        const sourceY = pageIndex * sliceHeightPx;
+                        const sourceH = Math.min(sliceHeightPx, canvas.height - sourceY);
+                        if (sourceH <= 0) continue;
+                        const sliceCanvas = document.createElement('canvas');
+                        sliceCanvas.width = canvas.width;
+                        sliceCanvas.height = Math.ceil(sourceH);
+                        const ctx = sliceCanvas.getContext('2d');
+                        if (!ctx) continue;
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+                        ctx.drawImage(canvas, 0, sourceY, canvas.width, sourceH, 0, 0, canvas.width, sourceH);
+                        const drawH = sourceH / canvasPxPerMm;
+                        pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', margin, margin, imgW, drawH);
+                        hadPage = true;
+                      }
+                    }
+                    if (hadPage) {
+                      const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '');
+                      const analysisName = (formData as { _analysisName?: string })._analysisName || formData.customerName || 'Value_Assessment';
+                      const sanitizedAnalysisName = analysisName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').slice(0, 50) || 'Value_Assessment';
+                      const safeTitle = (selectedCalculator?.title ?? 'Benefit').replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').slice(0, 40);
+                      const filename = `${sanitizedAnalysisName}_Benefit_${safeTitle}_${dateStr}.pdf`;
+                      pdf.save(filename);
+                      toast.success(`PDF saved to your downloads: ${filename}`);
+                    } else {
+                      toast.error('Could not capture benefit content. Please try again.');
+                    }
+                    setCalculatorModalTab(prevTab);
+                  } catch (e) {
+                    console.error('Benefit PDF capture error:', e);
+                    toast.error('Failed to generate PDF. Please try again.');
+                    setCalculatorModalTab(prevTab);
+                  } finally {
+                    setIsCapturingBenefitPdf(false);
+                  }
+                };
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={captureBenefitPdf}
+                        disabled={isCapturingBenefitPdf}
+                        aria-label="Screenshot benefit as PDF"
+                      >
+                        {isCapturingBenefitPdf ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Camera className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <p>Screenshot this benefit (PDF)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })()}
               {/* Download Slide Button */}
               {(() => {
                 // Determine if we should show download button and with what data
@@ -4098,12 +4487,17 @@ export const ValueSummaryOptionA = ({
                           return Math.round(val).toLocaleString();
                         };
                         
-                        // Calculate improvement delta
+                        // Calculate improvement delta (percent rows: relative % improvement, not %pts)
                         let improvementDisplay = templateRow.forterImprovement;
                         if (forterAgg !== undefined && customerAgg !== undefined) {
                           const delta = forterAgg - customerAgg;
                           if (inferredType === "percent") {
-                            improvementDisplay = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%pts`;
+                            const rel = typeof customerAgg === "number" && customerAgg !== 0
+                              ? ((forterAgg - customerAgg) / customerAgg) * 100
+                              : NaN;
+                            improvementDisplay = Number.isFinite(rel)
+                              ? `${rel >= 0 ? "+" : ""}${rel.toFixed(2)}%`
+                              : "—";
                           } else if (inferredType === "currency") {
                             improvementDisplay = delta >= 0 ? fmtCur(delta) : `(${fmtCur(Math.abs(delta))})`;
                           } else {
@@ -4169,7 +4563,7 @@ export const ValueSummaryOptionA = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="ml-4 gap-2"
+                    className="gap-2"
                     onClick={handleDownload}
                   >
                     <Download className="w-4 h-4" />
@@ -4177,6 +4571,7 @@ export const ValueSummaryOptionA = ({
                   </Button>
                 );
               })()}
+              </div>
               {/* Deduplication toggle - only show for GMV uplift calculators and when on calculator tab */}
               {calculatorModalTab === 'calculator' && (selectedCalculatorId === "c1-revenue" || selectedCalculatorId === "c245-revenue") && (
                 <div className="flex items-center gap-3 ml-auto">
@@ -4346,12 +4741,12 @@ export const ValueSummaryOptionA = ({
               const showInputsTab = selectedCalculatorId && hasInputsConfig; // Always show if config exists
               const isInputsComplete = sourceIdForModal ? getCalculatorCompletionPercentage(sourceIdForModal, modalFormData) === 100 : false;
               
-              // Calculate number of visible tabs
-              const tabCount = 1 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0);
-              const gridCols = tabCount === 3 ? 'grid-cols-3' : tabCount === 2 ? 'grid-cols-2' : 'grid-cols-1';
+              // Calculate number of visible tabs (Benefit Summary, optional Inputs, optional Calculator, Success Stories)
+              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0);
+              const gridCols = tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
               
               return (
-                <TabsList className={`grid w-full max-w-lg ${gridCols}`}>
+                <TabsList className={`grid w-full max-w-2xl ${gridCols}`}>
                   <TabsTrigger value="summary" className="gap-2">
                     Benefit Summary
                     {isInputsComplete && <CheckCircle2 className="w-4 h-4 text-green-500" />}
@@ -4368,28 +4763,32 @@ export const ValueSummaryOptionA = ({
                       {isInputsComplete && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                     </TabsTrigger>
                   )}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <TabsTrigger value="success-stories" className="gap-2" disabled>
+                          <Lock className="w-4 h-4 shrink-0" />
+                          Success Stories
+                        </TabsTrigger>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>To be added at a later date</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </TabsList>
               );
             })()}
             
             {/* Benefit Summary Tab */}
             <TabsContent value="summary" className="mt-4">
+              <div data-benefit-pdf="summary" className="min-h-0">
               {(() => {
                 const content = (modalContext.sourceIdForModal ?? selectedCalculatorId) ? getChallengeBenefitContent(modalContext.sourceIdForModal ?? selectedCalculatorId!) : null;
                 if (!content) {
-                  const hasCalculatorRows = selectedCalculator?.rows && selectedCalculator.rows.length > 0;
-                  const showCalculatorTab = !!selectedCalculatorId && (isCustomMode ? hasCalculatorRows : true);
                   return (
                     <div className="text-center py-8 text-muted-foreground">
                       <p>No challenge/benefit information available for this calculator.</p>
-                      {showCalculatorTab && (
-                        <Button 
-                          className="mt-4"
-                          onClick={() => setCalculatorModalTab('calculator')}
-                        >
-                          Go to Calculator <ArrowRight className="w-4 h-4 ml-2" />
-                        </Button>
-                      )}
                     </div>
                   );
                 }
@@ -4442,45 +4841,30 @@ export const ValueSummaryOptionA = ({
                         )}
                       </Card>
                     </div>
-                    
-                    {/* Go to Calculator Button - show when Calculator tab is visible (all 3 tabs in Guided; Custom when has rows) */}
-                    {(() => {
-                      const hasCalculatorRows = selectedCalculator?.rows && selectedCalculator.rows.length > 0;
-                      const showButton = !!selectedCalculatorId && (isCustomMode ? hasCalculatorRows : true);
-                      if (!showButton) return null;
-                      return (
-                        <div className="flex justify-center pt-4">
-                          <Button 
-                            size="lg"
-                            onClick={() => setCalculatorModalTab('calculator')}
-                            className="gap-2"
-                          >
-                            Go to Calculator <ArrowRight className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      );
-                    })()}
                   </div>
                 );
               })()}
+              </div>
             </TabsContent>
             
             {/* Inputs Tab - shows all relevant customer inputs and KPIs for the calculator */}
             <TabsContent value="inputs" className="mt-4">
+              <div data-benefit-pdf="inputs" className="min-h-0">
               {modalContext.sourceIdForModal && CALCULATOR_REQUIRED_INPUTS[modalContext.sourceIdForModal] && (
                 <CalculatorInputsTab
                   calculatorId={modalContext.sourceIdForModal}
                   formData={modalContext.modalFormData}
-                  onFormDataChange={(field, value) => modalContext.modalOnFormDataChange?.(field, value)}
+                  onFormDataChange={(field, value) => (modalContext.modalOnFormDataChange ?? onFormDataChange)?.(field, value)}
                   onForterKPIChange={(field, value) => onForterKPIChange?.(field, value)}
-                  onGoToCalculator={() => setCalculatorModalTab('calculator')}
                   currency={modalContext.modalFormData.baseCurrency || 'USD'}
                 />
               )}
+              </div>
             </TabsContent>
             
             {/* Calculator Tab */}
             <TabsContent value="calculator" className="mt-4">
+              <div data-benefit-pdf="calculator" className="min-h-0">
               {selectedCalculator && (() => {
                 const sourceId = modalContext.sourceIdForModal ?? selectedCalculatorId;
                 // Determine if we should show segment tabs for this calculator
@@ -4536,7 +4920,7 @@ export const ValueSummaryOptionA = ({
                       <EditableCalculatorDisplay 
                         title={selectedCalculator.title} 
                         rows={selectedCalculator.rows}
-                        onCustomerFieldChange={modalContext.modalOnFormDataChange ?? onFormDataChange}
+                        onCustomerFieldChange={(field, value) => (modalContext.modalOnFormDataChange ?? onFormDataChange)?.(field, value)}
                         onForterFieldChange={(field, value) => {
                           // Handle abuseBenchmarks fields specially
                           const abuseBenchmarkFields = [
@@ -4580,7 +4964,40 @@ export const ValueSummaryOptionA = ({
                   </div>
                 );
               })()}
+              </div>
             </TabsContent>
+
+            {/* Footer: Back bottom-left, Go-forward bottom-right */}
+            {(() => {
+              const hasInputsConfig = modalContext.sourceIdForModal ? !!CALCULATOR_REQUIRED_INPUTS[modalContext.sourceIdForModal] : false;
+              const hasCalculatorRows = selectedCalculator?.rows && selectedCalculator.rows.length > 0;
+              const showCalculatorTab = !!selectedCalculatorId && (isCustomMode ? hasCalculatorRows : true);
+              const showInputsTab = !!selectedCalculatorId && hasInputsConfig;
+              const showForwardFromSummary = !!selectedCalculatorId && (hasInputsConfig || (isCustomMode ? hasCalculatorRows : true));
+              return (
+                <div className="flex justify-between items-center pt-4 mt-4 border-t">
+                  <div className="flex items-center">
+                    {(calculatorModalTab === 'inputs' || calculatorModalTab === 'calculator') && (
+                      <Button variant="outline" size="sm" className="gap-1" onClick={() => setCalculatorModalTab('summary')}>
+                        <ChevronLeft className="w-4 h-4" /> Back
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {calculatorModalTab === 'summary' && showForwardFromSummary && (
+                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab(hasInputsConfig ? 'inputs' : 'calculator')}>
+                        {hasInputsConfig ? 'Go to inputs' : 'Go to Calculator'} <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {calculatorModalTab === 'inputs' && showCalculatorTab && (
+                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('calculator')}>
+                        Go to Calculator <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </Tabs>
         </DialogContent>
       </Dialog>

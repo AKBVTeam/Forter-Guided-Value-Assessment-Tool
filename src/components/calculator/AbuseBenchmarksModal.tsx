@@ -42,10 +42,17 @@ export const defaultAbuseBenchmarks: AbuseBenchmarks = {
 interface AbuseBenchmarksModalProps {
   benchmarks: AbuseBenchmarks;
   onUpdate: (benchmarks: AbuseBenchmarks) => void;
+  /** When provided, modal open state is controlled by parent (e.g. for programmatic open from Value Summary) */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export const AbuseBenchmarksModal = ({ benchmarks, onUpdate }: AbuseBenchmarksModalProps) => {
-  const [open, setOpen] = useState(false);
+export const AbuseBenchmarksModal = ({ benchmarks, onUpdate, open: controlledOpen, onOpenChange: controlledOnOpenChange }: AbuseBenchmarksModalProps) => {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined && controlledOnOpenChange !== undefined;
+  const open = isControlled ? (controlledOpen ?? false) : internalOpen;
+  const setOpen = isControlled ? (controlledOnOpenChange!) : setInternalOpen;
+
   const [localBenchmarks, setLocalBenchmarks] = useState<AbuseBenchmarks>(benchmarks);
 
   const updateField = (field: keyof AbuseBenchmarks, value: number) => {
@@ -66,12 +73,19 @@ export const AbuseBenchmarksModal = ({ benchmarks, onUpdate }: AbuseBenchmarksMo
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+      {isControlled ? (
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => setOpen(true)}>
           <Settings2 className="w-4 h-4" />
           Advanced Abuse Assumptions
         </Button>
-      </DialogTrigger>
+      ) : (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2">
+            <Settings2 className="w-4 h-4" />
+            Advanced Abuse Assumptions
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Advanced Abuse Assumptions</DialogTitle>

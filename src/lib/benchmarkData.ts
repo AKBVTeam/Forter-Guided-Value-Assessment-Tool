@@ -290,6 +290,17 @@ export const countryBenchmarks: CountryBenchmark[] = [
   { name: "Moldova", approvalRate: 98, currencyCode: "MDL", flag: "🇲🇩" },
 ];
 
+/** HQ location dropdown: US and UK first, then all countries in alphabetical order */
+export const countryBenchmarksSortedForHQ: CountryBenchmark[] = (() => {
+  const US = "United States of America";
+  const UK = "United Kingdom";
+  const top = countryBenchmarks.filter((c) => c.name === US || c.name === UK);
+  const rest = countryBenchmarks
+    .filter((c) => c.name !== US && c.name !== UK)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return [...top, ...rest];
+})();
+
 // Helper function to get approval rate by vertical
 export const getVerticalApprovalRate = (verticalName: string): number | undefined => {
   const benchmark = verticalBenchmarks.find(

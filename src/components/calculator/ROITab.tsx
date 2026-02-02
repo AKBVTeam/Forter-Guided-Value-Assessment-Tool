@@ -33,6 +33,15 @@ const BENEFIT_CHALLENGE_MAP: Record<string, string[]> = {
   'saas_cost': [],                           // No calculator for SaaS cost
 };
 
+// Fallback: map challengeId to a default calculatorId when breakdown has no calculatorId (e.g. legacy)
+const CHALLENGE_ID_TO_CALCULATOR_ID: Record<string, string> = {
+  '1': 'c1-revenue', '2': 'c245-revenue', '3': 'c3-manual-review', '7': 'c7-disputes',
+  '8': 'c8-returns', '9': 'c9-cs', '10': 'c10-inr', '12': 'c12-ato', '13': 'c13-promo', '14': 'c14-signup',
+};
+function getCalculatorIdForBenefit(item: { challengeId?: string; calculatorId?: string }): string | undefined {
+  return item.calculatorId ?? (item.challengeId ? CHALLENGE_ID_TO_CALCULATOR_ID[item.challengeId] ?? item.challengeId : undefined);
+}
+
 interface ROITabProps {
   formData: CalculatorData;
   selectedChallenges: Record<string, boolean>;
@@ -41,12 +50,14 @@ interface ROITabProps {
   onShowInMillionsChange: (value: boolean) => void;
   investmentInputs: InvestmentInputs;
   onInvestmentInputsChange: (inputs: InvestmentInputs) => void;
+  showInvestmentRowsToggle?: boolean;
+  onShowInvestmentRowsToggleChange?: (value: boolean) => void;
   onFormDataChange?: (updates: Partial<CalculatorData>) => void;
   onForterKPIChange?: (updates: Partial<ForterKPIs>) => void;
   // Sub-calculation breakdowns for expandable sections
-  gmvUpliftBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
-  costReductionBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
-  riskMitigationBreakdown?: Array<{ label: string; value: number; challengeId?: string }>;
+  gmvUpliftBreakdown?: Array<{ label: string; value: number; challengeId?: string; calculatorId?: string }>;
+  costReductionBreakdown?: Array<{ label: string; value: number; challengeId?: string; calculatorId?: string }>;
+  riskMitigationBreakdown?: Array<{ label: string; value: number; challengeId?: string; calculatorId?: string }>;
   isCustomMode?: boolean;
   // Callback to open calculator in Value Summary tab
   onOpenCalculator?: (calculatorId: string) => void;
@@ -60,6 +71,8 @@ export function ROITab({
   onShowInMillionsChange,
   investmentInputs,
   onInvestmentInputsChange,
+  showInvestmentRowsToggle = true,
+  onShowInvestmentRowsToggleChange,
   onFormDataChange,
   onForterKPIChange,
   gmvUpliftBreakdown = [],
@@ -69,9 +82,6 @@ export function ROITab({
   onOpenCalculator,
 }: ROITabProps) {
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
-  
-  // Toggle to show/hide investment-related rows
-  const [showInvestmentRowsToggle, setShowInvestmentRowsToggle] = useState(true);
   
   // Local state for number inputs to prevent bouncing during typing
   const [localMonths, setLocalMonths] = useState(investmentInputs.monthsToIntegrate.toString());
@@ -103,8 +113,8 @@ export function ROITab({
     const formatted = new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: formData.baseCurrency || 'USD',
-      minimumFractionDigits: showInMillions ? 2 : 0,
-      maximumFractionDigits: showInMillions ? 2 : 0,
+      minimumFractionDigits: showInMillions ? 1 : 0,
+      maximumFractionDigits: showInMillions ? 1 : 0,
     }).format(displayValue);
     const suffix = showInMillions ? 'M' : '';
     const result = `${formatted}${suffix}`;
@@ -249,7 +259,11 @@ export function ROITab({
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <Button onClick={() => setShowInvestmentModal(true)} size="sm" className="gap-1.5">
+          <Button
+            onClick={() => setShowInvestmentModal(true)}
+            size="sm"
+            className={`gap-1.5 ${!hasInvestmentData ? "animate-pulse ring-2 ring-primary ring-offset-2" : ""}`}
+          >
             <Plus className="w-3.5 h-3.5" />
             Enter Investment
           </Button>
@@ -321,11 +335,15 @@ export function ROITab({
           </div>
 
           {hasInvestmentData && (
-            <div className="flex items-center gap-2 ml-auto">
+            <div
+              className={`flex items-center gap-2 ml-auto rounded-md p-1.5 transition-[box-shadow,outline] ${
+                !showInvestmentRowsToggle ? "animate-pulse ring-2 ring-primary ring-offset-2" : ""
+              }`}
+            >
               <Switch
                 id="show-investment-rows"
                 checked={showInvestmentRowsToggle}
-                onCheckedChange={setShowInvestmentRowsToggle}
+                onCheckedChange={onShowInvestmentRowsToggleChange ?? (() => {})}
               />
               <Label htmlFor="show-investment-rows" className="text-sm text-muted-foreground whitespace-nowrap">Show Investment</Label>
             </div>
@@ -358,7 +376,8 @@ export function ROITab({
                     <Info className="w-3.5 h-3.5 cursor-help text-muted-foreground/70 hover:text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-md p-3">
-                    <p className="font-medium mb-2">ROI Calculation</p>
+                    <p className="font-medium mb-1">Return on Investment Calculation</p>
+                    <p className="text-xs text-muted-foreground mb-2">For every $1 of investment, this is the return the merchant can expect to receive.</p>
                     <div className="text-xs space-y-1 font-mono bg-muted/50 p-2 rounded">
                       <p><strong>a.</strong> Total Benefit (Effective Gross EBITDA) = {formatCurrency(roiResults.totalProjection.runRateGrossEBITDA)}</p>
                       <p><strong>b.</strong> Total SaaS Cost ({investmentInputs.contractTenure} years) = {formatCurrency(roiResults.totalProjection.forterSaaSCost)}</p>
@@ -397,7 +416,8 @@ export function ROITab({
                     <Info className="w-3.5 h-3.5 cursor-help text-muted-foreground/70 hover:text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-md p-3">
-                    <p className="font-medium mb-2">Payback Period Calculation</p>
+                    <p className="font-medium mb-1">Payback Period Calculation</p>
+                    <p className="text-xs text-muted-foreground mb-2">Number of months before merchant can expect to recoup their investment and be net positive.</p>
                     <div className="text-xs space-y-1 font-mono bg-muted/50 p-2 rounded">
                       <p><strong>a.</strong> Year 1 SaaS Cost = {formatCurrency(investmentCosts.totalACV)}</p>
                       <p><strong>b.</strong> Integration Cost = {formatCurrency(investmentCosts.integrationCost)}</p>
@@ -530,12 +550,13 @@ export function ROITab({
                       <TableCell className="pl-10 text-sm text-muted-foreground">
                         <span className="flex items-center gap-2">
                           {item.label}
-                          {item.challengeId && (
+                          {(item.calculatorId || item.challengeId) && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onOpenCalculator && item.challengeId) {
-                                  onOpenCalculator(item.challengeId);
+                                const calcId = getCalculatorIdForBenefit(item);
+                                if (onOpenCalculator && calcId) {
+                                  onOpenCalculator(calcId);
                                 } else {
                                   setSelectedBenefit({ 
                                     challengeId: item.challengeId!, 
@@ -590,14 +611,15 @@ export function ROITab({
                 {costReductionExpanded && costReductionBreakdown.map((item, idx) => (
                   <TableRow key={`cr-${idx}`} className="bg-muted/10">
                     <TableCell className="pl-10 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2">
                         {item.label}
-                        {item.challengeId && (
+                        {(item.calculatorId || item.challengeId) && (
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (onOpenCalculator && item.challengeId) {
-                                onOpenCalculator(item.challengeId);
+                              const calcId = getCalculatorIdForBenefit(item);
+                              if (onOpenCalculator && calcId) {
+                                onOpenCalculator(calcId);
                               } else {
                                 setSelectedBenefit({ 
                                   challengeId: item.challengeId!, 
@@ -651,14 +673,15 @@ export function ROITab({
                 {riskMitigationExpanded && riskMitigationBreakdown.map((item, idx) => (
                   <TableRow key={`rm-${idx}`} className="bg-muted/10">
                     <TableCell className="pl-10 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2">
                         {item.label}
-                        {item.challengeId && (
+                        {(item.calculatorId || item.challengeId) && (
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (onOpenCalculator && item.challengeId) {
-                                onOpenCalculator(item.challengeId);
+                              const calcId = getCalculatorIdForBenefit(item);
+                              if (onOpenCalculator && calcId) {
+                                onOpenCalculator(calcId);
                               } else {
                                 setSelectedBenefit({ 
                                   challengeId: item.challengeId!, 

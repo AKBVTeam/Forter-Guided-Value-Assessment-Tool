@@ -78,6 +78,8 @@ const QUICK_ACTIONS = [
   { icon: BarChart3, text: "View Summary", action: "navigate:summary", description: "See calculated value", requiresChallenges: true },
 ];
 
+const VALUE_AGENT_UNAVAILABLE_KEY = "value_agent_unavailable";
+
 export const ValueAgentChat = ({ 
   calculatorData, 
   selectedChallenges, 
@@ -107,6 +109,7 @@ export const ValueAgentChat = ({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
+  const [isUnavailable, setIsUnavailable] = useState(() => typeof sessionStorage !== "undefined" && sessionStorage.getItem(VALUE_AGENT_UNAVAILABLE_KEY) === "1");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -222,7 +225,7 @@ export const ValueAgentChat = ({
 
   const sendMessage = useCallback(async (messageText?: string) => {
     const userMessage = (messageText || input).trim();
-    if (!userMessage || isLoading) return;
+    if (!userMessage || isLoading || isUnavailable) return;
 
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
@@ -250,7 +253,12 @@ export const ValueAgentChat = ({
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        setIsUnavailable(true);
+        if (typeof sessionStorage !== "undefined") sessionStorage.setItem(VALUE_AGENT_UNAVAILABLE_KEY, "1");
+        toast.error("Value Agent is currently unavailable.");
+        return;
+      }
 
       let parsedData = data;
       if (typeof data === 'string') {
@@ -272,19 +280,14 @@ export const ValueAgentChat = ({
         suggestions: suggestions.length > 0 ? suggestions : undefined,
       }]);
     } catch (error) {
-      console.error("Error:", error);
-      toast.error("Failed to send message. Please try again.");
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "I'm sorry, I encountered an error. Could you please try again?",
-        },
-      ]);
+      console.error("Value Agent error:", error);
+      setIsUnavailable(true);
+      if (typeof sessionStorage !== "undefined") sessionStorage.setItem(VALUE_AGENT_UNAVAILABLE_KEY, "1");
+      toast.error("Value Agent is currently unavailable.");
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, calculatorData, selectedChallenges, currentPage]);
+  }, [input, isLoading, isUnavailable, messages, calculatorData, selectedChallenges, currentPage]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -333,7 +336,7 @@ export const ValueAgentChat = ({
                       size="sm"
                       onClick={() => handleAction(suggestion.action || `ask:${suggestion.text}`)}
                       className="text-xs h-7 gap-1 bg-background hover:bg-primary/10 hover:border-primary/50"
-                      disabled={isLoading}
+                      disabled={isLoading || isUnavailable}
                     >
                       <ArrowRight className="h-3 w-3" />
                       {stripMarkdown(suggestion.text)}
@@ -367,7 +370,7 @@ export const ValueAgentChat = ({
                   size="sm"
                   onClick={() => !isLocked && handleAction(action.action)}
                   className={`h-auto py-2 px-2 flex flex-col items-start gap-0.5 ${isLocked ? "opacity-50 cursor-not-allowed" : "hover:bg-primary/10 hover:border-primary/50"}`}
-                  disabled={isLoading || isLocked}
+                  disabled={isLoading || isUnavailable || isLocked}
                   title={isLocked ? "Select at least one use case to unlock" : undefined}
                 >
                   <span className="flex items-center gap-1.5 text-xs font-medium">
@@ -396,7 +399,7 @@ export const ValueAgentChat = ({
                 size="sm"
                 onClick={() => handleFAQClick(faq.prompt)}
                 className="text-xs h-7 gap-1"
-                disabled={isLoading}
+                disabled={isLoading || isUnavailable}
               >
                 <faq.icon className="h-3 w-3" />
                 {faq.text}
@@ -414,10 +417,10 @@ export const ValueAgentChat = ({
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder="Ask a question..."
-          disabled={isLoading}
+          disabled={isLoading || isUnavailable}
           className="flex-1 text-sm"
         />
-        <Button onClick={() => sendMessage()} disabled={isLoading || !input.trim()} size="icon" className="h-9 w-9">
+        <Button onClick={() => sendMessage()} disabled={isLoading || isUnavailable || !input.trim()} size="icon" className="h-9 w-9">
           <Send className="w-4 h-4" />
         </Button>
       </div>
@@ -465,8 +468,15 @@ export const ValueAgentChat = ({
           </div>
         </div>
         
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {renderChatContent()}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
+          <div className={cn("flex-1 flex flex-col min-h-0 overflow-hidden", isUnavailable && "pointer-events-none opacity-60")}>
+            {renderChatContent()}
+          </div>
+          {isUnavailable && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-muted/90 rounded-b">
+              <p className="text-sm font-medium text-muted-foreground">Currently unavailable</p>
+            </div>
+          )}
         </div>
 
         <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
@@ -571,8 +581,15 @@ export const ValueAgentChat = ({
           </div>
         </div>
         
-        <div className="flex flex-col flex-1 overflow-hidden" style={{ maxHeight: 'calc(100vh - 300px)', minHeight: '200px' }}>
-          {renderChatContent()}
+        <div className="flex flex-col flex-1 overflow-hidden relative" style={{ maxHeight: 'calc(100vh - 300px)', minHeight: '200px' }}>
+          <div className={cn("flex flex-col flex-1 overflow-hidden", isUnavailable && "pointer-events-none opacity-60")}>
+            {renderChatContent()}
+          </div>
+          {isUnavailable && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-muted/90 rounded-b-lg">
+              <p className="text-sm font-medium text-muted-foreground">Currently unavailable</p>
+            </div>
+          )}
         </div>
 
         <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>

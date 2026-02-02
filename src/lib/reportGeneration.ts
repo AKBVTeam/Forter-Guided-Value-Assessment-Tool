@@ -1467,6 +1467,13 @@ export async function generateExecutiveSummaryDocx(
   }
 
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Proxima Nova' },
+        },
+      },
+    },
     sections: [{
       properties: {
         page: {

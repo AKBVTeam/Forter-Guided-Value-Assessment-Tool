@@ -12,36 +12,20 @@ const formatForterImprovement = (value: string | undefined) => {
   if (!value) return "";
   let str = String(value).trim();
 
-  // Convert % to %pts for percentage values (handles both regular and parentheses format)
-  const convertToPercentPts = (s: string) => {
-    // Handle (X%) format -> (X%pts)
-    if (s.endsWith("%)") && !s.endsWith("%pts)")) {
-      return s.slice(0, -2) + "%pts)";
-    }
-    // Handle X% format -> X%pts
-    if (s.endsWith("%") && !s.endsWith("%pts")) {
-      return s.slice(0, -1) + "%pts";
-    }
-    return s;
-  };
-
-  // Keep explicit zero as-is
-  if (str === "0" || str === "0%" || str === "0.00%" || str === "$0" || str === "-$0") {
-    return convertToPercentPts(str.replace("-", ""));
+  // Display as-is: % improvement (no suffix) or % pts for percentage-point improvements
+  if (str === "0" || str === "0%" || str === "0.00%" || str === "0.0% pts" || str === "0% pts" || str === "$0" || str === "-$0") {
+    return str.replace("-", "");
   }
 
-  // If already formatted with sign/parentheses, keep it
   if (str.startsWith("+") || (str.startsWith("(") && str.endsWith(")"))) {
-    return convertToPercentPts(str);
+    return str;
   }
 
-  // Convert negatives to parentheses
   if (str.startsWith("-")) {
-    return convertToPercentPts(`(${str.slice(1)})`);
+    return `(${str.slice(1)})`;
   }
 
-  // Otherwise treat as positive delta
-  return convertToPercentPts(`+${str}`);
+  return `+${str}`;
 };
 
 const getImprovementTone = (value: string | undefined): "positive" | "negative" | "neutral" => {
@@ -50,7 +34,7 @@ const getImprovementTone = (value: string | undefined): "positive" | "negative" 
   if (str.startsWith("-")) return "negative";
   if (str.startsWith("(")) return "negative";
   if (str.startsWith("+")) return "positive";
-  if (str === "0" || str === "0%" || str === "0.00%" || str === "$0") return "neutral";
+  if (str === "0" || str === "0%" || str === "0.00%" || str === "0.0% pts" || str === "0% pts" || str === "$0") return "neutral";
   if (str.startsWith("0")) return "neutral";
   return "positive";
 };

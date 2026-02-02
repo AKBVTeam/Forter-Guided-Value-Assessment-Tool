@@ -350,8 +350,13 @@ function buildAggregateRows(
     if (forterAgg !== undefined && customerAgg !== undefined) {
       const delta = forterAgg - customerAgg;
       if (inferredType === "percent") {
-        // For percentages, show as percentage point change
-        improvementDisplay = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%pts`;
+        // For percentages, show as relative % improvement (not %pts) to match main calculator
+        const rel = typeof customerAgg === "number" && customerAgg !== 0
+          ? ((forterAgg - customerAgg) / customerAgg) * 100
+          : NaN;
+        improvementDisplay = Number.isFinite(rel)
+          ? `${rel >= 0 ? "+" : ""}${rel.toFixed(2)}%`
+          : "—";
       } else if (inferredType === "currency") {
         improvementDisplay = delta >= 0 ? fmtCur(delta) : `(${fmtCur(Math.abs(delta))})`;
       } else {
@@ -410,6 +415,42 @@ export function computeSegmentedAggregateValue(
     }
   }
   return total;
+}
+
+/**
+ * Exported utility to compute aggregated calculator rows for the Total view.
+ * Same logic as the Total tab in SegmentCalculatorTabs - use for Value Summary completion rate etc.
+ */
+export function computeSegmentedAggregateRows(
+  formData: CalculatorData,
+  globalForterKPIs: ForterKPIs,
+  challengeType: "c1" | "c245",
+  calculatorType: "revenue" | "chargeback",
+  deduplicationEnabled: boolean,
+  deduplicationRetryRate: number,
+  deduplicationSuccessRate: number,
+  includesFraudCBCoverage: boolean = false
+): CalculatorRow[] {
+  const segments = formData.segments || [];
+  const enabledSegments = segments.filter(s => s.enabled);
+  if (enabledSegments.length === 0) return [];
+
+  const segmentResults: Record<string, { rows: CalculatorRow[]; value: number } | null> = {};
+  for (const segment of enabledSegments) {
+    const result = calculateSegmentResults(
+      segment,
+      formData,
+      globalForterKPIs,
+      challengeType,
+      calculatorType,
+      deduplicationEnabled,
+      deduplicationRetryRate,
+      deduplicationSuccessRate,
+      includesFraudCBCoverage
+    );
+    segmentResults[segment.id] = result;
+  }
+  return buildAggregateRows(segmentResults, enabledSegments, formData.baseCurrency || "USD");
 }
 
 /**

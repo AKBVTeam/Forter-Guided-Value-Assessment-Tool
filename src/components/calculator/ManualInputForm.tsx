@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -17,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { CalculatorData, CustomCalculation } from "@/pages/Index";
-import { ForterKPIConfig, defaultForterKPIs, ForterKPIs } from "@/components/calculator/ForterKPIConfig";
+import { ForterKPIConfig, defaultForterKPIs, ForterKPIs, type ForterKPIFocusSection } from "@/components/calculator/ForterKPIConfig";
 import { ChallengeSelection } from "@/components/calculator/ChallengeSelection";
 import { ChallengeInputs } from "@/components/calculator/ChallengeInputs";
 import { ValueSummaryOptionA, ValueTotals } from "@/components/calculator/ValueSummaryOptionA";
@@ -27,12 +28,12 @@ import { StrategicObjectivesSelection } from "./StrategicObjectivesSelection";
 import { UnifiedUseCaseSelection } from "./UnifiedUseCaseSelection";
 import { ROITab } from "./ROITab";
 import { SegmentEditorModal } from "./SegmentEditorModal";
-import { InvestmentInputs, defaultInvestmentInputs } from "@/lib/roiCalculations";
+import { InvestmentInputs, defaultInvestmentInputs, calculateInvestmentCosts } from "@/lib/roiCalculations";
 import { StrategicObjectiveId, STRATEGIC_OBJECTIVES, USE_CASES } from "@/lib/useCaseMapping";
 import { Segment, hasPaymentChallengesSelected, createEmptySegment, getSegmentSummary, getSegmentKPIStatus, countSegmentFilledFields } from "@/lib/segments";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import { FlaskConical, ChevronLeft, ChevronRight, Download, Info, Trash2, Layers, Plus, Pencil, Upload, FileText, Lock, FastForward, Unlock } from "lucide-react";
+import { FlaskConical, ChevronLeft, ChevronRight, Download, Info, Trash2, Layers, Plus, Pencil, Upload, FileText, Lock, FastForward, Unlock, User, ListChecks, ClipboardList, Gauge, PieChart, TrendingUp, List, LayoutGrid } from "lucide-react";
 import { PrintTabButton } from "./PrintTabButton";
 import { TabCompletionIndicator } from "./TabCompletionIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -42,7 +43,7 @@ import { CSVUploadButton } from "./CSVUploadButton";
 import { InputProgressIndicator } from "./InputProgressIndicator";
 import { useInputProgress } from "@/hooks/useInputProgress";
 import { useTabCompletion } from "@/hooks/useTabCompletion";
-import { verticalBenchmarks, countryBenchmarks, getWeightedApprovalRate, topCurrencies, getCurrencyForCountry, getVendorCBReductionFactor, get3DSRateByCountryAndAOV, getCurrencySymbol } from "@/lib/benchmarkData";
+import { verticalBenchmarks, countryBenchmarksSortedForHQ, getWeightedApprovalRate, topCurrencies, getCurrencyForCountry, getVendorCBReductionFactor, get3DSRateByCountryAndAOV, getCurrencySymbol } from "@/lib/benchmarkData";
 import { NumericInput } from "@/components/calculator/NumericInput";
 import { toast } from "sonner";
 import { ValueAgentChat } from "./ValueAgentChat";
@@ -52,6 +53,8 @@ import { GuidedValueWelcome } from "./GuidedValueWelcome";
 interface ManualInputFormProps {
   onComplete: (data: CalculatorData) => void;
   onFieldChange?: (field: keyof CalculatorData, value: any) => void;
+  /** Bulk update (e.g. auto-fill) so parent and auto-save persist use cases + customer inputs */
+  onBulkUpdate?: (data: Partial<CalculatorData>) => void;
   initialData?: CalculatorData;
   customerLogoUrl?: string;
   onLogoUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -62,7 +65,7 @@ interface ManualInputFormProps {
   onCompletionChange?: (completion: { profile: number; challenges: number; inputs: number; forter: number; summary: number; roi: number }) => void;
 }
 
-export const ManualInputForm = ({ onComplete, onFieldChange, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange }: ManualInputFormProps) => {
+export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange }: ManualInputFormProps) => {
   const [formData, setFormData] = useState<CalculatorData>(() => {
     // For custom mode with no existing analysis, start with zeroed customer inputs
     const isNewCustomAssessment = entryMode === "custom" && !initialData?._analysisId;
@@ -115,7 +118,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
         fraudCBRate: 0,
         emeaFraudCBRate: 0,
         apacFraudCBRate: 0,
-        fraudCBAOV: 0,
+        // fraudCBAOV left undefined so it defaults to Completed AOV when available
         emeaFraudCBAOV: 0,
         apacFraudCBAOV: 0,
         serviceCBRate: 0,
@@ -169,12 +172,11 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
       };
     }
     
-    // Standard initialization for guided mode or loaded analyses
+    // Standard initialization for guided mode or loaded analyses (fraudCBAOV omitted so it defaults to Completed AOV)
     return {
       amerGrossMarginPercent: 50,
       emeaGrossMarginPercent: 50,
       apacGrossMarginPercent: 50,
-      fraudCBAOV: 158,
       serviceCBAOV: 158,
       amerCreditCardPct: 100, // Default credit card % to 100%
       amerPostAuthImplemented: false, // Default Post-auth to excluded
@@ -196,10 +198,20 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
       setActiveTab(externalActiveTab);
     }
   }, [externalActiveTab]);
-  const [showInMillions, setShowInMillions] = useState(true);
+  const [showInMillions, setShowInMillions] = useState(false);
+  const [forterKPIFocusTarget, setForterKPIFocusTarget] = useState<ForterKPIFocusSection | null>(null);
+  /** Shared list/grid layout for both Customer Inputs and Forter KPI tabs */
+  const [inputsLayoutView, setInputsLayoutView] = useState<'list' | 'grid'>('grid');
   const [entryPath, setEntryPath] = useState<EntryPath | null>(() => entryMode === "custom" ? "custom" : null);
   const [showUseCaseLanding, setShowUseCaseLanding] = useState(() => entryMode !== "custom");
-  const [selectedObjectives, setSelectedObjectives] = useState<StrategicObjectiveId[]>([]);
+  // Initialize from initialData so strategic objectives persist when navigating back to Use Cases tab (or after remount)
+  const [selectedObjectives, setSelectedObjectives] = useState<StrategicObjectiveId[]>(() => {
+    const fromInitial = initialData?.selectedObjectives;
+    if (fromInitial && Array.isArray(fromInitial) && fromInitial.length > 0) {
+      return fromInitial as StrategicObjectiveId[];
+    }
+    return [];
+  });
   const [strategicStep, setStrategicStep] = useState<'objectives' | 'usecases'>('objectives');
   const [valueTotals, setValueTotals] = useState<ValueTotals>({
     gmvUplift: 0,
@@ -210,7 +222,10 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     costReductionBreakdown: [],
     riskMitigationBreakdown: [],
   });
+  /** When set (e.g. from ROI tab benefit click), open the benefit modal without switching tab */
+  const [benefitModalCalculatorId, setBenefitModalCalculatorId] = useState<string | null>(null);
   const [investmentInputs, setInvestmentInputs] = useState<InvestmentInputs>(defaultInvestmentInputs);
+  const [showInvestmentRowsToggle, setShowInvestmentRowsToggle] = useState(true);
   const [templateDownloaded, setTemplateDownloaded] = useState(false);
   const [showCSVDownloadAnimation, setShowCSVDownloadAnimation] = useState(false);
   const [csvTemplateNeedsUpdate, setCsvTemplateNeedsUpdate] = useState(false);
@@ -228,6 +243,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
   // Tab unlock animation state
   const [recentlyUnlockedTabs, setRecentlyUnlockedTabs] = useState<string[]>([]);
   const prevHasSelectedChallengesRef = useRef(false);
+
+  // ROI tab stays locked until user has viewed Value Summary at least once (restored from loaded analysis)
+  const [hasViewedValueSummary, setHasViewedValueSummary] = useState(() => !!initialData?._valueSummaryViewed);
   
   // Segmentation state
   const [segments, setSegments] = useState<Segment[]>(initialData?.segments ?? []);
@@ -251,7 +269,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     const newAnalysisId = initialData?._analysisId;
     const prevAnalysisId = loadedAnalysisIdRef.current;
     
-    // If there's no ID change, nothing to sync
+    // If there's no ID change, nothing to sync (same analysis; don't overwrite user edits)
     if (!newAnalysisId || newAnalysisId === prevAnalysisId) {
       return;
     }
@@ -278,7 +296,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
       amerGrossMarginPercent: 50,
       emeaGrossMarginPercent: 50,
       apacGrossMarginPercent: 50,
-      fraudCBAOV: 158,
       serviceCBAOV: 158,
       amerCreditCardPct: 100,
       amerPostAuthImplemented: false,
@@ -292,6 +309,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     setSelectedChallenges(initialData?.selectedChallenges ?? {});
     setSegments(initialData?.segments ?? []);
     setSegmentationEnabled(initialData?.segmentationEnabled ?? false);
+
+    // Restore ROI unlock state: if this analysis had Value Summary viewed, ROI tab stays unlocked
+    setHasViewedValueSummary(!!initialData?._valueSummaryViewed);
 
     // Mark that we just loaded this analysis so the currency effect can skip prompting on the next render
     justLoadedAnalysisIdRef.current = newAnalysisId;
@@ -321,13 +341,51 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     }
   }, [initialData?._analysisId, initialData?.selectedChallenges, initialData?.selectedObjectives, initialData?.customerName, initialData?._pathwayMode, entryMode]);
 
+  // When parent has loaded data (e.g. Open analysis): keep use cases in sync if we're viewing that analysis and our state is empty/stale
+  useEffect(() => {
+    const analysisId = initialData?._analysisId;
+    if (!analysisId || analysisId !== loadedAnalysisIdRef.current) return;
+    const fromParent = initialData?.selectedChallenges;
+    if (fromParent == null) return;
+    const parentJson = JSON.stringify(fromParent);
+    const currentJson = JSON.stringify(selectedChallenges);
+    if (parentJson !== currentJson) {
+      setSelectedChallenges(fromParent);
+    }
+    const objectivesFromParent = initialData?.selectedObjectives;
+    if (objectivesFromParent && Array.isArray(objectivesFromParent) && objectivesFromParent.length > 0) {
+      const objJson = JSON.stringify(objectivesFromParent);
+      const currentObjJson = JSON.stringify(selectedObjectives);
+      if (objJson !== currentObjJson) {
+        setSelectedObjectives(objectivesFromParent as StrategicObjectiveId[]);
+      }
+    }
+  }, [initialData?._analysisId, initialData?.selectedChallenges, initialData?.selectedObjectives]);
+
+  // When navigating back to Use Cases tab, restore strategic objectives from parent if local state is empty but parent has them (fixes out-of-sync)
+  useEffect(() => {
+    if (activeTab !== 'challenges') return;
+    const fromParent = initialData?.selectedObjectives;
+    if (fromParent && Array.isArray(fromParent) && fromParent.length > 0 && selectedObjectives.length === 0) {
+      setSelectedObjectives(fromParent as StrategicObjectiveId[]);
+    }
+  }, [activeTab, initialData?.selectedObjectives, selectedObjectives.length]);
+
   const inputProgress = useInputProgress(formData, selectedChallenges);
   
+  // ROI full completion requires investment entered; half completion when ROI viewed with data but no investment
+  const hasInvestment = useMemo(() => {
+    const costs = calculateInvestmentCosts(investmentInputs, formData);
+    return costs.totalACV > 0 || costs.integrationCost > 0;
+  }, [investmentInputs, formData]);
+
   // Track tab completion for checkmark badges
   const { completion: tabCompletion, markTabViewed, canGenerateReports, showReportAnimation } = useTabCompletion({
     formData,
     selectedChallenges,
     valueTotals,
+    hasInvestment,
+    showInvestmentRowsOn: showInvestmentRowsToggle,
   });
   
   // Report completion changes to parent for global progress bar
@@ -406,10 +464,21 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     setLastReportDataHash(currentReportDataHash);
   }, [currentReportDataHash]);
   
-  // Helper to render tab label with progress indicator
+  // Mini icons per tab (light and friendly)
+  const tabIcons: Record<keyof typeof tabCompletion, React.ReactNode> = {
+    profile: <User className="h-3.5 w-3.5 shrink-0" />,
+    challenges: <ListChecks className="h-3.5 w-3.5 shrink-0" />,
+    inputs: <ClipboardList className="h-3.5 w-3.5 shrink-0" />,
+    forter: <Gauge className="h-3.5 w-3.5 shrink-0" />,
+    summary: <PieChart className="h-3.5 w-3.5 shrink-0" />,
+    roi: <TrendingUp className="h-3.5 w-3.5 shrink-0" />,
+  };
+
+  // Helper to render tab label with icon and progress indicator
   // Only show completion indicator for unlocked tabs (profile/challenges always unlocked, others require selected challenges)
   const renderTabLabel = (tabKey: keyof typeof tabCompletion, label: string, isLocked: boolean = false) => (
     <span className="flex items-center gap-1.5">
+      {tabIcons[tabKey]}
       {label}
       {!isLocked && <TabCompletionIndicator progress={tabCompletion[tabKey]} size={14} />}
     </span>
@@ -476,23 +545,47 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
   // Check if at least one challenge is selected
   const hasSelectedChallenges = useMemo(() => Object.values(selectedChallenges).some(Boolean), [selectedChallenges]);
   
-  // Smart tab unlock feedback - animate and notify when tabs become unlocked
+  // Smart tab unlock feedback - animate when tabs become unlocked (ROI stays locked until Value Summary is viewed)
   // Don't show in custom mode
   useEffect(() => {
     if (hasSelectedChallenges && !prevHasSelectedChallengesRef.current && !isCustomMode) {
-      // Tabs just became unlocked
-      const unlockedTabs = ['inputs', 'forter', 'summary', 'roi'];
+      // Only inputs, forter, summary unlock when use cases are selected; ROI unlocks after viewing Value Summary
+      const unlockedTabs = ['inputs', 'forter', 'summary'];
       setRecentlyUnlockedTabs(unlockedTabs);
-      toast.success("All tabs unlocked!", {
-        description: "You can now access Customer Inputs, Forter KPI, Value Summary, and ROI tabs.",
+      toast.success("Tabs unlocked!", {
+        description: "You can now access Customer Inputs, Forter KPI, and Value Summary. View Value Summary to unlock ROI.",
         duration: 4000,
         icon: <Unlock className="h-4 w-4" />,
       });
-      // Clear animation after 2.5 seconds
       setTimeout(() => setRecentlyUnlockedTabs([]), 2500);
     }
     prevHasSelectedChallengesRef.current = hasSelectedChallenges;
   }, [hasSelectedChallenges, isCustomMode]);
+
+  // Mark Value Summary as viewed whenever user is on that tab (unlocks ROI) - works for tab click, Next/Previous, or any navigation
+  // Persist _valueSummaryViewed so saved/loaded analyses restore ROI unlock state
+  useEffect(() => {
+    if (activeTab === 'summary') {
+      setHasViewedValueSummary(true);
+      setFormData(prev => ({ ...prev, _valueSummaryViewed: true } as CalculatorData));
+      onFieldChange?.('_valueSummaryViewed' as keyof CalculatorData, true);
+    }
+  }, [activeTab, onFieldChange]);
+
+  // When ROI first becomes unlocked (user viewed Value Summary), show same pulse animation as other unlocked tabs
+  const prevHasViewedValueSummaryRef = useRef(false);
+  useEffect(() => {
+    if (hasSelectedChallenges && hasViewedValueSummary && !prevHasViewedValueSummaryRef.current && !isCustomMode) {
+      setRecentlyUnlockedTabs(prev => (prev.includes('roi') ? prev : [...prev, 'roi']));
+      toast.success("ROI tab unlocked!", {
+        description: "You can now access the ROI section.",
+        duration: 3000,
+        icon: <Unlock className="h-4 w-4" />,
+      });
+      setTimeout(() => setRecentlyUnlockedTabs(prev => prev.filter(t => t !== 'roi')), 2500);
+    }
+    prevHasViewedValueSummaryRef.current = hasViewedValueSummary;
+  }, [hasViewedValueSummary, hasSelectedChallenges, isCustomMode]);
   
   // Fixed tab order (segments removed from tabs, now in Customer Inputs)
   const tabOrder = ["profile", "challenges", "inputs", "forter", "summary", "roi"];
@@ -697,6 +790,78 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     }
   }, [formData.hqLocation, formData.amerAnnualGMV, formData.amerGrossAttempts, formData.amer3DSImplemented, formData.baseCurrency]);
 
+  // Which Forter KPI values currently match auto-applied benchmarks (for "Forter Benchmark" pill + tooltip)
+  const forterBenchmarkSources = useMemo((): Partial<Record<keyof ForterKPIs, string>> => {
+    const kpis = formData.forterKPIs || defaultForterKPIs;
+    const sources: Partial<Record<keyof ForterKPIs, string>> = {};
+    const weightedRate = getWeightedApprovalRate(formData.industry, formData.hqLocation);
+    if (weightedRate !== undefined) {
+      if (kpis.approvalRateImprovement === weightedRate) {
+        sources.approvalRateImprovement = "Based on industry and HQ location (country).";
+      }
+      if (kpis.preAuthApprovalImprovement === weightedRate) {
+        sources.preAuthApprovalImprovement = "Based on industry and HQ location (country).";
+      }
+      if (kpis.postAuthApprovalImprovement === weightedRate) {
+        sources.postAuthApprovalImprovement = "Based on industry and HQ location (country).";
+      }
+    }
+    if (formData.fraudCBRate !== undefined && formData.fraudCBRate > 0) {
+      const targetCBRate = parseFloat((formData.fraudCBRate * getVendorCBReductionFactor(formData.existingFraudVendor || "")).toFixed(3));
+      if (kpis.chargebackReduction === targetCBRate) {
+        sources.chargebackReduction = "Based on existing fraud vendor selection.";
+      }
+    }
+    const hqLocation = formData.hqLocation;
+    const gmv = formData.amerAnnualGMV || 0;
+    const attempts = formData.amerGrossAttempts || 0;
+    const aov = attempts > 0 ? gmv / attempts : 0;
+    const baseCurrency = formData.baseCurrency || "USD";
+    if (hqLocation && aov > 0) {
+      const { rate: recommended3DSRate } = get3DSRateByCountryAndAOV(hqLocation, aov, baseCurrency);
+      if (kpis.threeDSReduction === recommended3DSRate) {
+        sources.threeDSReduction = "Based on HQ location (country) and AOV.";
+      }
+    }
+    return sources;
+  }, [formData.industry, formData.hqLocation, formData.forterKPIs, formData.fraudCBRate, formData.existingFraudVendor, formData.amerAnnualGMV, formData.amerGrossAttempts, formData.baseCurrency]);
+
+  // Current benchmark values for reset-to-benchmark (only fields that have a benchmark)
+  const forterBenchmarkValues = useMemo((): Partial<Record<keyof ForterKPIs, number>> => {
+    const values: Partial<Record<keyof ForterKPIs, number>> = {};
+    const weightedRate = getWeightedApprovalRate(formData.industry, formData.hqLocation);
+    if (weightedRate !== undefined) {
+      values.approvalRateImprovement = weightedRate;
+      values.preAuthApprovalImprovement = weightedRate;
+      values.postAuthApprovalImprovement = weightedRate;
+    }
+    if (formData.fraudCBRate !== undefined && formData.fraudCBRate > 0) {
+      values.chargebackReduction = parseFloat((formData.fraudCBRate * getVendorCBReductionFactor(formData.existingFraudVendor || "")).toFixed(3));
+    }
+    const hqLocation = formData.hqLocation;
+    const gmv = formData.amerAnnualGMV || 0;
+    const attempts = formData.amerGrossAttempts || 0;
+    const aov = attempts > 0 ? gmv / attempts : 0;
+    const baseCurrency = formData.baseCurrency || "USD";
+    if (hqLocation && aov > 0) {
+      const { rate: recommended3DSRate } = get3DSRateByCountryAndAOV(hqLocation, aov, baseCurrency);
+      values.threeDSReduction = recommended3DSRate;
+    }
+    return values;
+  }, [formData.industry, formData.hqLocation, formData.fraudCBRate, formData.existingFraudVendor, formData.amerAnnualGMV, formData.amerGrossAttempts, formData.baseCurrency]);
+
+  // PSD2 3DS suggestion for Fraud Detection & 3DS pill (rate + reason when PSD2 country and AOV set)
+  const suggested3DSFromPSD2 = useMemo((): { rate: number; reason: string } | null => {
+    const hqLocation = formData.hqLocation;
+    const gmv = formData.amerAnnualGMV || 0;
+    const attempts = formData.amerGrossAttempts || 0;
+    const aov = attempts > 0 ? gmv / attempts : 0;
+    const baseCurrency = formData.baseCurrency || "USD";
+    if (!hqLocation || aov <= 0) return null;
+    const result = get3DSRateByCountryAndAOV(hqLocation, aov, baseCurrency);
+    return { rate: result.rate, reason: result.reason };
+  }, [formData.hqLocation, formData.amerAnnualGMV, formData.amerGrossAttempts, formData.baseCurrency]);
+
   // Ensure base currency is never 0 or invalid (avoids "0" showing below Base Currency when retailer is selected)
   const validBaseCurrency = (code: string | number | undefined): string => {
     const s = code == null ? "" : String(code);
@@ -705,13 +870,29 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
   };
 
   // Stable updateField that notifies parent of individual field changes
+  // Coerce numeric customer inputs (e.g. from calculator table) so they persist as numbers
   const updateField = useCallback((field: keyof CalculatorData, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    // Notify parent of the field change
+    const isNumeric = typeof value === 'number' && !Number.isNaN(value);
+    const parsed = typeof value === 'string' ? parseFloat(value) : value;
+    const toStore = isNumeric ? value : (typeof parsed === 'number' && !Number.isNaN(parsed) ? parsed : value);
+    setFormData((prev) => ({ ...prev, [field]: toStore }));
+    // Notify parent of the field change (same value so Index stays in sync)
     if (onFieldChange) {
-      onFieldChange(field, value);
+      onFieldChange(field, toStore);
     }
   }, [onFieldChange]);
+
+  // Default Fraud Chargeback AOV to Completed AOV when not set (user can override by entering a value)
+  useEffect(() => {
+    const fraudCBAOV = formData.fraudCBAOV;
+    if (fraudCBAOV !== undefined && fraudCBAOV !== null) return; // User has set a value; don't overwrite
+    const attempts = formData.amerGrossAttempts || 0;
+    const gmv = formData.amerAnnualGMV || 0;
+    const effectiveCompletedAOV = formData.completedAOV ?? (attempts > 0 ? gmv / attempts : 0);
+    if (effectiveCompletedAOV <= 0) return;
+    setFormData((prev) => ({ ...prev, fraudCBAOV: Math.round(effectiveCompletedAOV) }));
+    onFieldChange?.("fraudCBAOV", Math.round(effectiveCompletedAOV));
+  }, [formData.fraudCBAOV, formData.completedAOV, formData.amerGrossAttempts, formData.amerAnnualGMV, onFieldChange]);
 
   // Allow editing directly inside calculator tables (Value Summary tab), including custom benefit names (Record<string, string>)
   const handleSummaryFormDataChange = useCallback(
@@ -724,9 +905,13 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
   const handleSummaryForterKPIChange = useCallback(
     (field: keyof ForterKPIs, value: number) => {
       setFormData((prev) => {
+        const base = prev.forterKPIs || defaultForterKPIs;
         const updatedKPIs = {
-          ...(prev.forterKPIs || defaultForterKPIs),
+          ...base,
           [field]: value,
+          // When editing target rate from calculator table, treat value as target (absolute), not improvement
+          ...(field === 'preAuthApprovalImprovement' ? { preAuthApprovalIsAbsolute: true as const } : {}),
+          ...(field === 'postAuthApprovalImprovement' ? { postAuthApprovalIsAbsolute: true as const } : {}),
         };
 
         // Keep parent in sync (single field update)
@@ -740,6 +925,15 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     },
     [onFieldChange]
   );
+
+  // One-time default: for analyses with annual economic impact > $10m, default "Show in millions" to on (Value Summary and ROI)
+  useEffect(() => {
+    const annualImpact = valueTotals?.ebitdaContribution ?? 0;
+    if (annualImpact > 10_000_000 && !formData._showInMillionsDefaultApplied) {
+      setShowInMillions(true);
+      updateField('_showInMillionsDefaultApplied', true);
+    }
+  }, [valueTotals?.ebitdaContribution, formData._showInMillionsDefaultApplied, updateField]);
 
   const formatNumberWithCommas = (value: number | undefined | null): string => {
     if (value === undefined || value === null || value === 0) return "";
@@ -1169,8 +1363,17 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
     // Add segment data to testData
     testData.segments = testSegments;
     testData.segmentationEnabled = true;
-    
+    testData.selectedObjectives = STRATEGIC_OBJECTIVES.map(o => o.id);
+
     setFormData(testData);
+    // Push full state to parent so auto-save persists use cases + customer inputs (avoids de-selection when opening another analysis and back)
+    onBulkUpdate?.({
+      ...testData,
+      selectedChallenges: testChallenges,
+      selectedObjectives: STRATEGIC_OBJECTIVES.map(o => o.id),
+      segments: testSegments,
+      segmentationEnabled: true,
+    });
     toast.success("Auto-filled with test data including 3 segments");
   };
 
@@ -1270,7 +1473,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
         <div className="mb-6 flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-bold">
-              {!showGuidedTabs ? "Custom Value Assessment" : "Guided Value Assessment"}
+              {!showGuidedTabs ? "Custom Value Assessment" : "Guided Value Assessment (GVA)"}
             </h2>
             <p className="text-muted-foreground text-sm mt-1">
               {!showGuidedTabs 
@@ -1361,13 +1564,20 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
         </div>
 
         <Tabs value={activeTab || "profile"} onValueChange={(value) => {
+          // Mark Value Summary as viewed when user navigates to it (unlocks ROI tab)
+          if (value === 'summary') {
+            setHasViewedValueSummary(true);
+          }
           // In guided mode, prevent navigation to locked tabs if no challenges selected
-          // But always allow navigation to 'profile' and 'roi' tabs
           if (showGuidedTabs && !hasSelectedChallenges && ['inputs', 'forter', 'summary'].includes(value)) {
             toast.error("Please select at least one use case first, or skip to Value Summary");
             return;
           }
-          // In custom mode (!showGuidedTabs), always allow navigation to all tabs
+          // Lock ROI until Value Summary has been viewed at least once
+          if (value === 'roi' && !hasViewedValueSummary) {
+            toast.error("View the Value Summary tab first to unlock the ROI section.");
+            return;
+          }
           setActiveTab(value);
         }} className="w-full">
           {/* Dynamic tab list based on mode - hide tabs when not in guided mode */}
@@ -1382,24 +1592,26 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
               <TabsTrigger value="profile" className="flex-1">{renderTabLabel('profile', 'Profile')}</TabsTrigger>
               <TabsTrigger value="challenges" className="flex-1">{renderTabLabel('challenges', 'Use Cases')}</TabsTrigger>
               
-              {/* Customer Inputs Tab - conditional tooltip only when locked */}
+              {/* Customer Inputs Tab - conditional tooltip only when locked (wrapper span receives hover; disabled button does not) */}
               {!hasSelectedChallenges ? (
                 <Tooltip>
-                  <TooltipTrigger asChild className="flex-1">
-                    <TabsTrigger 
-                      value="inputs" 
-                      disabled
-                      className="w-full opacity-50 cursor-not-allowed"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Lock className="h-3 w-3" />
-                        {renderTabLabel('inputs', 'Customer Inputs', true)}
-                      </span>
-                    </TabsTrigger>
+                  <TooltipTrigger asChild>
+                    <span className="flex-1 flex cursor-not-allowed min-w-0">
+                      <TabsTrigger 
+                        value="inputs" 
+                        disabled
+                        className="w-full opacity-50 pointer-events-none"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Lock className="h-3 w-3" />
+                          {renderTabLabel('inputs', 'Customer Inputs', true)}
+                        </span>
+                      </TabsTrigger>
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
                     <p className="text-sm">
-                      <strong>🔒 Locked:</strong> Select at least one use case in the Use Cases tab to unlock this section.
+                      Use Cases are required to unlock Customer Inputs tab
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -1412,24 +1624,26 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                 </TabsTrigger>
               )}
               
-              {/* Forter KPI Tab - conditional tooltip only when locked */}
+              {/* Forter KPI Tab - conditional tooltip only when locked (wrapper span receives hover; disabled button does not) */}
               {!hasSelectedChallenges ? (
                 <Tooltip>
-                  <TooltipTrigger asChild className="flex-1">
-                    <TabsTrigger 
-                      value="forter" 
-                      disabled
-                      className="w-full opacity-50 cursor-not-allowed"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Lock className="h-3 w-3" />
-                        {renderTabLabel('forter', 'Forter KPI', true)}
-                      </span>
-                    </TabsTrigger>
+                  <TooltipTrigger asChild>
+                    <span className="flex-1 flex cursor-not-allowed min-w-0">
+                      <TabsTrigger 
+                        value="forter" 
+                        disabled
+                        className="w-full opacity-50 pointer-events-none"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Lock className="h-3 w-3" />
+                          {renderTabLabel('forter', 'Forter KPI', true)}
+                        </span>
+                      </TabsTrigger>
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
                     <p className="text-sm">
-                      <strong>🔒 Locked:</strong> Select at least one use case in the Use Cases tab to unlock this section.
+                      Use Cases are required to unlock Forter KPI tab
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -1442,24 +1656,26 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                 </TabsTrigger>
               )}
               
-              {/* Value Summary Tab - conditional tooltip only when locked */}
+              {/* Value Summary Tab - conditional tooltip only when locked (wrapper span receives hover; disabled button does not) */}
               {!hasSelectedChallenges ? (
                 <Tooltip>
-                  <TooltipTrigger asChild className="flex-1">
-                    <TabsTrigger 
-                      value="summary" 
-                      disabled
-                      className="w-full opacity-50 cursor-not-allowed"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Lock className="h-3 w-3" />
-                        {renderTabLabel('summary', 'Value Summary', true)}
-                      </span>
-                    </TabsTrigger>
+                  <TooltipTrigger asChild>
+                    <span className="flex-1 flex cursor-not-allowed min-w-0">
+                      <TabsTrigger 
+                        value="summary" 
+                        disabled
+                        className="w-full opacity-50 pointer-events-none"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Lock className="h-3 w-3" />
+                          {renderTabLabel('summary', 'Value Summary', true)}
+                        </span>
+                      </TabsTrigger>
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
                     <p className="text-sm">
-                      <strong>🔒 Locked:</strong> Select at least one use case in the Use Cases tab to unlock this section.
+                      Use Cases are required to unlock Value Summary tab
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -1472,24 +1688,30 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                 </TabsTrigger>
               )}
               
-              {/* ROI Tab - conditional tooltip only when locked */}
-              {!hasSelectedChallenges ? (
+              {/* ROI Tab - locked until use cases selected AND Value Summary has been viewed (wrapper span receives hover; disabled button does not) */}
+              {(!hasSelectedChallenges || !hasViewedValueSummary) ? (
                 <Tooltip>
-                  <TooltipTrigger asChild className="flex-1">
-                    <TabsTrigger 
-                      value="roi" 
-                      disabled
-                      className="w-full opacity-50 cursor-not-allowed"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Lock className="h-3 w-3" />
-                        {renderTabLabel('roi', 'ROI', true)}
-                      </span>
-                    </TabsTrigger>
+                  <TooltipTrigger asChild>
+                    <span className="flex-1 flex cursor-not-allowed min-w-0">
+                      <TabsTrigger 
+                        value="roi" 
+                        disabled
+                        className="w-full opacity-50 pointer-events-none"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Lock className="h-3 w-3" />
+                          {renderTabLabel('roi', 'ROI', true)}
+                        </span>
+                      </TabsTrigger>
+                    </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs">
                     <p className="text-sm">
-                      <strong>🔒 Locked:</strong> Select at least one use case in the Use Cases tab to unlock this section.
+                      {!hasSelectedChallenges ? (
+                        <>Use Cases are required to unlock ROI tab</>
+                      ) : (
+                        <>View and validate value summary to unlock ROI tab</>
+                      )}
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -1506,6 +1728,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
 
           {/* Profile Tab */}
           <TabsContent value="profile" className="space-y-4 mt-6" data-tab-title="Profile">
+            <p className="text-sm text-muted-foreground mb-4">
+              Enter customer and company details for this value assessment.
+            </p>
             <div className="flex justify-end mb-4 gap-2">
               {onLogoUpload && (
                 <Button 
@@ -1522,14 +1747,23 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                   />
                 </Button>
               )}
-              <Button 
-                variant="outline" 
-                onClick={handleAutoFill}
-                className="gap-2"
-              >
-                <FlaskConical className="w-4 h-4" />
-                Auto Fill - Testing
-              </Button>
+              {(() => {
+                const ALLOWED_AUTO_FILL_AUTHORS = ['AK', 'Abdul', 'Abdul-Karim', 'Test', 'Bryan', 'Bryan Way', 'Abdul-Karim Ali', 'Adva', 'Adva Rudis'];
+                // Use initialData (latest from parent) first so Save As / session updates show the button immediately
+                const author = (initialData?._authorName ?? formData._authorName ?? (typeof localStorage !== 'undefined' ? localStorage.getItem('forter_author_name') : null) ?? '').trim();
+                const showAutoFill = author && ALLOWED_AUTO_FILL_AUTHORS.some(a => a.toLowerCase() === author.toLowerCase());
+                if (!showAutoFill) return null;
+                return (
+                  <Button 
+                    variant="outline" 
+                    onClick={handleAutoFill}
+                    className="gap-2"
+                  >
+                    <FlaskConical className="w-4 h-4" />
+                    Auto Fill - Testing
+                  </Button>
+                );
+              })()}
             </div>
             
             {/* Show uploaded logo preview */}
@@ -1580,7 +1814,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                     <SelectValue placeholder="Select country" />
                   </SelectTrigger>
                   <SelectContent>
-                    {countryBenchmarks.map((country) => (
+                    {countryBenchmarksSortedForHQ.map((country) => (
                       <SelectItem key={country.name} value={country.name}>
                         <span className="flex items-center gap-2">
                           <span>{country.flag}</span>
@@ -1630,7 +1864,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                 </Select>
               </div>
 
-              {formData.isMarketplace && (
+              {Boolean(formData.isMarketplace) && (
                 <div className="space-y-2">
                   <Label htmlFor="commissionRate">Commission / Take Rate (%)</Label>
                   <NumericInput
@@ -1655,6 +1889,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
 
           {/* Use Cases Tab */}
           <TabsContent value="challenges" className="space-y-4 mt-6" data-tab-title="Use Cases">
+            <p className="text-sm text-muted-foreground mb-4">
+              Select strategic objectives and use cases that match your prospect&apos;s priorities.
+            </p>
             {showUseCaseLanding ? (
               <>
                 <UseCaseLanding onSelectPath={handleEntryPathSelect} />
@@ -1668,6 +1905,15 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                   >
                     <FastForward className="w-4 h-4" />
                     Skip to Value Summary (Custom Pathway)
+                  </Button>
+                </div>
+                {/* Navigation Buttons */}
+                <div className="flex justify-between pt-6 border-t mt-6">
+                  <Button variant="outline" onClick={goToPreviousTab} className="gap-2">
+                    <ChevronLeft className="w-4 h-4" /> Back
+                  </Button>
+                  <Button onClick={goToNextTab} className="gap-2">
+                    Next: {getNextTabName()} <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
               </>
@@ -1694,6 +1940,15 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                     </Button>
                   </div>
                 )}
+                {/* Navigation Buttons */}
+                <div className="flex justify-between pt-6 border-t mt-6">
+                  <Button variant="outline" onClick={goToPreviousTab} className="gap-2">
+                    <ChevronLeft className="w-4 h-4" /> Back
+                  </Button>
+                  <Button onClick={goToNextTab} className="gap-2" disabled={!hasSelectedChallenges}>
+                    Next: {getNextTabName()} <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
               </>
             ) : (
               <>
@@ -1735,9 +1990,55 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                 </div>
               </>
             )}
+            {/* Shared notes for use case discovery and challenges - persisted with analysis */}
+            <div className="mt-6 pt-6 border-t space-y-2">
+              <Label htmlFor="use-case-notes" className="text-sm text-muted-foreground">
+                Add additional context/notes
+              </Label>
+              <Textarea
+                id="use-case-notes"
+                value={formData.useCaseNotes ?? ""}
+                onChange={(e) => updateField("useCaseNotes", e.target.value)}
+                placeholder="e.g. CFO mentioned in annual report that they target to maintain double digit growth over the next 3 years, whilst the CTO mentioned they are aiming to reduce Operational spend (OpEx) related to fraud prevention by 25% through the use of better automation."
+                className="min-h-[120px] resize-y placeholder:opacity-50 placeholder:text-muted-foreground"
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="inputs" className="space-y-6 mt-6" data-tab-title="Customer Inputs">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <p className="text-sm text-muted-foreground">
+                Enter transaction and operational data for the use cases you selected.
+              </p>
+              <div className="flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setInputsLayoutView('list')}
+                      className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'list' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
+                      aria-label="List view"
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">List</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setInputsLayoutView('grid')}
+                      className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'grid' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
+                      aria-label="Grid view"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Grid</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
             {/* Progress indicator and CSV buttons */}
             {Object.values(selectedChallenges).some(Boolean) && (
               <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1746,29 +2047,36 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                   total={inputProgress.total}
                   percentage={inputProgress.percentage}
                 />
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowClearConfirm(true)}
-                    className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    disabled={inputProgress.filled === 0}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Clear All
-                  </Button>
-                  <div className="w-px h-6 bg-border" />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent side="left" className="max-w-xs">
-                      <p className="text-sm">
-                        <strong>Optional:</strong> Download a CSV template to collect data from your customer offline. 
-                        Once completed, upload it back to auto-populate the fields below.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
+                <div className="flex flex-col items-end gap-1">
+                  <p className="text-xs text-muted-foreground">
+                    Optional: download a template to collect data offline, then upload to auto-fill.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowClearConfirm(true)}
+                      className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={inputProgress.filled === 0}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Clear All
+                    </Button>
+                    <div className="w-px h-6 bg-border" />
+                    <span className="text-xs text-muted-foreground bg-muted/70 dark:bg-muted/50 px-2 py-0.5 rounded-full font-medium">
+                      Optional
+                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="max-w-xs">
+                        <p className="text-sm">
+                          <strong>Optional:</strong> Download a CSV template to collect data from your customer offline.
+                          Once completed, upload it back to auto-populate the fields below.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="relative">
@@ -1838,6 +2146,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
                     segmentationEnabled={segmentationEnabled}
                     segmentCount={segments.filter(s => s.enabled).length}
                   />
+                  </div>
                 </div>
               </div>
             )}
@@ -1969,6 +2278,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
               onFieldChange={updateField}
               segmentationEnabled={segmentationEnabled}
               segments={segments}
+              viewMode={inputsLayoutView}
             />
             {/* Navigation Buttons */}
             <div className="flex justify-between pt-6 border-t mt-6">
@@ -1983,10 +2293,49 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
 
           {/* Forter Performance Assumptions Tab */}
           <TabsContent value="forter" className="space-y-4 mt-6" data-tab-title="Forter KPI">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <p className="text-sm text-muted-foreground">
+                Configure Forter performance assumptions and targets used in the value model.
+              </p>
+              <div className="flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setInputsLayoutView('list')}
+                      className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'list' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
+                      aria-label="List view"
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">List</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setInputsLayoutView('grid')}
+                      className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'grid' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
+                      aria-label="Grid view"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Grid</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
             <ForterKPIConfig
               kpis={formData.forterKPIs || defaultForterKPIs}
               onUpdate={(kpis) => updateField("forterKPIs", kpis)}
               selectedChallenges={selectedChallenges}
+              focusTarget={forterKPIFocusTarget}
+              onFocusHandled={() => setForterKPIFocusTarget(null)}
+              viewMode={inputsLayoutView}
+              forterBenchmarkSources={forterBenchmarkSources}
+              forterBenchmarkValues={forterBenchmarkValues}
+              suggested3DSFromPSD2={suggested3DSFromPSD2}
               customerInputs={{
                 amerPreAuthApprovalRate: formData.amerPreAuthApprovalRate,
                 amerPostAuthApprovalRate: formData.amerPostAuthApprovalRate,
@@ -2025,11 +2374,18 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
 
           {/* Value Summary Tab */}
           <TabsContent value="summary" className="space-y-4 mt-6" data-tab-title="Value Summary">
+            <p className="text-sm text-muted-foreground mb-4">
+              Review the calculated value drivers and annual potential from your inputs.
+            </p>
             <ValueSummaryOptionA
               formData={formData}
               selectedChallenges={selectedChallenges}
               onFormDataChange={handleSummaryFormDataChange}
               onForterKPIChange={handleSummaryForterKPIChange}
+              onNavigateToForterKPI={showGuidedTabs ? (target) => {
+                setForterKPIFocusTarget(target);
+                setActiveTab("forter");
+              } : undefined}
               onCustomCalculationsChange={(calcs) => updateField("customCalculations", calcs)}
               onSegmentInputChange={(segmentId, field, value) => {
                 // Bi-directional segment input editing
@@ -2057,6 +2413,8 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
               isCustomMode={!showGuidedTabs}
               investmentInputs={investmentInputs}
               onInvestmentInputsChange={setInvestmentInputs}
+              openBenefitCalculatorId={benefitModalCalculatorId}
+              onBenefitModalClose={() => setBenefitModalCalculatorId(null)}
             />
             {/* Navigation Buttons */}
             <div className="flex justify-between pt-6 border-t mt-6">
@@ -2071,6 +2429,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
 
           {/* ROI Tab */}
           <TabsContent value="roi" className="space-y-4 mt-6" data-tab-title="ROI">
+            <p className="text-sm text-muted-foreground mb-4">
+              Forecast value over time, factoring in ramp, contract tenure, and growth to calculate ROI and payback period.
+            </p>
             <ROITab
               formData={formData}
               selectedChallenges={selectedChallenges}
@@ -2079,13 +2440,15 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
               onShowInMillionsChange={setShowInMillions}
               investmentInputs={investmentInputs}
               onInvestmentInputsChange={setInvestmentInputs}
+              showInvestmentRowsToggle={showInvestmentRowsToggle}
+              onShowInvestmentRowsToggleChange={setShowInvestmentRowsToggle}
               gmvUpliftBreakdown={valueTotals.gmvUpliftBreakdown}
               costReductionBreakdown={valueTotals.costReductionBreakdown}
               riskMitigationBreakdown={valueTotals.riskMitigationBreakdown}
               isCustomMode={isCustomMode && !showGuidedTabs}
               onOpenCalculator={(calculatorId) => {
-                // Navigate to summary tab and the calculator will be opened there
-                setActiveTab("summary");
+                // Open the full benefit modal (Benefit summary + Inputs + Calculator) without leaving ROI tab
+                setBenefitModalCalculatorId(calculatorId);
               }}
             />
             {/* Navigation Buttons */}
@@ -2097,6 +2460,46 @@ export const ManualInputForm = ({ onComplete, onFieldChange, initialData, custom
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* When on ROI (or another tab) and user opens a benefit from ROI, the Value Summary tab is unmounted
+            so the benefit modal would never open. Mount a hidden instance here so the modal can open. */}
+        {activeTab !== 'summary' && benefitModalCalculatorId != null && (
+          <div className="sr-only absolute opacity-0 pointer-events-none w-0 h-0 overflow-hidden" aria-hidden="true">
+            <ValueSummaryOptionA
+              formData={formData}
+              selectedChallenges={selectedChallenges}
+              onFormDataChange={handleSummaryFormDataChange}
+              onForterKPIChange={handleSummaryForterKPIChange}
+              onNavigateToForterKPI={showGuidedTabs ? (target) => {
+                setForterKPIFocusTarget(target);
+                setActiveTab("forter");
+              } : undefined}
+              onCustomCalculationsChange={(calcs) => updateField("customCalculations", calcs)}
+              onSegmentInputChange={(segmentId, field, value) => {
+                const updated = (segments || []).map(seg =>
+                  seg.id === segmentId ? { ...seg, inputs: { ...seg.inputs, [field]: value } } : seg
+                );
+                handleSegmentsChange(updated);
+              }}
+              onSegmentKPIChange={(segmentId, field, value) => {
+                const updated = (segments || []).map(seg =>
+                  seg.id === segmentId ? { ...seg, kpis: { ...seg.kpis, [field]: value } } : seg
+                );
+                handleSegmentsChange(updated);
+              }}
+              showInMillions={showInMillions}
+              onShowInMillionsChange={setShowInMillions}
+              onSelectUseCases={undefined}
+              onTotalsChange={setValueTotals}
+              onChallengeChange={handleChallengeChange}
+              isCustomMode={!showGuidedTabs}
+              investmentInputs={investmentInputs}
+              onInvestmentInputsChange={setInvestmentInputs}
+              openBenefitCalculatorId={benefitModalCalculatorId}
+              onBenefitModalClose={() => setBenefitModalCalculatorId(null)}
+            />
+          </div>
+        )}
       </Card>
       
       {/* Currency Change Confirmation Dialog */}

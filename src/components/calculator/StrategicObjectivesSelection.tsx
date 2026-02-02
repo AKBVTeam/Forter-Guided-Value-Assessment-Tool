@@ -224,7 +224,7 @@ export const StrategicObjectivesSelection = ({
             return (
               <Card
                 key={objective.id}
-                className={`p-4 cursor-pointer transition-all ${
+                className={`p-4 cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                   isSelected 
                     ? 'border-primary bg-primary/5 shadow-md' 
                     : 'hover:border-primary/30 hover:shadow-sm'
@@ -310,7 +310,7 @@ export const StrategicObjectivesSelection = ({
             return (
               <Card
                 key={useCase.id}
-                className={`p-4 cursor-pointer transition-all ${
+                className={`p-4 cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                   isSelected 
                     ? 'border-primary bg-primary/5' 
                     : 'hover:border-primary/30'

@@ -42,14 +42,17 @@ export const ChallengeSelection = ({
               const hasEnabledChallenges = challenges.some(c => c.enabled);
               
               return (
-                <Card key={category} className={`p-4 ${!hasEnabledChallenges ? 'bg-muted/30' : ''}`}>
+                <Card key={category} className={`p-4 transition-transform duration-150 ease-out hover:scale-[1.01] ${!hasEnabledChallenges ? 'bg-muted/30' : ''}`}>
                   <h4 className="font-semibold mb-3 flex items-center gap-2">
                     {category}
                     {!hasEnabledChallenges && <span className="text-xs text-muted-foreground">(Coming soon)</span>}
                   </h4>
                   <div className="space-y-2">
                     {challenges.map((challenge) => (
-                      <div key={challenge.id} className="flex items-start gap-2">
+                      <div
+                        key={challenge.id}
+                        className="flex items-start gap-2 transition-transform duration-150 ease-out active:scale-[0.99] rounded-md -m-1 p-1"
+                      >
                         <Checkbox
                           id={`challenge-${challenge.id}`}
                           disabled={!challenge.enabled}

@@ -29,7 +29,9 @@ import {
   StrategicObjectiveId,
   USE_CASES,
 } from "@/lib/useCaseMapping";
+import { ALL_CHALLENGES } from "@/lib/calculations";
 import { SolutionMapping } from "./SolutionMapping";
+import { cn } from "@/lib/utils";
 
 const iconMap: { [key: string]: React.ElementType } = {
   TrendingUp,
@@ -215,7 +217,7 @@ export const UnifiedUseCaseSelection = ({
                   return (
                     <div
                       key={objective.id}
-                      className={`p-3 rounded-lg cursor-pointer transition-all ${
+                      className={`p-3 rounded-lg cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                         isSelected 
                           ? 'bg-primary/10 border border-primary/30' 
                           : 'bg-muted/30 hover:bg-muted/50 border border-transparent'
@@ -324,7 +326,7 @@ export const UnifiedUseCaseSelection = ({
                     return (
                       <div
                         key={useCase.id}
-                        className={`p-3 rounded-lg cursor-pointer transition-all ${
+                        className={`p-3 rounded-lg cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
                           isSelected 
                             ? 'bg-primary/10 border border-primary/30' 
                             : 'bg-muted/30 hover:bg-muted/50 border border-transparent'
@@ -353,19 +355,42 @@ export const UnifiedUseCaseSelection = ({
           </Card>
         </div>
 
-        {/* Column 3: Solution Mapping (Output) */}
+        {/* Column 3: Solution Mapping (Output - read-only) */}
         <div>
-          <Card className="p-3 h-full">
-            <div className="mb-2">
-              <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                Solution Mapping
-              </h4>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              <span className="text-primary font-medium">Output</span> — Forter solutions activated by use case selection
-            </p>
-            <SolutionMapping selectedChallenges={selectedChallenges} showCard={false} />
-          </Card>
+          {(() => {
+            const activeSolutions = new Set<string>();
+            Object.entries(selectedChallenges).forEach(([challengeId, isSelected]) => {
+              if (isSelected) {
+                const challenge = ALL_CHALLENGES.find(c => c.id === challengeId);
+                if (challenge) challenge.solutionMapping.forEach(s => activeSolutions.add(s));
+              }
+            });
+            const hasAnyActive = activeSolutions.size > 0;
+            return (
+              <Card className={cn(
+                "p-3 h-full border",
+                hasAnyActive
+                  ? "bg-green-50/90 dark:bg-green-950/40 border-green-200 dark:border-green-800"
+                  : "bg-slate-50/80 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700"
+              )}>
+                <div className="mb-2">
+                  <h4 className={cn(
+                    "font-semibold text-sm uppercase tracking-wide",
+                    hasAnyActive ? "text-green-800 dark:text-green-300" : "text-slate-600 dark:text-slate-400"
+                  )}>
+                    Solution Mapping
+                  </h4>
+                </div>
+                <p className={cn(
+                  "text-xs mb-3",
+                  hasAnyActive ? "text-green-700 dark:text-green-400" : "text-slate-500 dark:text-slate-400"
+                )}>
+                  <span className="font-medium">For reference</span> — Forter solutions activated by use case selection (read-only)
+                </p>
+                <SolutionMapping selectedChallenges={selectedChallenges} showCard={false} />
+              </Card>
+            );
+          })()}
         </div>
       </div>
     </div>

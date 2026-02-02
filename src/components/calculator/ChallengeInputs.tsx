@@ -12,7 +12,7 @@ import { Segment, aggregateSegmentData, hasPaymentChallengesSelected } from "@/l
 import { useMemo, useEffect } from "react";
 import { AlertCircle, Layers, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { calculateChallenge1, calculateChallenge245 } from "@/lib/calculations";
+import { calculateChallenge1, calculateChallenge245, getCompletedTransactionCount } from "@/lib/calculations";
 
 interface ChallengeInputsProps {
   formData: CalculatorData;
@@ -20,6 +20,8 @@ interface ChallengeInputsProps {
   onFieldChange: (field: keyof CalculatorData, value: any) => void;
   segmentationEnabled?: boolean;
   segments?: Segment[];
+  /** List = single column; grid = current multi-column layout */
+  viewMode?: 'list' | 'grid';
 }
 
 export const ChallengeInputs = ({
@@ -28,7 +30,14 @@ export const ChallengeInputs = ({
   onFieldChange,
   segmentationEnabled = false,
   segments = [],
+  viewMode = 'grid',
 }: ChallengeInputsProps) => {
+  const gridClass = viewMode === 'list' ? 'grid grid-cols-1 gap-4' : 'grid md:grid-cols-2 lg:grid-cols-3 gap-4';
+  const fieldRowClass = viewMode === 'list' ? 'grid grid-cols-[1fr_minmax(18rem,22rem)] items-center gap-x-4 gap-y-1' : 'space-y-2';
+  const fieldLabelWrapClass = viewMode === 'list' ? 'flex items-center gap-2 min-w-0' : 'flex items-center gap-2';
+  const fieldLabelClass = viewMode === 'list' ? 'min-w-0' : '';
+  const fieldInputClass = viewMode === 'list' ? 'justify-self-end min-w-[14rem] max-w-[16rem] text-right' : '';
+  const fieldHelperClass = viewMode === 'list' ? 'col-span-2 text-xs text-muted-foreground' : 'text-xs text-muted-foreground';
   // Challenge IDs match ALL_CHALLENGES in calculations.ts
   const isChallenge1Selected = selectedChallenges['1'] === true;
   const isChallenge2Selected = selectedChallenges['2'] === true;
@@ -212,7 +221,7 @@ export const ChallengeInputs = ({
             <Layers className="h-5 w-5 text-primary" />
             <div>
               <p className="font-medium text-sm">Segmented Analysis Mode</p>
-              <p className="text-xs text-muted-foreground">
+              <p className={fieldHelperClass}>
                 Payment and fraud inputs below are calculated via a weighted average from segment data. Edit individual segments above to change values.
               </p>
             </div>
@@ -244,10 +253,10 @@ export const ChallengeInputs = ({
         return (
           <Card className="p-6">
             <h3 className="text-lg font-semibold mb-4">Payments</h3>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label>{volumeLabel}</Label>
+            <div className={gridClass}>
+              <div className={fieldRowClass}>
+                <div className={fieldLabelWrapClass}>
+                  <Label className={fieldLabelClass}>{volumeLabel}</Label>
                   {isPaymentFieldLocked && (
                     <WeightedAverageTooltip
                       segments={segments}
@@ -259,7 +268,7 @@ export const ChallengeInputs = ({
                     />
                   )}
                 </div>
-                <NumericInput
+                <NumericInput className={fieldInputClass}
                   value={displayVolume}
                   onChange={(v) => onFieldChange("amerGrossAttempts", v)}
                   placeholder="1,000,000"
@@ -267,9 +276,9 @@ export const ChallengeInputs = ({
                   readOnly={isPaymentFieldLocked}
                 />
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label>{valueLabel}</Label>
+              <div className={fieldRowClass}>
+                <div className={fieldLabelWrapClass}>
+                  <Label className={fieldLabelClass}>{valueLabel}</Label>
                   {isPaymentFieldLocked && (
                     <WeightedAverageTooltip
                       segments={segments}
@@ -281,7 +290,7 @@ export const ChallengeInputs = ({
                     />
                   )}
                 </div>
-                <NumericInput
+                <NumericInput className={fieldInputClass}
                   value={displayGMV}
                   onChange={(v) => onFieldChange("amerAnnualGMV", v)}
                   placeholder={`${currencySymbol}150,000,000`}
@@ -290,9 +299,9 @@ export const ChallengeInputs = ({
                 />
               </div>
             {formData.isMarketplace && (
-              <div className="space-y-2">
-                <Label>Commission / Take Rate (%)</Label>
-                <PercentageInput
+              <div className={fieldRowClass}>
+                <Label className={fieldLabelClass}>Commission / Take Rate (%)</Label>
+                <PercentageInput className={fieldInputClass}
                   value={formData.commissionRate}
                   onChange={(v) => onFieldChange("commissionRate", v)}
                   warning={getValidationWarning("commissionRate", formData.commissionRate)}
@@ -301,9 +310,9 @@ export const ChallengeInputs = ({
                 />
               </div>
             )}
-            <div className="space-y-2">
-              <Label>Gross Margin (%)</Label>
-              <PercentageInput
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Gross Margin (%)</Label>
+              <PercentageInput className={fieldInputClass}
                 value={formData.amerGrossMarginPercent}
                 onChange={(v) => onFieldChange("amerGrossMarginPercent", v)}
                 warning={getValidationWarning("amerGrossMarginPercent", formData.amerGrossMarginPercent)}
@@ -327,9 +336,9 @@ export const ChallengeInputs = ({
               const isOverridden = !isPaymentFieldLocked && formData.completedAOV !== undefined && formData.completedAOV !== calculatedAOV;
               
               return (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label>Completed AOV ({currencySymbol})</Label>
+                <div className={fieldRowClass}>
+                  <div className={fieldLabelWrapClass}>
+                    <Label className={fieldLabelClass}>Completed AOV ({currencySymbol})</Label>
                     {isPaymentFieldLocked && (
                       <WeightedAverageTooltip
                         segments={segments}
@@ -348,14 +357,14 @@ export const ChallengeInputs = ({
                       </button>
                     )}
                   </div>
-                  <NumericInput
+                  <NumericInput className={fieldInputClass}
                     value={displayAOV}
                     onChange={(v) => onFieldChange("completedAOV", v)}
                     placeholder={calculatedAOV > 0 ? `${currencySymbol}${calculatedAOV.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `${currencySymbol}150`}
                     formatWithCommas
                     readOnly={isPaymentFieldLocked}
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className={fieldHelperClass}>
                     {isPaymentFieldLocked ? 'Weighted average from segments' : `Used for "Value of approved transactions".`}
                     {!isPaymentFieldLocked && calculatedAOV > 0 && !isOverridden && ` Defaults to ${currencySymbol}${calculatedAOV.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
                   </p>
@@ -365,9 +374,9 @@ export const ChallengeInputs = ({
 
             {/* Challenge 1: Simple approval rate */}
             {isChallenge1Selected && !isChallenge245Selected && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label>Fraud Approval Rate - Volume (%)</Label>
+              <div className={fieldRowClass}>
+                <div className={fieldLabelWrapClass}>
+                  <Label className={fieldLabelClass}>Fraud Approval Rate - Volume (%)</Label>
                   {isPaymentFieldLocked && (
                     <WeightedAverageTooltip
                       segments={segments}
@@ -378,7 +387,7 @@ export const ChallengeInputs = ({
                     />
                   )}
                 </div>
-                <PercentageInput
+                <PercentageInput className={fieldInputClass}
                   value={displayPreAuthRate}
                   onChange={(v) => onFieldChange("amerPreAuthApprovalRate", v)}
                   warning={!isPaymentFieldLocked ? getValidationWarning("amerPreAuthApprovalRate", formData.amerPreAuthApprovalRate) : null}
@@ -392,10 +401,10 @@ export const ChallengeInputs = ({
             {/* Challenges 2, 4, 5: Pre/Post auth approval rates */}
             {isChallenge245Selected && (
               <>
-                <div className="space-y-2">
+                <div className={fieldRowClass}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Label className="min-w-0">Pre-Auth Fraud Approval Rate (%)</Label>
+                      <Label className={`min-w-0 ${fieldLabelClass}`.trim()}>Pre-Auth Fraud Approval Rate (%)</Label>
                       {isPaymentFieldLocked && (
                         <WeightedAverageTooltip
                           segments={segments}
@@ -418,7 +427,7 @@ export const ChallengeInputs = ({
                       )}
                     </div>
                   </div>
-                  <PercentageInput
+                  <PercentageInput className={fieldInputClass}
                     value={isPaymentFieldLocked ? displayPreAuthRate : (formData.amerPreAuthImplemented === false ? 100 : formData.amerPreAuthApprovalRate)}
                     onChange={(v) => onFieldChange("amerPreAuthApprovalRate", v)}
                     readOnly={isPaymentFieldLocked}
@@ -428,10 +437,10 @@ export const ChallengeInputs = ({
                     min={0}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className={fieldRowClass}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Label className="min-w-0">Post-Auth Fraud Approval Rate (%)</Label>
+                      <Label className={`min-w-0 ${fieldLabelClass}`.trim()}>Post-Auth Fraud Approval Rate (%)</Label>
                       {isPaymentFieldLocked && (
                         <WeightedAverageTooltip
                           segments={segments}
@@ -454,7 +463,7 @@ export const ChallengeInputs = ({
                       )}
                     </div>
                   </div>
-                  <PercentageInput
+                  <PercentageInput className={fieldInputClass}
                     value={isPaymentFieldLocked ? displayPostAuthRate : (formData.amerPostAuthImplemented === false ? 100 : formData.amerPostAuthApprovalRate)}
                     onChange={(v) => onFieldChange("amerPostAuthApprovalRate", v)}
                     readOnly={isPaymentFieldLocked}
@@ -530,10 +539,10 @@ export const ChallengeInputs = ({
                 />
               )}
             </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label>% of Transactions that are Credit Cards (%)</Label>
+            <div className={gridClass}>
+              <div className={fieldRowClass}>
+                <div className={fieldLabelWrapClass}>
+                  <Label className={fieldLabelClass}>% of Transactions that are Credit Cards (%)</Label>
                   {isPaymentFieldLocked && (
                     <WeightedAverageTooltip
                       segments={segments}
@@ -544,7 +553,7 @@ export const ChallengeInputs = ({
                     />
                   )}
                 </div>
-                <PercentageInput
+                <PercentageInput className={fieldInputClass}
                   value={isPaymentFieldLocked ? aggregatedData?.weightedCreditCardPct : formData.amerCreditCardPct}
                   onChange={(v) => onFieldChange("amerCreditCardPct", v)}
                   warning={!isPaymentFieldLocked ? getValidationWarning("amerCreditCardPct", formData.amerCreditCardPct) : null}
@@ -553,9 +562,9 @@ export const ChallengeInputs = ({
                   readOnly={isPaymentFieldLocked}
                 />
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label className={formData.amer3DSImplemented === false && !isPaymentFieldLocked ? "text-muted-foreground" : ""}>
+              <div className={fieldRowClass}>
+                <div className={fieldLabelWrapClass}>
+                  <Label className={`${formData.amer3DSImplemented === false && !isPaymentFieldLocked ? "text-muted-foreground" : ""} ${fieldLabelClass}`.trim()}>
                     Challenge 3DS Rate (%)
                   </Label>
                   {isPaymentFieldLocked && (
@@ -568,7 +577,7 @@ export const ChallengeInputs = ({
                     />
                   )}
                 </div>
-                <PercentageInput
+                <PercentageInput className={fieldInputClass}
                   value={isPaymentFieldLocked ? aggregatedData?.weighted3DSChallengeRate : formData.amer3DSChallengeRate}
                   onChange={(v) => onFieldChange("amer3DSChallengeRate", v)}
                   readOnly={isPaymentFieldLocked}
@@ -578,9 +587,9 @@ export const ChallengeInputs = ({
                   min={0}
                 />
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label className={formData.amer3DSImplemented === false && !isPaymentFieldLocked ? "text-muted-foreground" : ""}>
+              <div className={fieldRowClass}>
+                <div className={fieldLabelWrapClass}>
+                  <Label className={`${formData.amer3DSImplemented === false && !isPaymentFieldLocked ? "text-muted-foreground" : ""} ${fieldLabelClass}`.trim()}>
                     3DS Failure & Abandonment Rate (%)
                   </Label>
                   {isPaymentFieldLocked && (
@@ -593,7 +602,7 @@ export const ChallengeInputs = ({
                     />
                   )}
                 </div>
-                <PercentageInput
+                <PercentageInput className={fieldInputClass}
                   value={isPaymentFieldLocked ? aggregatedData?.weighted3DSAbandonmentRate : formData.amer3DSAbandonmentRate}
                   onChange={(v) => onFieldChange("amer3DSAbandonmentRate", v)}
                   readOnly={isPaymentFieldLocked}
@@ -603,9 +612,9 @@ export const ChallengeInputs = ({
                   min={0}
                 />
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Label>Issuing Bank Decline Rate (%)</Label>
+              <div className={fieldRowClass}>
+                <div className={fieldLabelWrapClass}>
+                  <Label className={fieldLabelClass}>Issuing Bank Decline Rate (%)</Label>
                   {isPaymentFieldLocked && (
                     <WeightedAverageTooltip
                       segments={segments}
@@ -616,7 +625,7 @@ export const ChallengeInputs = ({
                     />
                   )}
                 </div>
-                <PercentageInput
+                <PercentageInput className={fieldInputClass}
                   value={isPaymentFieldLocked ? aggregatedData?.weightedIssuingBankDeclineRate : formData.amerIssuingBankDeclineRate}
                   onChange={(v) => onFieldChange("amerIssuingBankDeclineRate", v)}
                   warning={!isPaymentFieldLocked ? getValidationWarning("amerIssuingBankDeclineRate", formData.amerIssuingBankDeclineRate) : null}
@@ -634,31 +643,33 @@ export const ChallengeInputs = ({
       {showChargebackInputs && (
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Chargebacks</h3>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>Existing Fraud Vendor</Label>
-              <Select
-                value={formData.existingFraudVendor || "No existing vendor"}
-                onValueChange={(v) => onFieldChange("existingFraudVendor", v)}
-              >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Select vendor..." />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  {existingVendorBenchmarks.map((vendor) => (
-                    <SelectItem key={vendor.name} value={vendor.name}>
-                      {vendor.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
+          <div className={gridClass}>
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Existing Fraud Vendor</Label>
+              <div className={fieldInputClass}>
+                <Select
+                  value={formData.existingFraudVendor || "No existing vendor"}
+                  onValueChange={(v) => onFieldChange("existingFraudVendor", v)}
+                >
+                  <SelectTrigger className="bg-background">
+                    <SelectValue placeholder="Select vendor..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    {existingVendorBenchmarks.map((vendor) => (
+                      <SelectItem key={vendor.name} value={vendor.name}>
+                        {vendor.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className={fieldHelperClass}>
                 Adjusts Target Fraud CB Rate based on vendor performance
               </p>
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label>Gross Fraud Chargeback Rate (%)</Label>
+            <div className={fieldRowClass}>
+              <div className={fieldLabelWrapClass}>
+                <Label className={fieldLabelClass}>Gross Fraud Chargeback Rate (%)</Label>
                 {isPaymentFieldLocked && (
                   <WeightedAverageTooltip
                     segments={segments}
@@ -669,7 +680,7 @@ export const ChallengeInputs = ({
                   />
                 )}
               </div>
-              <PercentageInput
+              <PercentageInput className={fieldInputClass}
                 value={isPaymentFieldLocked ? aggregatedData?.weightedFraudCBRate : formData.fraudCBRate}
                 onChange={(v) => onFieldChange("fraudCBRate", v)}
                 warning={!isPaymentFieldLocked ? getValidationWarning("fraudCBRate", formData.fraudCBRate) : null}
@@ -694,9 +705,9 @@ export const ChallengeInputs = ({
               const isOverridden = !isPaymentFieldLocked && formData.fraudCBAOV !== undefined && formData.fraudCBAOV !== defaultFraudCBAOV;
               
               return (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label>Fraud Chargeback AOV ({currencySymbol})</Label>
+                <div className={fieldRowClass}>
+                  <div className={fieldLabelWrapClass}>
+                    <Label className={fieldLabelClass}>Fraud Chargeback AOV ({currencySymbol})</Label>
                     {isPaymentFieldLocked && (
                       <WeightedAverageTooltip
                         segments={segments}
@@ -716,7 +727,7 @@ export const ChallengeInputs = ({
                       </button>
                     )}
                   </div>
-                  <NumericInput
+                  <NumericInput className={fieldInputClass}
                     value={displayValue}
                     onChange={(v) => onFieldChange("fraudCBAOV", v)}
                     placeholder={`${currencySymbol}${Math.round(defaultFraudCBAOV).toLocaleString()}`}
@@ -724,7 +735,7 @@ export const ChallengeInputs = ({
                     readOnly={isPaymentFieldLocked}
                   />
                   {isPaymentFieldLocked && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className={fieldHelperClass}>
                       Collected per segment
                     </p>
                   )}
@@ -739,19 +750,19 @@ export const ChallengeInputs = ({
       {showManualReviewInputs && (
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Manual Review</h3>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>Transaction Attempts (#)</Label>
-              <NumericInput
+          <div className={gridClass}>
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Transaction Attempts (#)</Label>
+              <NumericInput className={fieldInputClass}
                 value={formData.amerGrossAttempts}
                 onChange={(v) => onFieldChange("amerGrossAttempts", v)}
                 placeholder="1,000,000"
                 formatWithCommas
               />
             </div>
-            <div className="space-y-2">
-              <Label>% of Transactions to Manual Review (%)</Label>
-              <PercentageInput
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>% of Transactions to Manual Review (%)</Label>
+              <PercentageInput className={fieldInputClass}
                 value={formData.manualReviewPct}
                 onChange={(v) => onFieldChange("manualReviewPct", v)}
                 warning={getValidationWarning("manualReviewPct", formData.manualReviewPct)}
@@ -759,17 +770,17 @@ export const ChallengeInputs = ({
                 min={0}
               />
             </div>
-            <div className="space-y-2">
-              <Label>Time to Review a TX (minutes)</Label>
-              <NumericInput
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Time to Review a TX (minutes)</Label>
+              <NumericInput className={fieldInputClass}
                 value={formData.timePerReview}
                 onChange={(v) => onFieldChange("timePerReview", v)}
                 placeholder="10"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Hourly Cost per Reviewer ({currencySymbol})</Label>
-              <NumericInput
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Hourly Cost per Reviewer ({currencySymbol})</Label>
+              <NumericInput className={fieldInputClass}
                 value={formData.hourlyReviewerCost}
                 onChange={(v) => onFieldChange("hourlyReviewerCost", v)}
                 placeholder="15"
@@ -805,11 +816,11 @@ export const ChallengeInputs = ({
               {/* Fraud Chargebacks */}
               <div>
                 <h4 className="text-md font-medium mb-3">Fraud Chargebacks</h4>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={gridClass}>
                   {/* Always use direct value input for fraud chargebacks */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Label>Est. Value of Fraud Chargebacks ({currencySymbol})</Label>
+                  <div className={fieldRowClass}>
+                    <div className={fieldLabelWrapClass}>
+                      <Label className={fieldLabelClass}>Est. Value of Fraud Chargebacks ({currencySymbol})</Label>
                       {/* Show info icon with calculation breakdown when auto-calculated */}
                       {!formData.estFraudChargebackValueManuallySet && valueOfApprovedTransactions > 0 && (
                         <TooltipProvider>
@@ -845,16 +856,16 @@ export const ChallengeInputs = ({
                         </button>
                       )}
                     </div>
-                    <NumericInput
+                    <NumericInput className={fieldInputClass}
                       value={displayFraudCBValue}
                       onChange={handleFraudCBValueChange}
                       placeholder="750,000"
                       formatWithCommas
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Fraud Dispute Rate - Value (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Fraud Dispute Rate - Value (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.fraudDisputeRate}
                       onChange={(v) => onFieldChange("fraudDisputeRate", v)}
                       warning={getValidationWarning("fraudDisputeRate", formData.fraudDisputeRate)}
@@ -862,9 +873,9 @@ export const ChallengeInputs = ({
                       min={0}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Fraud Win Rate - Value (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Fraud Win Rate - Value (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.fraudWinRate}
                       onChange={(v) => onFieldChange("fraudWinRate", v)}
                       warning={getValidationWarning("fraudWinRate", formData.fraudWinRate)}
@@ -878,20 +889,20 @@ export const ChallengeInputs = ({
               {/* Service Chargebacks */}
               <div>
                 <h4 className="text-md font-medium mb-3">Service Chargebacks</h4>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={gridClass}>
                   {/* Always use direct value input for service chargebacks */}
-                  <div className="space-y-2">
-                    <Label>Est. Value of Service Chargebacks ({currencySymbol})</Label>
-                    <NumericInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Est. Value of Service Chargebacks ({currencySymbol})</Label>
+                    <NumericInput className={fieldInputClass}
                       value={formData.estServiceChargebackValue}
                       onChange={(v) => onFieldChange("estServiceChargebackValue", v)}
                       placeholder="300,000"
                       formatWithCommas
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Service Dispute Rate - Value (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Service Dispute Rate - Value (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.serviceDisputeRate}
                       onChange={(v) => onFieldChange("serviceDisputeRate", v)}
                       warning={getValidationWarning("serviceDisputeRate", formData.serviceDisputeRate)}
@@ -899,9 +910,9 @@ export const ChallengeInputs = ({
                       min={0}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Service Win Rate - Value (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Service Win Rate - Value (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.serviceWinRate}
                       onChange={(v) => onFieldChange("serviceWinRate", v)}
                       warning={getValidationWarning("serviceWinRate", formData.serviceWinRate)}
@@ -915,27 +926,27 @@ export const ChallengeInputs = ({
               {/* Improve recovery efficiency (OpEx) */}
               <div>
                 <h4 className="text-md font-medium mb-3">Improve Recovery Efficiency (OpEx)</h4>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Avg. Time to Review CB (mins)</Label>
-                    <NumericInput
+                <div className={gridClass}>
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Avg. Time to Review CB (mins)</Label>
+                    <NumericInput className={fieldInputClass}
                       value={formData.avgTimeToReviewCB}
                       onChange={(v) => onFieldChange("avgTimeToReviewCB", v)}
                       placeholder="20"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Number of Annual CB Disputes</Label>
-                    <NumericInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Number of Annual CB Disputes</Label>
+                    <NumericInput className={fieldInputClass}
                       value={formData.annualCBDisputes}
                       onChange={(v) => onFieldChange("annualCBDisputes", v)}
                       placeholder="7,439"
                       formatWithCommas
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Cost per Hour of Analyst ({currencySymbol})</Label>
-                    <NumericInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Cost per Hour of Analyst ({currencySymbol})</Label>
+                    <NumericInput className={fieldInputClass}
                       value={formData.costPerHourAnalyst}
                       onChange={(v) => onFieldChange("costPerHourAnalyst", v)}
                       placeholder="19.23"
@@ -950,26 +961,28 @@ export const ChallengeInputs = ({
       })()}
 
       {/* Abuse Prevention Section - For Challenge 8 */}
-      {showAbuseInputs && (
+      {showAbuseInputs && (() => {
+        // Completed transactions = Transaction attempts × Completion rate (same logic as payments calculator; full funnel for 245, approval for 1)
+        const completedTransactions = getCompletedTransactionCount(formData, isChallenge1Selected, isChallenge245Selected);
+        return (
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4">Policy Abuse Prevention</h3>
           <div className="space-y-6">
             {/* General */}
             <div>
               <h4 className="text-md font-medium mb-3">Refund Data</h4>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className={gridClass}>
                 {/* Only show Refund Rate if other challenges provide the payments data */}
                 {showPaymentsInputs && (
-                  <div className="space-y-2">
-                    <Label>Refund Rate on Completed Transactions (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Refund Rate on Completed Transactions (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.refundRate}
                       onChange={(v) => {
                         onFieldChange("refundRate", v);
-                        // Bi-directional: calculate expected refunds from rate
-                        if (formData.amerGrossAttempts && v > 0) {
-                          const completedTx = formData.amerGrossAttempts * ((formData.amerPreAuthApprovalRate || 100) / 100) * ((formData.amerPostAuthApprovalRate || 100) / 100);
-                          const expectedVolume = Math.round(completedTx * (v / 100));
+                        // Bi-directional: Expected Refund volume = Transaction attempts × Completion rate × Refund rate
+                        if (completedTransactions > 0) {
+                          const expectedVolume = Math.round(completedTransactions * (v / 100));
                           onFieldChange("expectedRefundsVolume", expectedVolume);
                         }
                       }}
@@ -979,29 +992,39 @@ export const ChallengeInputs = ({
                     />
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Expected Refunds - Volume (#)</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <div className="flex items-center gap-1.5">
+                    <Label className={fieldLabelClass}>Expected Refunds - Volume (#)</Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex text-muted-foreground cursor-help" aria-label="Calculation breakdown">
+                          <Info className="w-4 h-4" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-xs">
+                        <p className="font-medium mb-1">Expected Refund volume</p>
+                        <p className="text-sm">Transaction attempts (volume) × Current completion rate (%) × Refund rate (%). Editable here or via Refund rate; values stay in sync.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <NumericInput className={fieldInputClass}
                     value={formData.expectedRefundsVolume}
                     onChange={(v) => {
                       onFieldChange("expectedRefundsVolume", v);
-                      // Bi-directional: calculate refund rate from volume
-                      if (formData.amerGrossAttempts && v > 0) {
-                        const completedTx = formData.amerGrossAttempts * ((formData.amerPreAuthApprovalRate || 100) / 100) * ((formData.amerPostAuthApprovalRate || 100) / 100);
-                        if (completedTx > 0) {
-                          const rate = (v / completedTx) * 100;
-                          onFieldChange("refundRate", Math.round(rate * 100) / 100);
-                        }
+                      // Bi-directional: refund rate = Expected Refund volume / (Transaction attempts × Completion rate)
+                      if (completedTransactions > 0 && v > 0) {
+                        const rate = (v / completedTransactions) * 100;
+                        onFieldChange("refundRate", Math.round(rate * 100) / 100);
                       }
                     }}
                     placeholder="148,774"
                     formatWithCommas
                   />
-                  <p className="text-xs text-muted-foreground">Linked with refund rate</p>
+                  <p className={fieldHelperClass}>Linked with refund rate</p>
                 </div>
-                <div className="space-y-2">
-                  <Label>Average Refunds Value ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Average Refunds Value ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgRefundValue}
                     onChange={(v) => onFieldChange("avgRefundValue", v)}
                     placeholder="150"
@@ -1009,9 +1032,9 @@ export const ChallengeInputs = ({
                   />
                 </div>
                 {formData.isMarketplace && (
-                  <div className="space-y-2">
-                    <Label>Commission (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Commission (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.commissionRate}
                       onChange={(v) => onFieldChange("commissionRate", v)}
                       warning={getValidationWarning("commissionRate", formData.commissionRate)}
@@ -1020,9 +1043,9 @@ export const ChallengeInputs = ({
                     />
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Gross Margin (%)</Label>
-                  <PercentageInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Gross Margin (%)</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.amerGrossMarginPercent}
                     onChange={(v) => onFieldChange("amerGrossMarginPercent", v)}
                     warning={getValidationWarning("amerGrossMarginPercent", formData.amerGrossMarginPercent)}
@@ -1036,26 +1059,26 @@ export const ChallengeInputs = ({
             {/* Operational Inputs */}
             <div>
               <h4 className="text-md font-medium mb-3">Operational Inputs</h4>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Avg. 1-Way Shipping Cost ({currencySymbol})</Label>
-                  <NumericInput
+              <div className={gridClass}>
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Avg. 1-Way Shipping Cost ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgOneWayShipping}
                     onChange={(v) => onFieldChange("avgOneWayShipping", v)}
                     placeholder="4.00"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Avg. Unit Fulfilment Cost ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Avg. Unit Fulfilment Cost ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgFulfilmentCost}
                     onChange={(v) => onFieldChange("avgFulfilmentCost", v)}
                     placeholder="1.50"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>TX Processing Fees (%)</Label>
-                  <PercentageInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>TX Processing Fees (%)</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.txProcessingFeePct}
                     onChange={(v) => onFieldChange("txProcessingFeePct", v)}
                     warning={getValidationWarning("txProcessingFeePct", formData.txProcessingFeePct)}
@@ -1064,9 +1087,9 @@ export const ChallengeInputs = ({
                     step={0.1}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Avg. CS Ticket Cost ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Avg. CS Ticket Cost ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgCSTicketCost}
                     onChange={(v) => onFieldChange("avgCSTicketCost", v)}
                     placeholder="5.00"
@@ -1078,10 +1101,10 @@ export const ChallengeInputs = ({
             {/* Refund Replacement Assumptions */}
             <div>
               <h4 className="text-md font-medium mb-3">Refund Replacement Assumptions</h4>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>% of Refund Requests that are INR</Label>
-                  <PercentageInput
+              <div className={gridClass}>
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>% of Refund Requests that are INR</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.pctINRClaims}
                     onChange={(v) => onFieldChange("pctINRClaims", v)}
                     warning={getValidationWarning("pctINRClaims", formData.pctINRClaims)}
@@ -1089,9 +1112,9 @@ export const ChallengeInputs = ({
                     min={0}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>% Credit or Item Replaced</Label>
-                  <PercentageInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>% Credit or Item Replaced</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.pctReplacedCredits}
                     onChange={(v) => onFieldChange("pctReplacedCredits", v)}
                     warning={getValidationWarning("pctReplacedCredits", formData.pctReplacedCredits)}
@@ -1103,7 +1126,8 @@ export const ChallengeInputs = ({
             </div>
           </div>
         </Card>
-      )}
+        );
+      })()}
 
       {/* Promotions Abuse Section - For Challenge 10/11 */}
       {showPromotionAbuseInputs && (
@@ -1119,10 +1143,10 @@ export const ChallengeInputs = ({
               <p className="text-xs text-muted-foreground mb-3">
                 Note: GMV, Commission/Take Rate, and Gross Margin are configured in the Payments section above.
               </p>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Average Discount Achieved by Abusers (%)</Label>
-                  <PercentageInput
+              <div className={gridClass}>
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Average Discount Achieved by Abusers (%)</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.avgDiscountByAbusers}
                     onChange={(v) => onFieldChange("avgDiscountByAbusers", v)}
                     warning={getValidationWarning("avgDiscountByAbusers", formData.avgDiscountByAbusers)}
@@ -1130,9 +1154,9 @@ export const ChallengeInputs = ({
                     min={0}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Estimated Promotion Abuse Catch Rate Today (%)</Label>
-                  <PercentageInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Estimated Promotion Abuse Catch Rate Today (%)</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.promotionAbuseCatchRateToday}
                     onChange={(v) => onFieldChange("promotionAbuseCatchRateToday", v)}
                     warning={getValidationWarning("promotionAbuseCatchRateToday", formData.promotionAbuseCatchRateToday)}
@@ -1148,28 +1172,23 @@ export const ChallengeInputs = ({
 
       {/* Instant Refunds Section - For Challenge 9 */}
       {showInstantRefundsInputs && (() => {
-        // Calculate approved transactions for bidirectional refund rate / volume sync
-        // If challenges 1/2/4/5 are OFF: use transaction attempts as 100% baseline
-        // If challenges 1/2/4/5 are ON: use transaction attempts × current approval rate
-        const grossAttempts = formData.amerGrossAttempts || 0;
-        const hasPaymentChallenges = isChallenge1Selected || isChallenge245Selected;
-        const approvalRate = hasPaymentChallenges ? (formData.amerPreAuthApprovalRate || 95) : 100;
-        const approvedTransactions = grossAttempts * (approvalRate / 100);
+        // Completed transactions = Transaction attempts × Completion rate (same as payments calculator; full funnel for 245, approval for 1)
+        const completedTransactions = getCompletedTransactionCount(formData, isChallenge1Selected, isChallenge245Selected);
         
-        // Handler for refund rate changes - updates expected refunds volume
+        // Handler for refund rate changes - updates expected refunds volume (Expected Refund volume = completed × refund rate)
         const handleRefundRateChange = (newRate: number) => {
           onFieldChange("refundRate", newRate);
-          if (approvedTransactions > 0) {
-            const newVolume = Math.round(approvedTransactions * (newRate / 100));
+          if (completedTransactions > 0) {
+            const newVolume = Math.round(completedTransactions * (newRate / 100));
             onFieldChange("expectedRefundsVolume", newVolume);
           }
         };
         
-        // Handler for expected refunds volume changes - updates refund rate
+        // Handler for expected refunds volume changes - updates refund rate (refund rate = volume / completed)
         const handleRefundsVolumeChange = (newVolume: number) => {
           onFieldChange("expectedRefundsVolume", newVolume);
-          if (approvedTransactions > 0) {
-            const newRate = (newVolume / approvedTransactions) * 100;
+          if (completedTransactions > 0) {
+            const newRate = (newVolume / completedTransactions) * 100;
             onFieldChange("refundRate", Math.round(newRate * 100) / 100); // Round to 2 decimal places
           }
         };
@@ -1180,16 +1199,15 @@ export const ChallengeInputs = ({
             <div className="space-y-6">
               <div>
                 <h4 className="text-md font-medium mb-3">Customer Service Data</h4>
-                {approvedTransactions > 0 && (
+                {completedTransactions > 0 && (
                   <p className="text-xs text-muted-foreground mb-3">
-                    Based on {approvedTransactions.toLocaleString()} approved transactions
-                    {hasPaymentChallenges ? ` (${approvalRate}% approval rate)` : ' (100% - no payment challenges selected)'}
+                    Based on {completedTransactions.toLocaleString()} completed transactions (Transaction attempts × Completion rate)
                   </p>
                 )}
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Refund Rate on Completed Transactions (%)</Label>
-                    <PercentageInput
+                <div className={gridClass}>
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Refund Rate on Completed Transactions (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.refundRate}
                       onChange={handleRefundRateChange}
                       warning={getValidationWarning("refundRate", formData.refundRate)}
@@ -1197,18 +1215,31 @@ export const ChallengeInputs = ({
                       min={0}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Expected Refunds - Volume (#)</Label>
-                    <NumericInput
+                  <div className={fieldRowClass}>
+                    <div className="flex items-center gap-1.5">
+                      <Label className={fieldLabelClass}>Expected Refunds - Volume (#)</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex text-muted-foreground cursor-help" aria-label="Calculation breakdown">
+                            <Info className="w-4 h-4" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <p className="font-medium mb-1">Expected Refund volume</p>
+                          <p className="text-sm">Transaction attempts (volume) × Current completion rate (%) × Refund rate (%). Editable here or via Refund rate; values stay in sync.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <NumericInput className={fieldInputClass}
                       value={formData.expectedRefundsVolume}
                       onChange={handleRefundsVolumeChange}
                       placeholder="152,689"
                       formatWithCommas
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>% of Refund Tickets to CS (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>% of Refund Tickets to CS (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.pctRefundsToCS}
                       onChange={(v) => onFieldChange("pctRefundsToCS", v)}
                       warning={getValidationWarning("pctRefundsToCS", formData.pctRefundsToCS)}
@@ -1216,9 +1247,9 @@ export const ChallengeInputs = ({
                       min={0}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Cost per CS Contact ({currencySymbol})</Label>
-                    <NumericInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Cost per CS Contact ({currencySymbol})</Label>
+                    <NumericInput className={fieldInputClass}
                       value={formData.costPerCSContact}
                       onChange={(v) => onFieldChange("costPerCSContact", v)}
                       placeholder="5"
@@ -1238,56 +1269,56 @@ export const ChallengeInputs = ({
           <div className="space-y-6">
             <div>
               <h4 className="text-md font-medium mb-3">Sign-in Data</h4>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Monthly Number of Logins (#)</Label>
-                  <NumericInput
+              <div className={gridClass}>
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Monthly Number of Logins (#)</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.monthlyLogins}
                     onChange={(v) => onFieldChange("monthlyLogins", v)}
                     placeholder="15,000"
                     formatWithCommas
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Customer Lifetime Value (CLV) - GMV ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Customer Lifetime Value (CLV) - GMV ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.customerLTV}
                     onChange={(v) => onFieldChange("customerLTV", v)}
                     placeholder="450"
                     formatWithCommas
                   />
-                  <p className="text-xs text-muted-foreground">Default: AOV × 3</p>
+                  <p className={fieldHelperClass}>Default: AOV × 3</p>
                 </div>
-                <div className="space-y-2">
-                  <Label>Average Appeasement Value ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Average Appeasement Value ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgAppeasementValue}
                     onChange={(v) => onFieldChange("avgAppeasementValue", v)}
                     placeholder="150"
                     formatWithCommas
                   />
-                  <p className="text-xs text-muted-foreground">e.g. refunded points</p>
+                  <p className={fieldHelperClass}>e.g. refunded points</p>
                 </div>
-                <div className="space-y-2">
-                  <Label>Avg. Salary per CS Member ({currencySymbol}/year)</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Avg. Salary per CS Member ({currencySymbol}/year)</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgSalaryPerCSMember}
                     onChange={(v) => onFieldChange("avgSalaryPerCSMember", v)}
                     placeholder="40,000"
                     formatWithCommas
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Avg. Handling Time per ATO Claim (mins)</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Avg. Handling Time per ATO Claim (mins)</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgHandlingTimePerATOClaim}
                     onChange={(v) => onFieldChange("avgHandlingTimePerATOClaim", v)}
                     placeholder="20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>% of Users that Churn from ATO (%)</Label>
-                  <PercentageInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>% of Users that Churn from ATO (%)</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.pctChurnFromATO}
                     onChange={(v) => onFieldChange("pctChurnFromATO", v)}
                     warning={getValidationWarning("pctChurnFromATO", formData.pctChurnFromATO)}
@@ -1296,9 +1327,9 @@ export const ChallengeInputs = ({
                   />
                 </div>
                 {formData.isMarketplace && (
-                  <div className="space-y-2">
-                    <Label>Commission / Take Rate (%)</Label>
-                    <PercentageInput
+                  <div className={fieldRowClass}>
+                    <Label className={fieldLabelClass}>Commission / Take Rate (%)</Label>
+                    <PercentageInput className={fieldInputClass}
                       value={formData.commissionRate}
                       onChange={(v) => onFieldChange("commissionRate", v)}
                       warning={getValidationWarning("commissionRate", formData.commissionRate)}
@@ -1307,9 +1338,9 @@ export const ChallengeInputs = ({
                     />
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Gross Margin (%)</Label>
-                  <PercentageInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Gross Margin (%)</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.amerGrossMarginPercent}
                     onChange={(v) => onFieldChange("amerGrossMarginPercent", v)}
                     warning={getValidationWarning("amerGrossMarginPercent", formData.amerGrossMarginPercent)}
@@ -1330,54 +1361,54 @@ export const ChallengeInputs = ({
           <div className="space-y-6">
             <div>
               <h4 className="text-md font-medium mb-3">Sign-up Data</h4>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Monthly Number of Sign-ups (#)</Label>
-                  <NumericInput
+              <div className={gridClass}>
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Monthly Number of Sign-ups (#)</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.monthlySignups}
                     onChange={(v) => onFieldChange("monthlySignups", v)}
                     placeholder="5,000"
                     formatWithCommas
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Average New Member Bonus/Discount ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Average New Member Bonus/Discount ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgNewMemberBonus}
                     onChange={(v) => onFieldChange("avgNewMemberBonus", v)}
                     placeholder="20"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Digital Communications per Year (#)</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Digital Communications per Year (#)</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.numDigitalCommunicationsPerYear}
                     onChange={(v) => onFieldChange("numDigitalCommunicationsPerYear", v)}
                     placeholder="12"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Avg. Cost per Outreach ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Avg. Cost per Outreach ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgCostPerOutreach}
                     onChange={(v) => onFieldChange("avgCostPerOutreach", v)}
                     placeholder="0.50"
                     decimalPlaces={2}
                   />
-                  <p className="text-xs text-muted-foreground">email, SMS, etc.</p>
+                  <p className={fieldHelperClass}>email, SMS, etc.</p>
                 </div>
-                <div className="space-y-2">
-                  <Label>Avg. KYC Cost per Account ({currencySymbol})</Label>
-                  <NumericInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>Avg. KYC Cost per Account ({currencySymbol})</Label>
+                  <NumericInput className={fieldInputClass}
                     value={formData.avgKYCCostPerAccount}
                     onChange={(v) => onFieldChange("avgKYCCostPerAccount", v)}
                     placeholder="2.00"
                     decimalPlaces={2}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>% of Accounts Going Through KYC (%)</Label>
-                  <PercentageInput
+                <div className={fieldRowClass}>
+                  <Label className={fieldLabelClass}>% of Accounts Going Through KYC (%)</Label>
+                  <PercentageInput className={fieldInputClass}
                     value={formData.pctAccountsGoingThroughKYC}
                     onChange={(v) => onFieldChange("pctAccountsGoingThroughKYC", v)}
                     warning={getValidationWarning("pctAccountsGoingThroughKYC", formData.pctAccountsGoingThroughKYC)}

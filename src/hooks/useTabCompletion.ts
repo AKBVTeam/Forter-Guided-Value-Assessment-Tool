@@ -15,6 +15,10 @@ interface UseTabCompletionProps {
   formData: CalculatorData;
   selectedChallenges: { [key: string]: boolean };
   valueTotals?: ValueTotals;
+  /** When true, ROI tab gets full completion (1); when false but ROI viewed with data, ROI gets half (0.5). */
+  hasInvestment?: boolean;
+  /** When false (and hasInvestment), ROI stays at half completion until user turns "Show investment" on. */
+  showInvestmentRowsOn?: boolean;
 }
 
 /**
@@ -25,10 +29,30 @@ interface UseTabCompletionProps {
  * - Forter KPIs: Fraction of key KPI fields set
  * - Value Summary & ROI: 1 once viewed (if inputs exist), else 0
  */
-export function useTabCompletion({ formData, selectedChallenges, valueTotals }: UseTabCompletionProps) {
-  // Track viewed tabs (Summary/ROI complete on view)
-  const [viewedTabs, setViewedTabs] = useState<Set<string>>(new Set());
-  
+export function useTabCompletion({ formData, selectedChallenges, valueTotals, hasInvestment = false, showInvestmentRowsOn = true }: UseTabCompletionProps) {
+  // Track viewed tabs (Summary/ROI complete on view). Persist from saved analysis when _valueSummaryViewed is true.
+  const [viewedTabs, setViewedTabs] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    if (formData._valueSummaryViewed) {
+      initial.add('summary');
+      initial.add('roi');
+    }
+    return initial;
+  });
+
+  // When opening an existing analysis with _valueSummaryViewed, keep viewedTabs in sync so tab completion persists
+  useEffect(() => {
+    if (formData._valueSummaryViewed) {
+      setViewedTabs(prev => {
+        if (prev.has('summary') && prev.has('roi')) return prev;
+        const next = new Set(prev);
+        next.add('summary');
+        next.add('roi');
+        return next;
+      });
+    }
+  }, [formData._valueSummaryViewed]);
+
   // Track whether report button was just unlocked (for animation)
   const [showReportAnimation, setShowReportAnimation] = useState(false);
   const wasReportUnlockedRef = useRef(false);
@@ -80,10 +104,19 @@ export function useTabCompletion({ formData, selectedChallenges, valueTotals }: 
     const kpiFilled = kpiFields.filter(v => v !== undefined && v !== null).length;
     const forterProgress = kpiFilled / 3;
 
-    // Summary & ROI: Complete once viewed AND data exists
+    // Summary & ROI: Summary progress = fraction of enabled benefit drivers with quantitative value when viewed
+    // Use _valueSummaryViewed from saved analysis so tab completion tick persists when opening an existing analysis
     const hasData = inputsFilled > 0;
-    const summaryProgress = (viewedTabs.has('summary') && hasData) ? 1 : 0;
-    const roiProgress = (viewedTabs.has('roi') && hasData) ? 1 : 0;
+    const summaryViewed = viewedTabs.has('summary') || !!formData._valueSummaryViewed;
+    const roiViewed = viewedTabs.has('roi') || !!formData._valueSummaryViewed;
+    const summaryFraction = valueTotals?.benefitDriversQuantitativeFraction ?? 0;
+    // When Value Summary was previously viewed (or restored from saved analysis), show at least partial tick so it persists
+    const summaryProgress = summaryViewed
+      ? (hasData && summaryFraction > 0 ? summaryFraction : 0.5)
+      : 0;
+    const roiViewedWithData = roiViewed && hasData;
+    const roiFullyComplete = hasInvestment && showInvestmentRowsOn;
+    const roiProgress = roiViewedWithData ? (roiFullyComplete ? 1 : 0.5) : 0;
 
     return {
       profile: profileProgress,
@@ -93,7 +126,7 @@ export function useTabCompletion({ formData, selectedChallenges, valueTotals }: 
       summary: summaryProgress,
       roi: roiProgress,
     };
-  }, [formData, selectedChallenges, viewedTabs]);
+  }, [formData, selectedChallenges, viewedTabs, valueTotals, hasInvestment, showInvestmentRowsOn]);
 
   // Determine if reports can be generated based on Value Summary having values
   const canGenerateReports = useMemo(() => {

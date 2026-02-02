@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FolderOpen, Trash2, Cloud, HardDrive, Globe, Lock, Loader2 } from "lucide-react";
+import { FolderOpen, Trash2, Cloud, HardDrive, Globe, Lock, Loader2, Copy, ArrowRight } from "lucide-react";
 import { CalculatorData } from "@/pages/Index";
 import { SavedAnalysis } from "./WelcomeDialog";
 import { useAnalysisDatabase, SavedAnalysisDB } from "@/hooks/useAnalysisDatabase";
@@ -21,10 +23,15 @@ interface OpenAnalysisButtonProps {
   onLoadAnalysis: (data: CalculatorData, logoUrl: string) => void;
 }
 
+type DuplicateTarget = { type: "local"; analysis: SavedAnalysis } | { type: "cloud"; analysis: SavedAnalysisDB };
+
 export const OpenAnalysisButton = ({ onLoadAnalysis }: OpenAnalysisButtonProps) => {
   const [open, setOpen] = useState(false);
   const [localAnalyses, setLocalAnalyses] = useState<SavedAnalysis[]>([]);
   const [cloudAnalyses, setCloudAnalyses] = useState<SavedAnalysisDB[]>([]);
+  const [duplicateTarget, setDuplicateTarget] = useState<DuplicateTarget | null>(null);
+  const [duplicateName, setDuplicateName] = useState("");
+  const [duplicateAuthorName, setDuplicateAuthorName] = useState("");
   const { fetchAnalyses, deleteAnalysis, togglePublic, loading } = useAnalysisDatabase();
   const { isAuthenticated } = useAuth();
 
@@ -98,7 +105,63 @@ export const OpenAnalysisButton = ({ onLoadAnalysis }: OpenAnalysisButtonProps) 
     setOpen(false);
   };
 
+  const getBaseName = (analysis: SavedAnalysis | SavedAnalysisDB) =>
+    analysis.name || (analysis.data as CalculatorData & { _analysisName?: string })._analysisName || "Untitled";
+
+  const getAuthorName = (analysis: SavedAnalysis | SavedAnalysisDB) => {
+    if ("authorName" in analysis && analysis.authorName) return analysis.authorName;
+    if ("author_name" in analysis && analysis.author_name) return analysis.author_name;
+    return (analysis.data as CalculatorData & { _authorName?: string })._authorName || "";
+  };
+
+  const handleDuplicateLocalClick = (analysis: SavedAnalysis, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDuplicateTarget({ type: "local", analysis });
+    setDuplicateName(`${getBaseName(analysis).trim()} (copy)`);
+    setDuplicateAuthorName(getAuthorName(analysis));
+  };
+
+  const handleDuplicateCloudClick = (analysis: SavedAnalysisDB, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDuplicateTarget({ type: "cloud", analysis });
+    setDuplicateName(`${getBaseName(analysis).trim()} (copy)`);
+    setDuplicateAuthorName(getAuthorName(analysis));
+  };
+
+  const handleDuplicateConfirm = () => {
+    if (!duplicateTarget) return;
+    const name = duplicateName.trim();
+    const author = duplicateAuthorName.trim();
+    if (!name || name.length < 3) return;
+    if (!author || author.length < 2 || author.length > 50) return;
+    const newId = Date.now().toString();
+    const duplicatedData: CalculatorData = {
+      ...duplicateTarget.analysis.data,
+      _analysisId: newId,
+      _analysisName: name,
+      _authorName: author,
+      _lastUpdatedAt: new Date().toISOString(),
+      _changelogHistory: [],
+    } as CalculatorData;
+    if (duplicateTarget.type === "local") {
+      onLoadAnalysis(duplicatedData, duplicateTarget.analysis.customerLogoUrl);
+    } else {
+      onLoadAnalysis(duplicatedData, duplicateTarget.analysis.customer_logo_url || "");
+    }
+    setDuplicateTarget(null);
+    setDuplicateName("");
+    setDuplicateAuthorName("");
+    setOpen(false);
+  };
+
+  const handleDuplicateCancel = () => {
+    setDuplicateTarget(null);
+    setDuplicateName("");
+    setDuplicateAuthorName("");
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
@@ -171,6 +234,15 @@ export const OpenAnalysisButton = ({ onLoadAnalysis }: OpenAnalysisButtonProps) 
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
+                          onClick={(e) => handleDuplicateCloudClick(analysis, e)}
+                          title="Duplicate analysis"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
                           onClick={(e) => handleTogglePublic(analysis.id, analysis.is_public, e)}
                           title={analysis.is_public ? "Make private" : "Make public"}
                         >
@@ -225,15 +297,26 @@ export const OpenAnalysisButton = ({ onLoadAnalysis }: OpenAnalysisButtonProps) 
                           </div>
                         )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
-                        onClick={(e) => handleDeleteLocal(analysis.id, e)}
-                        title="Delete analysis"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => handleDuplicateLocalClick(analysis, e)}
+                          title="Duplicate analysis"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={(e) => handleDeleteLocal(analysis.id, e)}
+                          title="Delete analysis"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -249,5 +332,66 @@ export const OpenAnalysisButton = ({ onLoadAnalysis }: OpenAnalysisButtonProps) 
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    {/* Name your duplicate dialog */}
+    <Dialog open={!!duplicateTarget} onOpenChange={(open) => !open && handleDuplicateCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Name your duplicate</DialogTitle>
+          <DialogDescription>
+            Edit the name for the duplicated analysis. You can change it later.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label htmlFor="open-duplicate-name">Analysis name</Label>
+            <Input
+              id="open-duplicate-name"
+              value={duplicateName}
+              onChange={(e) => setDuplicateName(e.target.value)}
+              placeholder="e.g., Acme Corp Value Assessment (copy)"
+              onKeyDown={(e) => e.key === "Enter" && handleDuplicateConfirm()}
+            />
+            {duplicateName.trim().length > 0 && duplicateName.trim().length < 3 && (
+              <p className="text-xs text-destructive">Name must be at least 3 characters</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="open-duplicate-author">Author name</Label>
+            <Input
+              id="open-duplicate-author"
+              value={duplicateAuthorName}
+              onChange={(e) => setDuplicateAuthorName(e.target.value)}
+              placeholder="e.g., John Smith"
+            />
+            {duplicateAuthorName.trim().length > 0 && (duplicateAuthorName.trim().length < 2 || duplicateAuthorName.trim().length > 50) && (
+              <p className="text-xs text-destructive">
+                {duplicateAuthorName.trim().length < 2 ? "Author name must be at least 2 characters" : "Author name must be less than 50 characters"}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-3 justify-end">
+            <Button variant="outline" onClick={handleDuplicateCancel}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDuplicateConfirm}
+              disabled={
+                !duplicateName.trim() ||
+                duplicateName.trim().length < 3 ||
+                !duplicateAuthorName.trim() ||
+                duplicateAuthorName.trim().length < 2 ||
+                duplicateAuthorName.trim().length > 50
+              }
+              className="gap-2"
+            >
+              Continue
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };

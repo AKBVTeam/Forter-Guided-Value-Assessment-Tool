@@ -19,13 +19,15 @@ import { SavedAnalysis } from "./WelcomeDialog";
 interface SaveAsDialogProps {
   currentData: CalculatorData;
   customerLogoUrl: string;
-  onSaveAs: (newAnalysisId: string, newName: string) => void;
+  onSaveAs: (newAnalysisId: string, newName: string, authorName: string) => void;
 }
 
 export const SaveAsDialog = ({ currentData, customerLogoUrl, onSaveAs }: SaveAsDialogProps) => {
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [authorName, setAuthorName] = useState("");
   const [error, setError] = useState("");
+  const [authorError, setAuthorError] = useState("");
 
   const handleOpen = (isOpen: boolean) => {
     setOpen(isOpen);
@@ -33,13 +35,30 @@ export const SaveAsDialog = ({ currentData, customerLogoUrl, onSaveAs }: SaveAsD
       // Pre-fill with current name + " (Copy)"
       const currentName = (currentData as any)._analysisName || currentData.customerName || "Analysis";
       setNewName(`${currentName} (Copy)`);
+      setAuthorName((currentData as any)._authorName ?? (typeof localStorage !== "undefined" ? localStorage.getItem("forter_author_name") ?? "" : ""));
       setError("");
+      setAuthorError("");
     }
   };
 
   const handleSaveAs = () => {
-    if (!newName.trim()) {
+    const trimmedName = newName.trim();
+    const trimmedAuthor = authorName.trim();
+
+    if (!trimmedName) {
       setError("Please enter a name for the new analysis");
+      return;
+    }
+    if (!trimmedAuthor) {
+      setAuthorError("Author name is required");
+      return;
+    }
+    if (trimmedAuthor.length < 2) {
+      setAuthorError("Author name must be at least 2 characters");
+      return;
+    }
+    if (trimmedAuthor.length > 50) {
+      setAuthorError("Author name must be less than 50 characters");
       return;
     }
 
@@ -54,7 +73,7 @@ export const SaveAsDialog = ({ currentData, customerLogoUrl, onSaveAs }: SaveAsD
       }
     }
 
-    const nameExists = existing.some(a => a.name.toLowerCase() === newName.trim().toLowerCase());
+    const nameExists = existing.some(a => a.name.toLowerCase() === trimmedName.toLowerCase());
     if (nameExists) {
       setError("An analysis with this name already exists");
       return;
@@ -62,20 +81,20 @@ export const SaveAsDialog = ({ currentData, customerLogoUrl, onSaveAs }: SaveAsD
 
     // Create new analysis with new ID
     const newId = Date.now().toString();
-    const authorName = (currentData as any)._authorName || "";
 
-    // Create new data with new ID, name, and last updated
+    // Create new data with new ID, name, author, and last updated
     const newData = {
       ...currentData,
       _analysisId: newId,
-      _analysisName: newName.trim(),
+      _analysisName: trimmedName,
+      _authorName: trimmedAuthor,
       _lastUpdatedAt: new Date().toISOString(),
     };
 
     const newAnalysis: SavedAnalysis = {
       id: newId,
-      name: newName.trim(),
-      authorName,
+      name: trimmedName,
+      authorName: trimmedAuthor,
       data: newData,
       customerLogoUrl,
       savedAt: new Date(),
@@ -86,9 +105,9 @@ export const SaveAsDialog = ({ currentData, customerLogoUrl, onSaveAs }: SaveAsD
     localStorage.setItem("forter_saved_analyses", JSON.stringify(updated));
 
     // Notify parent to update current session to the new analysis
-    onSaveAs(newId, newName.trim());
+    onSaveAs(newId, trimmedName, trimmedAuthor);
 
-    toast.success(`Analysis duplicated as "${newName.trim()}"`);
+    toast.success(`Analysis duplicated as "${trimmedName}"`);
     setOpen(false);
   };
 
@@ -120,6 +139,19 @@ export const SaveAsDialog = ({ currentData, customerLogoUrl, onSaveAs }: SaveAsD
               placeholder="Enter a name for the copy"
             />
             {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="save-as-author-name">Author Name</Label>
+            <Input
+              id="save-as-author-name"
+              value={authorName}
+              onChange={(e) => {
+                setAuthorName(e.target.value);
+                setAuthorError("");
+              }}
+              placeholder="Enter your name"
+            />
+            {authorError && <p className="text-sm text-destructive">{authorError}</p>}
           </div>
         </div>
         <DialogFooter>

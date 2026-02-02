@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -144,6 +144,15 @@ interface CustomerInputs {
   existingFraudVendor?: string;
 }
 
+/** Section IDs used when navigating from Value Summary performance highlights */
+export type ForterKPIFocusSection =
+  | "c1"
+  | "c245"
+  | "manual-review"
+  | "disputes"
+  | "abuse"
+  | "instant-refunds";
+
 interface ForterKPIConfigProps {
   kpis: ForterKPIs;
   onUpdate: (kpis: ForterKPIs) => void;
@@ -153,6 +162,17 @@ interface ForterKPIConfigProps {
   segmentationEnabled?: boolean;
   segments?: Segment[];
   onSegmentUpdate?: (segment: Segment) => void;
+  /** When set, scroll to this section and open modals if needed (e.g. from Value Summary highlight click) */
+  focusTarget?: ForterKPIFocusSection | null;
+  onFocusHandled?: () => void;
+  /** List = single column; grid = current 2-column layout */
+  viewMode?: 'list' | 'grid';
+  /** When a KPI value matches an auto-applied benchmark, show "(Forter Benchmark)" pill with this tooltip text keyed by field id */
+  forterBenchmarkSources?: Partial<Record<keyof ForterKPIs, string>>;
+  /** Current benchmark values for reset-to-benchmark (keyed by field id). When present and value differs, show reset button. */
+  forterBenchmarkValues?: Partial<Record<keyof ForterKPIs, number>>;
+  /** PSD2-relevant 3DS suggestion: rate and reason (e.g. "PSD2 - AOV €100-€250"). Shown as pill in Fraud Detection & 3DS when rate > 0. */
+  suggested3DSFromPSD2?: { rate: number; reason: string } | null;
 }
 
 interface KPIInputRowProps {
@@ -169,6 +189,14 @@ interface KPIInputRowProps {
   fieldName?: string;
   /** Number of decimal places to display */
   decimalPlaces?: number;
+  /** From parent: list vs grid layout */
+  fieldRowClass?: string;
+  /** From parent: label wrapper class for list view */
+  fieldLabelWrapClass?: string;
+  /** From parent: wrapper class for Current line in list view (e.g. col-span-2) */
+  fieldHelperWrapClass?: string;
+  /** From parent: input class for list view (right-align, width) */
+  fieldInputClass?: string;
 }
 
 const KPIInputRow = ({ 
@@ -183,6 +211,10 @@ const KPIInputRow = ({
   currentValueUnit = "%",
   fieldName,
   decimalPlaces,
+  fieldRowClass = 'space-y-2',
+  fieldLabelWrapClass = 'flex items-center justify-between gap-2',
+  fieldHelperWrapClass = '',
+  fieldInputClass = '',
 }: KPIInputRowProps) => {
   // Calculate actual % reduction: (target - current) / current * 100
   const calculatePercentChange = (): string | null => {
@@ -196,8 +228,8 @@ const KPIInputRow = ({
   const warning = fieldName && included ? getValidationWarning(fieldName, value) : null;
   
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
+    <div className={fieldRowClass}>
+      <div className={fieldLabelWrapClass}>
         <div className="flex items-center gap-2 min-w-0">
           <Label className={`text-sm ${!included ? "text-muted-foreground" : ""}`}>
             {label}
@@ -210,7 +242,7 @@ const KPIInputRow = ({
           )}
         </div>
       </div>
-      <NumericInput 
+      <NumericInput className={fieldInputClass} 
         value={included ? value : 0} 
         onChange={onValueChange} 
         placeholder="0" 
@@ -219,7 +251,7 @@ const KPIInputRow = ({
         decimalPlaces={decimalPlaces}
       />
       {/* Fixed height container to prevent layout bouncing */}
-      <div className="min-h-5 flex items-center">
+      <div className={`min-h-5 flex items-center ${fieldHelperWrapClass}`.trim()}>
         {currentValue !== undefined && currentValueLabel && (
           <p className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis">
             Current: <span className="font-medium text-foreground">{currentValue}{currentValueUnit}</span>
@@ -246,9 +278,66 @@ export const ForterKPIConfig = ({
   segmentationEnabled = false,
   segments = [],
   onSegmentUpdate,
+  focusTarget = null,
+  onFocusHandled,
+  viewMode = 'grid',
+  forterBenchmarkSources = {},
+  forterBenchmarkValues = {},
+  suggested3DSFromPSD2 = null,
 }: ForterKPIConfigProps) => {
+  const ForterBenchmarkPill = ({ fieldId }: { fieldId: keyof ForterKPIs }) => {
+    const tooltip = forterBenchmarkSources[fieldId];
+    if (!tooltip) return null;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20 cursor-help">
+            Forter Benchmark
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs">
+          <p className="text-xs">{tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+  const ResetToBenchmarkButton = ({ fieldId }: { fieldId: keyof ForterKPIs }) => {
+    const benchmarkValue = forterBenchmarkValues[fieldId];
+    if (benchmarkValue === undefined || isSegmentMode) return null;
+    const currentValue = kpis[fieldId as keyof typeof kpis];
+    if (typeof currentValue !== 'number' || currentValue === benchmarkValue) return null;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+            onClick={() => updateKPI(fieldId, benchmarkValue)}
+            aria-label="Reset to Forter benchmark"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="text-xs">Reset to Forter benchmark</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+  const gridClass = viewMode === 'list' ? 'grid grid-cols-1 gap-4' : 'grid md:grid-cols-2 gap-4';
+  const fieldRowClass = viewMode === 'list' ? 'grid grid-cols-[1fr_minmax(18rem,22rem)] items-center gap-x-4 gap-y-1' : 'space-y-2';
+  const fieldLabelWrapClass = viewMode === 'list' ? 'flex items-center gap-2 min-w-0' : 'flex items-center gap-2';
+  const fieldLabelWrapWithChipClass = viewMode === 'list' ? 'flex items-center justify-between gap-2 min-w-0' : 'flex items-center justify-between gap-2';
+  const fieldLabelClass = viewMode === 'list' ? 'min-w-0 text-sm' : 'text-sm';
+  const fieldInputClass = viewMode === 'list' ? 'justify-self-end min-w-[14rem] max-w-[16rem] text-right' : '';
+  const fieldHelperClass = viewMode === 'list' ? 'col-span-2 text-xs text-muted-foreground' : 'text-xs text-muted-foreground';
+  const fieldHelperWrapClass = viewMode === 'list' ? 'col-span-2' : '';
   const [segmentModalOpen, setSegmentModalOpen] = useState(false);
   const [editingSegment, setEditingSegment] = useState<Segment | null>(null);
+  const [abuseBenchmarksModalOpen, setAbuseBenchmarksModalOpen] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   const updateKPI = (field: keyof ForterKPIs, value: number | boolean) => {
     const updates: Partial<ForterKPIs> = { [field]: value };
@@ -339,6 +428,24 @@ export const ForterKPIConfig = ({
     });
   }, [segments, onSegmentUpdate]);
 
+  // When focusTarget is set (e.g. from Value Summary performance highlight click), scroll to section and open modals
+  useEffect(() => {
+    if (!focusTarget) return;
+    const container = scrollContainerRef.current;
+    if (!container) {
+      onFocusHandled?.();
+      return;
+    }
+    const el = container.querySelector(`[data-forter-kpi-section="${focusTarget}"]`) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (focusTarget === "abuse") {
+        setAbuseBenchmarksModalOpen(true);
+      }
+    }
+    onFocusHandled?.();
+  }, [focusTarget, onFocusHandled]);
+
   if (!showAnyKPIs) {
     return (
       <div className="text-center py-8 text-muted-foreground">
@@ -348,7 +455,7 @@ export const ForterKPIConfig = ({
   }
 
   return (
-    <div className="space-y-6">
+    <div ref={scrollContainerRef} className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Forter Performance Assumptions</h3>
         <Tooltip>
@@ -377,7 +484,7 @@ export const ForterKPIConfig = ({
               <Layers className="h-5 w-5 text-primary" />
               <div>
                 <p className="font-medium text-sm">Segmented KPI Targets</p>
-                <p className="text-xs text-muted-foreground">
+                <p className={fieldHelperClass}>
                   Configure Forter performance targets per segment. Payment/fraud KPIs below show weighted averages.
                 </p>
               </div>
@@ -395,18 +502,18 @@ export const ForterKPIConfig = ({
             </Tooltip>
           </div>
           
-          <div className="space-y-2">
+          <div className={fieldRowClass}>
             {segments.filter(s => s.enabled).map((segment) => {
               const kpiStatus = getSegmentKPIStatus(segment);
               
               return (
                 <div 
                   key={segment.id} 
-                  className="flex items-center justify-between gap-4 p-3 bg-background rounded-lg border"
+                  className="flex items-center justify-between gap-4 p-3 bg-background rounded-lg border transition-transform duration-150 ease-out hover:scale-[1.01] active:scale-[0.98]"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm">{segment.name}</p>
-                    <p className="text-xs text-muted-foreground">{kpiStatus}</p>
+                    <p className={fieldHelperClass}>{kpiStatus}</p>
                   </div>
                   <Button
                     variant="ghost"
@@ -439,12 +546,15 @@ export const ForterKPIConfig = ({
       />
       
       {(challenge1 && !show245KPIs) && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="c1">
           <h4 className="font-medium text-primary">False Fraud Declines</h4>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-sm">Target Fraud Approval Rate (%)</Label>
+          <div className={gridClass}>
+            <div className={fieldRowClass}>
+              <div className={fieldLabelWrapClass}>
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <Label className={fieldLabelClass}>Target Fraud Approval Rate (%)</Label>
+                  {!isSegmentMode && <ForterBenchmarkPill fieldId="approvalRateImprovement" />}
+                </div>
                 {isSegmentMode && (
                   <WeightedAverageTooltipKPI
                     segments={segments}
@@ -454,13 +564,16 @@ export const ForterKPIConfig = ({
                   />
                 )}
               </div>
-              <PercentageInput
-                value={isSegmentMode ? (aggregatedKPIs?.weightedApprovalRateTarget ?? 0) : kpis.approvalRateImprovement}
-                onChange={(v) => updateKPI("approvalRateImprovement", v)}
-                readOnly={isSegmentMode}
-                warning={!isSegmentMode ? getValidationWarning("approvalRateImprovement", kpis.approvalRateImprovement) : null}
-                decimalPlaces={2}
-              />
+              <div className="flex items-center gap-2">
+                <PercentageInput className={fieldInputClass}
+                  value={isSegmentMode ? (aggregatedKPIs?.weightedApprovalRateTarget ?? 0) : kpis.approvalRateImprovement}
+                  onChange={(v) => updateKPI("approvalRateImprovement", v)}
+                  readOnly={isSegmentMode}
+                  warning={!isSegmentMode ? getValidationWarning("approvalRateImprovement", kpis.approvalRateImprovement) : null}
+                  decimalPlaces={2}
+                />
+                {!isSegmentMode && <ResetToBenchmarkButton fieldId="approvalRateImprovement" />}
+              </div>
               {!isSegmentMode && customerInputs.amerPreAuthApprovalRate !== undefined && (() => {
                 const currentRate = customerInputs.amerPreAuthApprovalRate;
                 const targetRate = kpis.approvalRateImprovement;
@@ -468,7 +581,7 @@ export const ForterKPIConfig = ({
                   ? (((targetRate - currentRate) / currentRate) * 100).toFixed(1)
                   : null;
                 return (
-                  <p className="text-xs text-muted-foreground">
+                  <p className={fieldHelperClass}>
                     Current: <span className="font-medium text-foreground">{currentRate}%</span>
                     {targetRate !== undefined && targetRate !== currentRate && (
                       <span className="ml-1">
@@ -484,9 +597,12 @@ export const ForterKPIConfig = ({
                 );
               })()}
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-sm">Target Fraud CB Rate (%)</Label>
+            <div className={fieldRowClass}>
+              <div className={fieldLabelWrapClass}>
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <Label className={fieldLabelClass}>Target Fraud CB Rate (%)</Label>
+                  {!isSegmentMode && <ForterBenchmarkPill fieldId="chargebackReduction" />}
+                </div>
                 {isSegmentMode && (
                   <WeightedAverageTooltipKPI
                     segments={segments}
@@ -496,22 +612,25 @@ export const ForterKPIConfig = ({
                   />
                 )}
               </div>
-              <PercentageInput
-                value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
-                onChange={(v) => updateKPI("chargebackReduction", v)}
-                readOnly={isSegmentMode}
-                warning={!isSegmentMode ? getValidationWarning("chargebackReduction", kpis.chargebackReduction) : null}
-                decimalPlaces={2}
-                max={10}
-                step={0.01}
-              />
+              <div className="flex items-center gap-2">
+                <PercentageInput className={fieldInputClass}
+                  value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
+                  onChange={(v) => updateKPI("chargebackReduction", v)}
+                  readOnly={isSegmentMode}
+                  warning={!isSegmentMode ? getValidationWarning("chargebackReduction", kpis.chargebackReduction) : null}
+                  decimalPlaces={2}
+                  max={10}
+                  step={0.01}
+                />
+                {!isSegmentMode && <ResetToBenchmarkButton fieldId="chargebackReduction" />}
+              </div>
               {customerInputs.fraudCBRate !== undefined && (() => {
                 const currentCBRate = customerInputs.fraudCBRate;
                 const targetCBRate = isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction;
                 const improvement = currentCBRate - targetCBRate;
                 const pctReduction = currentCBRate > 0 ? ((improvement / currentCBRate) * 100).toFixed(1) : null;
                 return (
-                  <p className="text-xs text-muted-foreground">
+                  <p className={fieldHelperClass}>
                     Current: <span className="font-medium text-foreground">{currentCBRate}%</span>
                     {targetCBRate !== undefined && targetCBRate !== currentCBRate && pctReduction != null && (
                       <span className="ml-1">
@@ -540,7 +659,7 @@ export const ForterKPIConfig = ({
           : null;
         
         return (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="c245">
           <div className="flex items-center gap-3 flex-wrap">
             <h4 className="font-medium text-primary">Fraud Detection & 3DS</h4>
             {formattedAOV && (
@@ -548,20 +667,33 @@ export const ForterKPIConfig = ({
                 AOV: {formattedAOV}
               </span>
             )}
+            {suggested3DSFromPSD2 && suggested3DSFromPSD2.rate > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20 cursor-help">
+                    Suggested PSD2 3DS rate: {suggested3DSFromPSD2.rate}%
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="text-xs">{suggested3DSFromPSD2.reason}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             {isSegmentMode && (
               <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
                 Forter KPIs (weighted avg): {aggregatedKPIs?.weightedPreAuthApprovalTarget?.toFixed(1)}% pre-auth fraud approval, {aggregatedKPIs?.weightedThreeDSRateTarget?.toFixed(1)}% 3DS, {aggregatedKPIs?.weightedChargebackRateTarget?.toFixed(2)}% fraud CB
               </span>
             )}
           </div>
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className={gridClass}>
             {/* Fraud approval rate */}
-            <div className="space-y-2">
+            <div className={fieldRowClass}>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <Label className={`text-sm ${!isSegmentMode && kpis.preAuthIncluded === false ? "text-muted-foreground" : ""}`}>
                     Target Pre-Auth Fraud Approval Rate (%)
                   </Label>
+                  {!isSegmentMode && <ForterBenchmarkPill fieldId="preAuthApprovalImprovement" />}
                   {isSegmentMode && (
                     <WeightedAverageTooltipKPI
                       segments={segments}
@@ -578,16 +710,19 @@ export const ForterKPIConfig = ({
                   />
                 )}
               </div>
-              <PercentageInput
-                value={isSegmentMode 
-                  ? (aggregatedKPIs?.weightedPreAuthApprovalTarget ?? 0)
-                  : (kpis.preAuthIncluded === false ? 100 : kpis.preAuthApprovalImprovement)}
-                onChange={(v) => updateKPI("preAuthApprovalImprovement", v)}
-                readOnly={isSegmentMode}
-                disabled={!isSegmentMode && kpis.preAuthIncluded === false}
-                warning={!isSegmentMode && kpis.preAuthIncluded !== false ? getValidationWarning("preAuthApprovalImprovement", kpis.preAuthApprovalImprovement) : null}
-                decimalPlaces={2}
-              />
+              <div className="flex items-center gap-2">
+                <PercentageInput className={fieldInputClass}
+                  value={isSegmentMode 
+                    ? (aggregatedKPIs?.weightedPreAuthApprovalTarget ?? 0)
+                    : (kpis.preAuthIncluded === false ? 100 : kpis.preAuthApprovalImprovement)}
+                  onChange={(v) => updateKPI("preAuthApprovalImprovement", v)}
+                  readOnly={isSegmentMode}
+                  disabled={!isSegmentMode && kpis.preAuthIncluded === false}
+                  warning={!isSegmentMode && kpis.preAuthIncluded !== false ? getValidationWarning("preAuthApprovalImprovement", kpis.preAuthApprovalImprovement) : null}
+                  decimalPlaces={2}
+                />
+                {!isSegmentMode && kpis.preAuthIncluded !== false && <ResetToBenchmarkButton fieldId="preAuthApprovalImprovement" />}
+              </div>
               {(kpis.preAuthIncluded !== false || isSegmentMode) && customerInputs.amerPreAuthApprovalRate !== undefined && (() => {
                 const currentRate = customerInputs.amerPreAuthApprovalRate;
                 const targetRate = isSegmentMode 
@@ -596,7 +731,7 @@ export const ForterKPIConfig = ({
                 const improvement = targetRate - currentRate;
                 const improvementPct = currentRate > 0 ? ((improvement / currentRate) * 100).toFixed(1) : '0';
                 return (
-                  <p className="text-xs text-muted-foreground">
+                  <p className={fieldHelperClass}>
                     Current: <span className="font-medium text-foreground">{currentRate}%</span>
                     {targetRate !== undefined && targetRate !== currentRate && (
                       <span className="ml-1">
@@ -612,12 +747,13 @@ export const ForterKPIConfig = ({
             </div>
             
             {/* Post-Auth Approval Rate */}
-            <div className="space-y-2">
+            <div className={fieldRowClass}>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <Label className={`text-sm ${!isSegmentMode && kpis.postAuthIncluded === false ? "text-muted-foreground" : ""}`}>
                     Target Post-Auth Fraud Approval Rate (%)
                   </Label>
+                  {!isSegmentMode && <ForterBenchmarkPill fieldId="postAuthApprovalImprovement" />}
                   {isSegmentMode && (
                     <WeightedAverageTooltipKPI
                       segments={segments}
@@ -634,16 +770,19 @@ export const ForterKPIConfig = ({
                   />
                 )}
               </div>
-              <PercentageInput
-                value={isSegmentMode 
-                  ? (aggregatedKPIs?.weightedPostAuthApprovalTarget ?? 0)
-                  : (kpis.postAuthIncluded === false ? 100 : kpis.postAuthApprovalImprovement)}
-                onChange={(v) => updateKPI("postAuthApprovalImprovement", v)}
-                readOnly={isSegmentMode}
-                disabled={!isSegmentMode && kpis.postAuthIncluded === false}
-                warning={!isSegmentMode && kpis.postAuthIncluded !== false ? getValidationWarning("postAuthApprovalImprovement", kpis.postAuthApprovalImprovement) : null}
-                decimalPlaces={2}
-              />
+              <div className="flex items-center gap-2">
+                <PercentageInput className={fieldInputClass}
+                  value={isSegmentMode 
+                    ? (aggregatedKPIs?.weightedPostAuthApprovalTarget ?? 0)
+                    : (kpis.postAuthIncluded === false ? 100 : kpis.postAuthApprovalImprovement)}
+                  onChange={(v) => updateKPI("postAuthApprovalImprovement", v)}
+                  readOnly={isSegmentMode}
+                  disabled={!isSegmentMode && kpis.postAuthIncluded === false}
+                  warning={!isSegmentMode && kpis.postAuthIncluded !== false ? getValidationWarning("postAuthApprovalImprovement", kpis.postAuthApprovalImprovement) : null}
+                  decimalPlaces={2}
+                />
+                {!isSegmentMode && kpis.postAuthIncluded !== false && <ResetToBenchmarkButton fieldId="postAuthApprovalImprovement" />}
+              </div>
               {(kpis.postAuthIncluded !== false || isSegmentMode) && customerInputs.amerPostAuthApprovalRate !== undefined && (() => {
                 const currentRate = customerInputs.amerPostAuthApprovalRate;
                 const targetRate = isSegmentMode 
@@ -652,7 +791,7 @@ export const ForterKPIConfig = ({
                 const improvement = targetRate - currentRate;
                 const improvementPct = currentRate > 0 ? ((improvement / currentRate) * 100).toFixed(1) : '0';
                 return (
-                  <p className="text-xs text-muted-foreground">
+                  <p className={fieldHelperClass}>
                     Current: <span className="font-medium text-foreground">{currentRate}%</span>
                     {targetRate !== undefined && targetRate !== currentRate && (
                       <span className="ml-1">
@@ -668,9 +807,12 @@ export const ForterKPIConfig = ({
             </div>
             
             {/* 3DS Rate */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-sm">Target Challenge 3DS Rate (%)</Label>
+            <div className={fieldRowClass}>
+              <div className={fieldLabelWrapClass}>
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <Label className={fieldLabelClass}>Target Challenge 3DS Rate (%)</Label>
+                  {!isSegmentMode && <ForterBenchmarkPill fieldId="threeDSReduction" />}
+                </div>
                 {isSegmentMode && (
                   <WeightedAverageTooltipKPI
                     segments={segments}
@@ -680,13 +822,16 @@ export const ForterKPIConfig = ({
                   />
                 )}
               </div>
-              <PercentageInput
-                value={isSegmentMode ? (aggregatedKPIs?.weightedThreeDSRateTarget ?? 0) : kpis.threeDSReduction}
-                onChange={(v) => updateKPI("threeDSReduction", v)}
-                readOnly={isSegmentMode}
-                warning={!isSegmentMode ? getValidationWarning("threeDSReduction", kpis.threeDSReduction) : null}
-                decimalPlaces={2}
-              />
+              <div className="flex items-center gap-2">
+                <PercentageInput className={fieldInputClass}
+                  value={isSegmentMode ? (aggregatedKPIs?.weightedThreeDSRateTarget ?? 0) : kpis.threeDSReduction}
+                  onChange={(v) => updateKPI("threeDSReduction", v)}
+                  readOnly={isSegmentMode}
+                  warning={!isSegmentMode ? getValidationWarning("threeDSReduction", kpis.threeDSReduction) : null}
+                  decimalPlaces={2}
+                />
+                {!isSegmentMode && <ResetToBenchmarkButton fieldId="threeDSReduction" />}
+              </div>
               {customerInputs.amer3DSChallengeRate !== undefined && (() => {
                 const currentRate = customerInputs.amer3DSChallengeRate;
                 const targetRate = isSegmentMode 
@@ -695,7 +840,7 @@ export const ForterKPIConfig = ({
                 const improvement = currentRate - targetRate; // For 3DS, reduction is positive
                 const improvementPct = currentRate > 0 ? ((improvement / currentRate) * 100).toFixed(1) : '0';
                 return (
-                  <p className="text-xs text-muted-foreground">
+                  <p className={fieldHelperClass}>
                     Current: <span className="font-medium text-foreground">{currentRate}%</span>
                     {targetRate !== undefined && targetRate !== currentRate && (
                       <span className="ml-1">
@@ -711,9 +856,12 @@ export const ForterKPIConfig = ({
             </div>
             
             {/* CB Rate */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-sm">Target Fraud CB Rate (%)</Label>
+            <div className={fieldRowClass}>
+              <div className={fieldLabelWrapClass}>
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <Label className={fieldLabelClass}>Target Fraud CB Rate (%)</Label>
+                  {!isSegmentMode && <ForterBenchmarkPill fieldId="chargebackReduction" />}
+                </div>
                 {isSegmentMode && (
                   <WeightedAverageTooltipKPI
                     segments={segments}
@@ -723,22 +871,25 @@ export const ForterKPIConfig = ({
                   />
                 )}
               </div>
-              <PercentageInput
-                value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
-                onChange={(v) => updateKPI("chargebackReduction", v)}
-                readOnly={isSegmentMode}
-                warning={!isSegmentMode ? getValidationWarning("chargebackReduction", kpis.chargebackReduction) : null}
-                decimalPlaces={2}
-                max={10}
-                step={0.01}
-              />
+              <div className="flex items-center gap-2">
+                <PercentageInput className={fieldInputClass}
+                  value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
+                  onChange={(v) => updateKPI("chargebackReduction", v)}
+                  readOnly={isSegmentMode}
+                  warning={!isSegmentMode ? getValidationWarning("chargebackReduction", kpis.chargebackReduction) : null}
+                  decimalPlaces={2}
+                  max={10}
+                  step={0.01}
+                />
+                {!isSegmentMode && <ResetToBenchmarkButton fieldId="chargebackReduction" />}
+              </div>
               {customerInputs.fraudCBRate !== undefined && (() => {
                 const currentCBRate = customerInputs.fraudCBRate;
                 const targetCBRate = isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction;
                 const improvement = currentCBRate - targetCBRate;
                 const improvementPct = currentCBRate > 0 ? ((improvement / currentCBRate) * 100).toFixed(1) : '0';
                 return (
-                  <p className="text-xs text-muted-foreground">
+                  <p className={fieldHelperClass}>
                     Current: <span className="font-medium text-foreground">{currentCBRate}%</span>
                     {targetCBRate !== undefined && targetCBRate !== currentCBRate && (
                       <span className="ml-1">
@@ -758,10 +909,14 @@ export const ForterKPIConfig = ({
       })()}
       
       {challenge3 && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="manual-review">
           <h4 className="font-medium text-primary">Manual Review Reduction</h4>
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className={gridClass}>
             <KPIInputRow
+              fieldRowClass={fieldRowClass}
+              fieldLabelWrapClass={fieldLabelWrapWithChipClass}
+              fieldHelperWrapClass={fieldHelperWrapClass}
+              fieldInputClass={fieldInputClass}
               label="Target Review Rate (%)"
               value={kpis.manualReviewReduction}
               onValueChange={(v) => updateKPI("manualReviewReduction", v)}
@@ -771,6 +926,10 @@ export const ForterKPIConfig = ({
               decimalPlaces={2}
             />
             <KPIInputRow
+              fieldRowClass={fieldRowClass}
+              fieldLabelWrapClass={fieldLabelWrapWithChipClass}
+              fieldHelperWrapClass={fieldHelperWrapClass}
+              fieldInputClass={fieldInputClass}
               label="Target Time (min)"
               value={kpis.reviewTimeReduction}
               onValueChange={(v) => updateKPI("reviewTimeReduction", v)}
@@ -783,10 +942,14 @@ export const ForterKPIConfig = ({
       )}
       
       {challenge7 && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="disputes">
           <h4 className="font-medium text-primary">Chargeback Disputes</h4>
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className={gridClass}>
             <KPIInputRow
+              fieldRowClass={fieldRowClass}
+              fieldLabelWrapClass={fieldLabelWrapWithChipClass}
+              fieldHelperWrapClass={fieldHelperWrapClass}
+              fieldInputClass={fieldInputClass}
               label="Target Fraud Dispute Rate (%)"
               value={kpis.fraudDisputeRateImprovement}
               onValueChange={(v) => updateKPI("fraudDisputeRateImprovement", v)}
@@ -796,6 +959,10 @@ export const ForterKPIConfig = ({
               decimalPlaces={2}
             />
             <KPIInputRow
+              fieldRowClass={fieldRowClass}
+              fieldLabelWrapClass={fieldLabelWrapWithChipClass}
+              fieldHelperWrapClass={fieldHelperWrapClass}
+              fieldInputClass={fieldInputClass}
               label="Target Fraud Win Rate (%)"
               value={kpis.fraudWinRateChange}
               onValueChange={(v) => updateKPI("fraudWinRateChange", v)}
@@ -805,6 +972,10 @@ export const ForterKPIConfig = ({
               decimalPlaces={2}
             />
             <KPIInputRow
+              fieldRowClass={fieldRowClass}
+              fieldLabelWrapClass={fieldLabelWrapWithChipClass}
+              fieldHelperWrapClass={fieldHelperWrapClass}
+              fieldInputClass={fieldInputClass}
               label="Target Service Dispute Rate (%)"
               value={kpis.serviceDisputeRateImprovement}
               onValueChange={(v) => updateKPI("serviceDisputeRateImprovement", v)}
@@ -814,6 +985,10 @@ export const ForterKPIConfig = ({
               decimalPlaces={2}
             />
             <KPIInputRow
+              fieldRowClass={fieldRowClass}
+              fieldLabelWrapClass={fieldLabelWrapWithChipClass}
+              fieldHelperWrapClass={fieldHelperWrapClass}
+              fieldInputClass={fieldInputClass}
               label="Target Service Win Rate (%)"
               value={kpis.serviceWinRateChange}
               onValueChange={(v) => updateKPI("serviceWinRateChange", v)}
@@ -822,9 +997,9 @@ export const ForterKPIConfig = ({
               fieldName="serviceWinRateChange"
               decimalPlaces={2}
             />
-            <div className="space-y-2">
-              <Label className="text-sm">Target Time to Review CB (mins)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Target Time to Review CB (mins)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.disputeTimeReduction} 
                 onChange={(v) => updateKPI("disputeTimeReduction", v)} 
                 placeholder="5"
@@ -855,7 +1030,7 @@ export const ForterKPIConfig = ({
       )}
 
       {showAbuseKPIs && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="abuse">
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-primary">
               {challenge8 && show10_11KPIs 
@@ -867,12 +1042,14 @@ export const ForterKPIConfig = ({
             <AbuseBenchmarksModal
               benchmarks={kpis.abuseBenchmarks || defaultAbuseBenchmarks}
               onUpdate={(benchmarks) => onUpdate({ ...kpis, abuseBenchmarks: benchmarks })}
+              open={abuseBenchmarksModalOpen}
+              onOpenChange={setAbuseBenchmarksModalOpen}
             />
           </div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">Forter Catch Rate (%)</Label>
-              <NumericInput 
+          <div className={gridClass}>
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Forter Catch Rate (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.forterCatchRate} 
                 onChange={(v) => updateKPI("forterCatchRate", v)} 
                 placeholder="90"
@@ -880,9 +1057,9 @@ export const ForterKPIConfig = ({
                 warning={getValidationWarning("forterCatchRate", kpis.forterCatchRate)}
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm">Abuse AoV Multiplier (x)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Abuse AoV Multiplier (x)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.abuseAovMultiplier} 
                 onChange={(v) => updateKPI("abuseAovMultiplier", v)} 
                 placeholder="1.5" 
@@ -896,38 +1073,38 @@ export const ForterKPIConfig = ({
       )}
 
       {challenge9 && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="instant-refunds">
           <h4 className="font-medium text-primary">Instant Refunds</h4>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">NPS Increase from Instant Refunds</Label>
-              <NumericInput 
+          <div className={gridClass}>
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>NPS Increase from Instant Refunds</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.npsIncreaseFromInstantRefunds} 
                 onChange={(v) => updateKPI("npsIncreaseFromInstantRefunds", v)} 
                 placeholder="10"
               />
-              <p className="text-xs text-muted-foreground">Expected NPS point increase</p>
+              <p className={fieldHelperClass}>Expected NPS point increase</p>
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm">LSE NPS Benchmark (%)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>LSE NPS Benchmark (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.lseNPSBenchmark} 
                 onChange={(v) => updateKPI("lseNPSBenchmark", v)} 
                 placeholder="1"
                 decimalPlaces={2}
               />
-              <p className="text-xs text-muted-foreground">Revenue increase per 7 NPS points</p>
+              <p className={fieldHelperClass}>Revenue increase per 7 NPS points</p>
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm">Forter CS Contact Reduction (%)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Forter CS Contact Reduction (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.forterCSReduction} 
                 onChange={(v) => updateKPI("forterCSReduction", v)} 
                 placeholder="78"
                 decimalPlaces={2}
                 warning={getValidationWarning("forterCSReduction", kpis.forterCSReduction)}
               />
-              <p className="text-xs text-muted-foreground">Reduction in CS tickets from instant refunds</p>
+              <p className={fieldHelperClass}>Reduction in CS tickets from instant refunds</p>
             </div>
           </div>
         </Card>
@@ -936,19 +1113,19 @@ export const ForterKPIConfig = ({
       {show12_13KPIs && (
         <Card className="p-4 space-y-4">
           <h4 className="font-medium text-primary">Account Takeover (ATO) Protection</h4>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">% of Fraudulent Logins (%)</Label>
-              <NumericInput 
+          <div className={gridClass}>
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>% of Fraudulent Logins (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.pctFraudulentLogins} 
                 onChange={(v) => updateKPI("pctFraudulentLogins", v)} 
                 placeholder="1"
                 decimalPlaces={2}
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm">Churn Likelihood from ATO (%)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Churn Likelihood from ATO (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.churnLikelihoodFromATO} 
                 onChange={(v) => updateKPI("churnLikelihoodFromATO", v)} 
                 placeholder="50"
@@ -956,9 +1133,9 @@ export const ForterKPIConfig = ({
                 warning={getValidationWarning("churnLikelihoodFromATO", kpis.churnLikelihoodFromATO)}
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm">ATO Catch Rate (%)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>ATO Catch Rate (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.atoCatchRate} 
                 onChange={(v) => updateKPI("atoCatchRate", v)} 
                 placeholder="90"
@@ -973,19 +1150,19 @@ export const ForterKPIConfig = ({
       {show14_15KPIs && (
         <Card className="p-4 space-y-4">
           <h4 className="font-medium text-primary">Sign-up Protection</h4>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">% of Fraudulent Sign-ups (%)</Label>
-              <NumericInput 
+          <div className={gridClass}>
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>% of Fraudulent Sign-ups (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.pctFraudulentSignups} 
                 onChange={(v) => updateKPI("pctFraudulentSignups", v)} 
                 placeholder="10"
                 decimalPlaces={2}
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm">Forter Fraudulent Sign-up Reduction (%)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Forter Fraudulent Sign-up Reduction (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.forterFraudulentSignupReduction} 
                 onChange={(v) => updateKPI("forterFraudulentSignupReduction", v)} 
                 placeholder="95"
@@ -993,16 +1170,16 @@ export const ForterKPIConfig = ({
                 warning={getValidationWarning("forterFraudulentSignupReduction", kpis.forterFraudulentSignupReduction)}
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm">Forter KYC Reduction (%)</Label>
-              <NumericInput 
+            <div className={fieldRowClass}>
+              <Label className={fieldLabelClass}>Forter KYC Reduction (%)</Label>
+              <NumericInput className={fieldInputClass} 
                 value={kpis.forterKYCReduction} 
                 onChange={(v) => updateKPI("forterKYCReduction", v)} 
                 placeholder="80"
                 decimalPlaces={2}
                 warning={getValidationWarning("forterKYCReduction", kpis.forterKYCReduction)}
               />
-              <p className="text-xs text-muted-foreground">Reduction in KYC checks needed</p>
+              <p className={fieldHelperClass}>Reduction in KYC checks needed</p>
             </div>
           </div>
         </Card>

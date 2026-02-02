@@ -15,7 +15,14 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+      return new Response(
+        JSON.stringify({
+          message: "Value Agent is not configured. Please add LOVABLE_API_KEY to your Supabase Edge Function secrets (Dashboard → Project Settings → Edge Functions).",
+          updatedData: {},
+          isComplete: false,
+        }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const systemPrompt = isAssistantMode ? getAssistantSystemPrompt(contextSummary) : getDataCollectionSystemPrompt();
@@ -82,15 +89,19 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
+    const errMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("Error:", error);
+    const isConfigError = errMessage.includes("LOVABLE_API_KEY") || errMessage.includes("configured");
     return new Response(
-      JSON.stringify({ 
-        message: "I'm sorry, I encountered an error. Could you please try again?",
+      JSON.stringify({
+        message: isConfigError
+          ? "Value Agent is not configured. Please add LOVABLE_API_KEY to your Supabase Edge Function secrets."
+          : "I'm sorry, I encountered an error. Could you please try again?",
         updatedData: {},
-        isComplete: false 
+        isComplete: false,
       }),
       {
-        status: 500,
+        status: isConfigError ? 503 : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

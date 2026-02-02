@@ -149,7 +149,7 @@ export function GenerateReportModal({
             <div className="grid grid-cols-2 gap-4">
               {/* Executive Summary Card */}
               <Card
-                className={`p-4 cursor-pointer transition-all hover:shadow-md ${
+                className={`p-4 cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] hover:shadow-md ${
                   selectedType === 'executive'
                     ? 'ring-2 ring-primary bg-primary/5'
                     : 'hover:bg-muted/50'
@@ -178,7 +178,7 @@ export function GenerateReportModal({
 
               {/* Value Assessment Deck Card */}
               <Card
-                className={`p-4 cursor-pointer transition-all hover:shadow-md ${
+                className={`p-4 cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] hover:shadow-md ${
                   selectedType === 'deck'
                     ? 'ring-2 ring-primary bg-primary/5'
                     : 'hover:bg-muted/50'

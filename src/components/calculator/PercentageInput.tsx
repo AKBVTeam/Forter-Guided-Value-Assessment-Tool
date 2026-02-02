@@ -122,28 +122,8 @@ export const PercentageInput = ({
   return (
     <div className="w-full space-y-2">
       <div className="flex items-center gap-3">
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={displayValue}
-          onChange={handleInputChange}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          placeholder={placeholder}
-          className={cn(
-            "w-24 text-right",
-            className,
-            "placeholder:text-muted-foreground/40",
-            readOnly && "border-transparent bg-transparent text-foreground cursor-default shadow-none focus-visible:ring-0",
-            disabled && !readOnly && "bg-muted text-muted-foreground cursor-not-allowed",
-            warning && "border-amber-500 focus-visible:ring-amber-500",
-          )}
-          disabled={isReadOnly}
-          readOnly={readOnly}
-        />
-        <span className="text-sm text-muted-foreground">%</span>
         {!hideSlider && (
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <Slider
               value={[effectiveValue]}
               onValueChange={handleSliderChange}
@@ -155,6 +135,26 @@ export const PercentageInput = ({
             />
           </div>
         )}
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={displayValue}
+          onChange={handleInputChange}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className={cn(
+            "w-24 text-right shrink-0",
+            className,
+            "placeholder:text-muted-foreground/40",
+            readOnly && "border-transparent bg-transparent text-foreground cursor-default shadow-none focus-visible:ring-0",
+            disabled && !readOnly && "bg-muted text-muted-foreground cursor-not-allowed",
+            warning && "border-amber-500 focus-visible:ring-amber-500",
+          )}
+          disabled={isReadOnly}
+          readOnly={readOnly}
+        />
+        <span className="text-sm text-muted-foreground shrink-0">%</span>
       </div>
       {warning && (
         <div className="flex items-center gap-1 text-amber-600 text-xs">
