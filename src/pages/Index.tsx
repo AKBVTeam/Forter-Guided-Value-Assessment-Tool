@@ -590,7 +590,7 @@ const Index = () => {
                 {/* Mode Selection */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <Card
-                    className="p-8 cursor-pointer hover:shadow-lg hover:border-sky-300 hover:bg-sky-50/80 dark:hover:bg-sky-950/30 transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] relative ring-2 ring-sky-300/50 dark:ring-sky-600/40 bg-sky-50/60 dark:bg-sky-950/25 border-sky-200/80 dark:border-sky-800/50"
+                    className="p-8 cursor-pointer hover:shadow-lg border-primary border-2 shadow-md transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] relative overflow-hidden bg-primary/5"
                     onClick={() => {
                       console.log('[Index] Clicking Guided Pathway button');
                       setShowWelcomeDialog(false);
@@ -611,12 +611,13 @@ const Index = () => {
                       }
                     }}
                   >
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-primary/20 to-transparent rounded-bl-full" />
                     <div className="absolute top-3 right-3">
                       <span className="bg-primary text-primary-foreground text-xs font-medium px-2.5 py-1 rounded-full">
                         Recommended
                       </span>
                     </div>
-                    <h2 className="text-2xl font-bold mb-3">Guided Value Pathway</h2>
+                    <h2 className="text-2xl font-bold mb-3 relative">Guided Value Pathway</h2>
                     <p className="text-muted-foreground mb-4">
                       Enter metrics directly through a structured form
                     </p>

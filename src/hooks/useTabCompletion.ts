@@ -110,9 +110,10 @@ export function useTabCompletion({ formData, selectedChallenges, valueTotals, ha
     const summaryViewed = viewedTabs.has('summary') || !!formData._valueSummaryViewed;
     const roiViewed = viewedTabs.has('roi') || !!formData._valueSummaryViewed;
     const summaryFraction = valueTotals?.benefitDriversQuantitativeFraction ?? 0;
-    // When Value Summary was previously viewed (or restored from saved analysis), show at least partial tick so it persists
+    // When Value Summary was previously viewed: use actual fraction when available; otherwise if restored from
+    // saved analysis (_valueSummaryViewed) treat as fully complete (1) so re-open does not reset to partial (0.5)
     const summaryProgress = summaryViewed
-      ? (hasData && summaryFraction > 0 ? summaryFraction : 0.5)
+      ? (hasData && summaryFraction > 0 ? summaryFraction : (formData._valueSummaryViewed ? 1 : 0.5))
       : 0;
     const roiViewedWithData = roiViewed && hasData;
     const roiFullyComplete = hasInvestment && showInvestmentRowsOn;
