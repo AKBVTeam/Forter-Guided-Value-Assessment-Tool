@@ -66,6 +66,8 @@ export interface Challenge1Inputs {
   forterChargebackReduction: number; // e.g., 50 for 50% reduction
   // Deduplication
   deduplication?: DeduplicationAssumptions;
+  // Fraud chargeback coverage - when enabled, Forter assumes chargeback liability (outcome $0)
+  includesFraudCBCoverage?: boolean;
 }
 
 export interface DeduplicationBreakdown {
@@ -132,6 +134,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     forterApprovalRateImprovement,
     forterChargebackReduction,
     deduplication = defaultDeduplicationAssumptions,
+    includesFraudCBCoverage = false,
   } = inputs;
 
   const fmt = (n: number) => n.toLocaleString('en-US');
@@ -265,13 +268,14 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
   const cbRateImprovement = (forterCBDecimal - customerCBDecimal) * 100;
 
   const customerChargebacks = customerApprovedValue * customerCBDecimal;
-  const forterChargebacks = displayForterApprovedValue * forterCBDecimal;
+  // When fraud chargeback coverage is enabled, Forter takes liability so customer sees $0
+  const forterChargebacks = includesFraudCBCoverage ? 0 : displayForterApprovedValue * forterCBDecimal;
   const chargebackSavings = customerChargebacks - forterChargebacks;
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: '', forterOutcome: fmtCur(displayForterApprovedValue), isCalculation: true },
-    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, forterCBDecimal * 100), forterOutcome: fmtPct(forterCBDecimal * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: forterCBDecimal * 100, valueType: 'percent' },
-    { formula: 'c = a*b', label: 'Fraud chargebacks', customerInput: fmtCur(-customerChargebacks), forterImprovement: fmtCur(chargebackSavings), forterOutcome: fmtCur(-forterChargebacks), valueDriver: 'cost', isCalculation: true },
+    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, forterCBDecimal * 100), forterOutcome: includesFraudCBCoverage ? '0.0%*' : fmtPct(forterCBDecimal * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: forterCBDecimal * 100, valueType: 'percent' },
+    { formula: 'c = a*b', label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', customerInput: fmtCur(-customerChargebacks), forterImprovement: fmtCur(chargebackSavings), forterOutcome: includesFraudCBCoverage ? '$0*' : fmtCur(-forterChargebacks), valueDriver: 'cost', isCalculation: true, footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined },
   ];
 
   // Build deduplication breakdown for info popover

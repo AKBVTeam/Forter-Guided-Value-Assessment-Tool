@@ -99,6 +99,7 @@ function calculateSegmentResults(
       forterApprovalRateImprovement: approvalImprovement,
       forterChargebackReduction: cbReduction,
       deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
+      includesFraudCBCoverage,
     };
 
     const results = calculateChallenge1(inputs);

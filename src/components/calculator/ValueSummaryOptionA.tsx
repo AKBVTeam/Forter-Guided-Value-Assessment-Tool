@@ -859,10 +859,11 @@ export const ValueSummaryOptionA = ({
       forterApprovalRateImprovement: approvalImprovement,
       forterChargebackReduction: cbReduction,
       deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
+      includesFraudCBCoverage: fraudCBCoverageEnabled,
     };
 
     return calculateChallenge1(inputs);
-  }, [isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate]);
+  }, [isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
 
   // Challenge 245 calculations
   const challenge245Results = useMemo(() => {
@@ -4874,8 +4875,8 @@ export const ValueSummaryOptionA = ({
                   sourceId === "c245-chargeback";
                 const isSegmentationEnabled = modalContext.modalFormData.segmentationEnabled && (modalContext.modalFormData.segments?.filter(s => s.enabled).length ?? 0) > 0;
                 
-                // Show fraud coverage toggle for chargeback calculators
-                const showFraudCoverageToggle = sourceId === "c245-chargeback" || sourceId === "c7-disputes";
+                // Show fraud coverage toggle for chargeback calculators and Challenge 1 (reduce false declines / reduce fraud chargebacks)
+                const showFraudCoverageToggle = sourceId === "c1-revenue" || sourceId === "c1-chargeback" || sourceId === "c245-chargeback" || sourceId === "c7-disputes";
                 
                 return (
                   <div className="space-y-4">

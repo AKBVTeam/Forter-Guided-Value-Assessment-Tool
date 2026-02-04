@@ -101,6 +101,7 @@ export function runStandaloneCalculator(
         forterApprovalRateImprovement: approvalImprovement,
         forterChargebackReduction: cbReduction,
         deduplication: { ...defaultDeduplicationAssumptions, ...deduplication },
+        includesFraudCBCoverage: fraudCBCoverageEnabled,
       };
       const result = calculateChallenge1(inputs);
       if (sourceCalculatorId === "c1-revenue") {
