@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ForterKPIs, defaultForterKPIs } from "@/components/calculator/ForterKPIConfig";
 import { SavedAnalysis } from "@/components/calculator/WelcomeDialog";
 import { Segment } from "@/lib/segments";
+import type { InvestmentInputs } from "@/lib/roiCalculations";
 
 export type CalculatorData = {
   // Customer Information
@@ -216,6 +217,8 @@ export type CalculatorData = {
   customBenefitNames?: Record<string, string>;
   /** Duplicated calculators (custom pathway): each has its own inputs, not shared with main form. Key = unique id (e.g. c1-revenue-dup-123). */
   standaloneCalculators?: Record<string, StandaloneCalculator>;
+  /** Investment inputs (Enter Investment modal) – persisted so re-opening an analysis restores investment cost */
+  investmentInputs?: InvestmentInputs;
 };
 
 /** A duplicated standard calculator with its own inputs (custom pathway duplication) */
@@ -821,6 +824,7 @@ const Index = () => {
               entryMode={mode}
               externalActiveTab={activeTab}
               onCompletionChange={setTabCompletion}
+              onInvestmentPersist={(inputs) => setCalculatorData(prev => ({ ...prev, investmentInputs: inputs }))}
             />
           </div>
         </div>

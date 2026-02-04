@@ -63,9 +63,11 @@ interface ManualInputFormProps {
   externalActiveTab?: string;
   /** Callback to notify parent of completion state for progress bar */
   onCompletionChange?: (completion: { profile: number; challenges: number; inputs: number; forter: number; summary: number; roi: number }) => void;
+  /** Persist investment inputs to parent so re-opening an analysis restores investment cost */
+  onInvestmentPersist?: (inputs: InvestmentInputs) => void;
 }
 
-export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange }: ManualInputFormProps) => {
+export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange, onInvestmentPersist }: ManualInputFormProps) => {
   const [formData, setFormData] = useState<CalculatorData>(() => {
     // For custom mode with no existing analysis, start with zeroed customer inputs
     const isNewCustomAssessment = entryMode === "custom" && !initialData?._analysisId;
@@ -224,7 +226,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   });
   /** When set (e.g. from ROI tab benefit click), open the benefit modal without switching tab */
   const [benefitModalCalculatorId, setBenefitModalCalculatorId] = useState<string | null>(null);
-  const [investmentInputs, setInvestmentInputs] = useState<InvestmentInputs>(defaultInvestmentInputs);
+  const [investmentInputs, setInvestmentInputs] = useState<InvestmentInputs>(() => initialData?.investmentInputs ?? defaultInvestmentInputs);
   const [showInvestmentRowsToggle, setShowInvestmentRowsToggle] = useState(true);
   const [templateDownloaded, setTemplateDownloaded] = useState(false);
   const [showCSVDownloadAnimation, setShowCSVDownloadAnimation] = useState(false);
@@ -313,6 +315,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     // Restore ROI unlock state: if this analysis had Value Summary viewed, ROI tab stays unlocked
     setHasViewedValueSummary(!!initialData?._valueSummaryViewed);
 
+    // Restore investment inputs so re-opening an analysis shows the same investment cost
+    setInvestmentInputs(initialData?.investmentInputs ?? defaultInvestmentInputs);
+
     // Mark that we just loaded this analysis so the currency effect can skip prompting on the next render
     justLoadedAnalysisIdRef.current = newAnalysisId;
     
@@ -378,6 +383,12 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     const costs = calculateInvestmentCosts(investmentInputs, formData);
     return costs.totalACV > 0 || costs.integrationCost > 0;
   }, [investmentInputs, formData]);
+
+  // Persist investment inputs to parent so re-opening an analysis restores investment cost
+  const handleInvestmentInputsChange = useCallback((inputs: InvestmentInputs) => {
+    setInvestmentInputs(inputs);
+    onInvestmentPersist?.(inputs);
+  }, [onInvestmentPersist]);
 
   // Track tab completion for checkmark badges
   const { completion: tabCompletion, markTabViewed, canGenerateReports, showReportAnimation } = useTabCompletion({
@@ -2412,7 +2423,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               onChallengeChange={handleChallengeChange}
               isCustomMode={!showGuidedTabs}
               investmentInputs={investmentInputs}
-              onInvestmentInputsChange={setInvestmentInputs}
+              onInvestmentInputsChange={handleInvestmentInputsChange}
               openBenefitCalculatorId={benefitModalCalculatorId}
               onBenefitModalClose={() => setBenefitModalCalculatorId(null)}
             />
@@ -2439,7 +2450,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               showInMillions={showInMillions}
               onShowInMillionsChange={setShowInMillions}
               investmentInputs={investmentInputs}
-              onInvestmentInputsChange={setInvestmentInputs}
+              onInvestmentInputsChange={handleInvestmentInputsChange}
               showInvestmentRowsToggle={showInvestmentRowsToggle}
               onShowInvestmentRowsToggleChange={setShowInvestmentRowsToggle}
               gmvUpliftBreakdown={valueTotals.gmvUpliftBreakdown}
@@ -2494,7 +2505,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               onChallengeChange={handleChallengeChange}
               isCustomMode={!showGuidedTabs}
               investmentInputs={investmentInputs}
-              onInvestmentInputsChange={setInvestmentInputs}
+              onInvestmentInputsChange={handleInvestmentInputsChange}
               openBenefitCalculatorId={benefitModalCalculatorId}
               onBenefitModalClose={() => setBenefitModalCalculatorId(null)}
             />
