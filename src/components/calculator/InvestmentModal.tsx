@@ -192,14 +192,25 @@ export function InvestmentModal({
       const updated = { ...prev };
       const changedFields: string[] = [];
       
-      // On first open only: turn all product toggles off so user opts in
+      // On first open only: turn all product toggles off so user opts in.
+      // Only apply this when parent state has no categories enabled (true first open).
+      // If parent already has any category enabled (e.g. user switched tab and came back), preserve it.
+      const parentHasAnyEnabled = !!(
+        investmentInputs.fraudManagement?.enabled ||
+        investmentInputs.paymentOptimization?.enabled ||
+        investmentInputs.disputeManagement?.enabled ||
+        investmentInputs.abusePrevention?.enabled ||
+        investmentInputs.accountProtection?.enabled
+      );
       if (!investmentModalFirstOpenRef.current) {
         investmentModalFirstOpenRef.current = true;
-        updated.fraudManagement.enabled = false;
-        updated.paymentOptimization.enabled = false;
-        updated.disputeManagement.enabled = false;
-        updated.abusePrevention.enabled = false;
-        updated.accountProtection.enabled = false;
+        if (!parentHasAnyEnabled) {
+          updated.fraudManagement.enabled = false;
+          updated.paymentOptimization.enabled = false;
+          updated.disputeManagement.enabled = false;
+          updated.abusePrevention.enabled = false;
+          updated.accountProtection.enabled = false;
+        }
       }
       // Otherwise: keep persisted enabled state from prev (don't overwrite from enabledSolutions)
       
