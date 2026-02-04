@@ -2472,9 +2472,10 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
           </TabsContent>
         </Tabs>
 
-        {/* When on ROI (or another tab) and user opens a benefit from ROI, the Value Summary tab is unmounted
-            so the benefit modal would never open. Mount a hidden instance here so the modal can open. */}
-        {activeTab !== 'summary' && benefitModalCalculatorId != null && (
+        {/* When not on Value Summary, mount a hidden instance so: (1) value totals (e.g. EBITDA) are
+            always computed and ROI shows correct numbers when user opens a saved analysis and goes
+            straight to ROI; (2) when user opens a benefit from ROI, the benefit modal can open. */}
+        {activeTab !== 'summary' && (
           <div className="sr-only absolute opacity-0 pointer-events-none w-0 h-0 overflow-hidden" aria-hidden="true">
             <ValueSummaryOptionA
               formData={formData}
