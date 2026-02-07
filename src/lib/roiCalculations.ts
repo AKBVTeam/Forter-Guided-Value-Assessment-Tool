@@ -191,6 +191,20 @@ export const defaultInvestmentInputs: InvestmentInputs = {
   year3DiscountPct: 0,
 };
 
+// Coerce to number; use 0 when empty/cleared so section total reverts to 0 when user clears fields
+function numOrZero(v: unknown): number {
+  if (v === undefined || v === null || v === '') return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Use default price only when value was never set (undefined/null); when user clears (0 or '') use 0
+function costOrZero(value: unknown, defaultPrice: number): number {
+  if (value === undefined || value === null || value === '') return defaultPrice;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 // Calculate investment costs from guided inputs
 export function calculateInvestmentCosts(
   inputs: InvestmentInputs,
@@ -198,9 +212,9 @@ export function calculateInvestmentCosts(
 ): { totalACV: number; integrationCost: number; breakdown: Record<string, number> } {
   if (inputs.manualOverride) {
     return {
-      totalACV: inputs.manualInvestmentCost || 0,
-      integrationCost: inputs.manualIntegrationCost || 0,
-      breakdown: { manual: inputs.manualInvestmentCost || 0 },
+      totalACV: numOrZero(inputs.manualInvestmentCost),
+      integrationCost: numOrZero(inputs.manualIntegrationCost),
+      breakdown: { manual: numOrZero(inputs.manualInvestmentCost) },
     };
   }
   
@@ -209,31 +223,29 @@ export function calculateInvestmentCosts(
     ? (formData.amerAnnualGMV || 0) / (formData.amerGrossAttempts || 1)
     : 150; // Default AOV
   
-  // Fraud Management
+  // Fraud Management: use only input values; when cleared, 0 so total reverts to 0
   if (inputs.fraudManagement.enabled) {
-    const transactions = inputs.fraudManagement.annualTransactions || formData.amerGrossAttempts || 0;
-    const gmv = inputs.fraudManagement.annualGMV || formData.amerAnnualGMV || 0;
-    const costPerDecision = inputs.fraudManagement.costPerDecision || getPriceByAOV(fraudManagementPricing, aov);
-    const discount = (inputs.fraudManagement.discount || 0) / 100;
+    const transactions = numOrZero(inputs.fraudManagement.annualTransactions);
+    const gmv = numOrZero(inputs.fraudManagement.annualGMV);
+    const costPerDecision = costOrZero(inputs.fraudManagement.costPerDecision, getPriceByAOV(fraudManagementPricing, aov));
+    const discount = numOrZero(inputs.fraudManagement.discount) / 100;
     
     let fraudACV = 0;
     if (inputs.fraudManagement.coverage === 'uncovered') {
       fraudACV = transactions * costPerDecision * (1 - discount);
     } else {
-      // Covered: calculate based on credit card traffic not covered by 3DS
-      const ccPct = (inputs.fraudManagement.creditCardTrafficPct || 80) / 100;
-      const threeDSRate = (inputs.fraudManagement.threeDSRateWithForter || 30) / 100;
-      const coveragePct = ccPct * (1 - threeDSRate);
-      const coverageFeeBps = (inputs.fraudManagement.coverageFeeBps || 0.15) / 100;
+      const ccPct = numOrZero(inputs.fraudManagement.creditCardTrafficPct) || 80;
+      const threeDSRate = numOrZero(inputs.fraudManagement.threeDSRateWithForter) || 30;
+      const coveragePct = (ccPct / 100) * (1 - threeDSRate / 100);
+      const coverageFeeBps = numOrZero(inputs.fraudManagement.coverageFeeBps) || 0.15;
       const uncoveredCost = transactions * costPerDecision * (1 - discount);
-      const coveredCost = gmv * coveragePct * coverageFeeBps;
+      const coveredCost = gmv * coveragePct * (coverageFeeBps / 100);
       fraudACV = uncoveredCost + coveredCost;
     }
     
-    // Add fraud chargeback coverage cost if enabled
     if (inputs.fraudManagement.includesFraudCBCoverage) {
-      const takeRateBps = inputs.fraudManagement.fraudCBCoverageTakeRate || 15;
-      const takeRate = takeRateBps / 10000; // Convert basis points to decimal (15 bps = 0.0015)
+      const takeRateBps = numOrZero(inputs.fraudManagement.fraudCBCoverageTakeRate) || 15;
+      const takeRate = takeRateBps / 10000;
       const cbCoverageCost = gmv * takeRate;
       breakdown['Fraud CB Coverage'] = cbCoverageCost;
     }
@@ -241,41 +253,41 @@ export function calculateInvestmentCosts(
     breakdown['Fraud Management'] = fraudACV;
   }
   
-  // Payment Optimization
+  // Payment Optimization: when fields cleared, 0
   if (inputs.paymentOptimization.enabled) {
-    const transactions = inputs.paymentOptimization.annualTransactions || formData.amerGrossAttempts || 0;
-    const ccPct = (inputs.paymentOptimization.creditCardTrafficPct || 80) / 100;
-    const costPerDecision = inputs.paymentOptimization.costPerDecision || 0.02;
-    const discount = (inputs.paymentOptimization.discount || 0) / 100;
-    const paymentACV = transactions * ccPct * costPerDecision * (1 - discount);
+    const transactions = numOrZero(inputs.paymentOptimization.annualTransactions);
+    const ccPct = numOrZero(inputs.paymentOptimization.creditCardTrafficPct) || 80;
+    const costPerDecision = costOrZero(inputs.paymentOptimization.costPerDecision, 0.02);
+    const discount = numOrZero(inputs.paymentOptimization.discount) / 100;
+    const paymentACV = transactions * (ccPct / 100) * costPerDecision * (1 - discount);
     breakdown['Payment Optimization'] = paymentACV;
   }
   
-  // Dispute Management
+  // Dispute Management: when fields cleared, 0
   if (inputs.disputeManagement.enabled) {
-    const valueOfWonCBs = inputs.disputeManagement.valueOfWonChargebacks || 0;
-    const revenueSharePct = (inputs.disputeManagement.revenueSharePct || 20) / 100;
-    const disputeACV = valueOfWonCBs * revenueSharePct;
+    const valueOfWonCBs = numOrZero(inputs.disputeManagement.valueOfWonChargebacks);
+    const revenueSharePct = numOrZero(inputs.disputeManagement.revenueSharePct);
+    const disputeACV = valueOfWonCBs * (revenueSharePct / 100);
     breakdown['Dispute Management'] = disputeACV;
   }
   
-  // Abuse Prevention
+  // Abuse Prevention: when fields cleared, 0
   if (inputs.abusePrevention.enabled) {
-    const transactions = inputs.abusePrevention.annualTransactions || formData.amerGrossAttempts || 0;
-    const costPerDecision = inputs.abusePrevention.costPerDecision || getPriceByAOV(abusePreventionPricing, aov);
-    const discount = (inputs.abusePrevention.discount || 0) / 100;
+    const transactions = numOrZero(inputs.abusePrevention.annualTransactions);
+    const costPerDecision = costOrZero(inputs.abusePrevention.costPerDecision, getPriceByAOV(abusePreventionPricing, aov));
+    const discount = numOrZero(inputs.abusePrevention.discount) / 100;
     const abuseACV = transactions * costPerDecision * (1 - discount);
     breakdown['Abuse Prevention'] = abuseACV;
   }
   
-  // Account Protection (Login + Signup)
+  // Account Protection (Login + Signup): use only input values; when cleared, 0 (no formData/cost defaults)
   if (inputs.accountProtection.enabled) {
-    const annualLogins = (inputs.accountProtection.annualLogins || (formData.monthlyLogins || 0) * 12);
-    const loginCost = inputs.accountProtection.costPerAPICall || 0.02;
+    const annualLogins = numOrZero(inputs.accountProtection.annualLogins);
+    const loginCost = numOrZero(inputs.accountProtection.costPerAPICall);
     const loginACV = annualLogins * loginCost;
     
-    const annualSignups = (inputs.accountProtection.annualSignups || (formData.monthlySignups || 0) * 12);
-    const signupCost = inputs.accountProtection.signupCostPerAPICall || 0.50;
+    const annualSignups = numOrZero(inputs.accountProtection.annualSignups);
+    const signupCost = numOrZero(inputs.accountProtection.signupCostPerAPICall);
     const signupACV = annualSignups * signupCost;
     
     breakdown['Login Protection'] = loginACV;
@@ -295,7 +307,7 @@ export function calculateInvestmentCosts(
   
   return {
     totalACV,
-    integrationCost: inputs.integrationCost || 0,
+    integrationCost: numOrZero(inputs.integrationCost),
     breakdown,
   };
 }
