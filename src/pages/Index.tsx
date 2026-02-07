@@ -259,6 +259,8 @@ const Index = () => {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [showWhatIsBusinessValueModal, setShowWhatIsBusinessValueModal] = useState(false);
   const initialDataRef = useRef<CalculatorData>({ forterKPIs: defaultForterKPIs });
+  // Changelog baseline: only updated on load / start new / save as so edits are detected reliably
+  const [changelogBaseline, setChangelogBaseline] = useState<CalculatorData>(() => ({ forterKPIs: defaultForterKPIs }));
   
   // Navigation state for chat-driven tab changes
   const [activeTab, setActiveTab] = useState<string | undefined>(undefined);
@@ -371,6 +373,15 @@ const Index = () => {
     }
   };
 
+  // Sync changelog baseline when we have an active analysis but baseline was never set (e.g. chose pathway without load, or session restored)
+  useEffect(() => {
+    const dataId = calculatorData._analysisId;
+    const baselineId = changelogBaseline._analysisId;
+    if (dataId && dataId !== baselineId) {
+      setChangelogBaseline({ ...calculatorData });
+    }
+  }, [calculatorData._analysisId, changelogBaseline._analysisId]);
+
   // Handle partial field updates to prevent full object replacement
   const handleFieldChange = useCallback((field: keyof CalculatorData, value: any) => {
     setCalculatorData(prev => ({ ...prev, [field]: value }));
@@ -379,6 +390,11 @@ const Index = () => {
   // Handle bulk updates (e.g., from chatbot or loading saved data)
   const handleBulkUpdate = useCallback((data: Partial<CalculatorData>) => {
     setCalculatorData(prev => ({ ...prev, ...data }));
+  }, []);
+
+  // Stable callback so ChangelogPanel's debounce timer is not cleared on every render
+  const handleChangelogUpdate = useCallback((entries: PersistedChangelogEntry[]) => {
+    setCalculatorData(prev => ({ ...prev, _changelogHistory: entries }));
   }, []);
 
   const handleDataComplete = useCallback((data: CalculatorData) => {
@@ -408,7 +424,9 @@ const Index = () => {
     console.log('[Index] Loading analysis with _pathwayMode:', data._pathwayMode);
     setCalculatorData(data);
     setCustomerLogoUrl(logoUrl);
-    initialDataRef.current = { ...data };
+    const baseline = { ...data };
+    initialDataRef.current = baseline;
+    setChangelogBaseline(baseline);
     setShowWelcomeDialog(false);
     // Restore the pathway mode that was saved with the analysis
     setMode(data._pathwayMode || "manual");
@@ -436,6 +454,7 @@ const Index = () => {
     };
     console.log('[Index handleStartNew] newData._pathwayMode after spread:', (newData as any)._pathwayMode);
     setCalculatorData(newData);
+    setChangelogBaseline({ ...newData });
     
     // Auto-save the new analysis immediately
     const newAnalysis: SavedAnalysis = {
@@ -469,9 +488,11 @@ const Index = () => {
   const handleNewAssessment = useCallback(() => {
     // Note: Benefit IDs and driver states are now scoped per analysis ID in ValueSummaryOptionA
     // No need to clear global keys - each analysis uses its own scoped localStorage keys
-    setCalculatorData({ forterKPIs: defaultForterKPIs });
+    const empty = { forterKPIs: defaultForterKPIs };
+    setCalculatorData(empty);
     setCustomerLogoUrl("");
-    initialDataRef.current = { forterKPIs: defaultForterKPIs };
+    initialDataRef.current = empty;
+    setChangelogBaseline(empty);
     setShowResults(false);
     setMode("select");
     setShowWelcomeDialog(true);
@@ -534,8 +555,9 @@ const Index = () => {
                             _startedAt: new Date().toISOString(),
                             _lastUpdatedAt: new Date().toISOString(),
                           } as CalculatorData;
-                          // Also update the initialDataRef so the change detection doesn't see it as "loaded"
-                          initialDataRef.current = { ...updated };
+                          const baseline = { ...updated };
+                          initialDataRef.current = baseline;
+                          setChangelogBaseline(baseline);
                           return updated;
                         });
                       }}
@@ -760,23 +782,28 @@ const Index = () => {
                     customerLogoUrl={customerLogoUrl}
                     onSaveAs={(newId, newName, authorName) => {
                       const now = new Date().toISOString();
-                      setCalculatorData(prev => ({
-                        ...prev,
-                        _analysisId: newId,
-                        _analysisName: newName,
-                        _authorName: authorName,
-                        _startedAt: now,
-                        _lastUpdatedAt: now,
-                      } as CalculatorData));
+                      setCalculatorData(prev => {
+                        const updated = {
+                          ...prev,
+                          _analysisId: newId,
+                          _analysisName: newName,
+                          _authorName: authorName,
+                          _startedAt: now,
+                          _lastUpdatedAt: now,
+                        } as CalculatorData;
+                        const baseline = { ...updated };
+                        initialDataRef.current = baseline;
+                        setChangelogBaseline(baseline);
+                        return updated;
+                      });
                     }}
                   />
                   <ChangelogPanel
+                    key={changelogBaseline._analysisId ?? "new"}
                     currentData={calculatorData}
-                    initialData={initialDataRef.current}
+                    initialData={changelogBaseline}
                     persistedChangelog={calculatorData._changelogHistory ?? []}
-                    onChangelogUpdate={(entries) =>
-                      setCalculatorData((prev) => ({ ...prev, _changelogHistory: entries }))
-                    }
+                    onChangelogUpdate={handleChangelogUpdate}
                   />
                   <Tooltip>
                     <TooltipTrigger asChild>

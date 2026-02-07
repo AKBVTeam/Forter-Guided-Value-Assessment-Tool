@@ -1348,16 +1348,16 @@ export const ValueSummaryOptionA = ({
       
       if (shouldShowDriver) {
         if (challenge1Results) {
-          // Completion rate: when segment analysis is enabled use aggregated rows (same as Total calculator); otherwise use global calculator row
-          const rowsForCompletion = isSegmentationEnabled && segmentedC1AggregateRows.length > 0
+          // C1 only (no C2,4,5): use row d "Fraud approval rate (%)" — customer input and Forter outcome, plus uplift
+          const rowsForC1 = isSegmentationEnabled && segmentedC1AggregateRows.length > 0
             ? segmentedC1AggregateRows
             : challenge1Results.calculator1.rows;
-          const completionRateRow = rowsForCompletion.find((r) => r.label === "Completion rate (%)");
+          const fraudApprovalRow = rowsForC1.find((r) => r.label === "Fraud approval rate (%)");
           const parsePct = (s: string) => (s ? parseFloat(String(s).replace("%", "").trim()) : 0) || 0;
-          const currentCompletion = completionRateRow ? parsePct(completionRateRow.customerInput) : 0;
-          const targetCompletion = completionRateRow ? parsePct(completionRateRow.forterOutcome) : 0;
-          const percentChange = currentCompletion > 0
-            ? ((targetCompletion - currentCompletion) / currentCompletion) * 100
+          const currentApproval = fraudApprovalRow ? parsePct(fraudApprovalRow.customerInput) : 0;
+          const targetApproval = fraudApprovalRow ? parsePct(fraudApprovalRow.forterOutcome) : 0;
+          const percentChange = currentApproval > 0
+            ? ((targetApproval - currentApproval) / currentApproval) * 100
             : 0;
 
           // Use segmented total if available; otherwise use global result
@@ -1376,9 +1376,9 @@ export const ValueSummaryOptionA = ({
             calculatorTitle: "Reduce false declines and approve more transactions",
             calculatorRows: rowsForCalculator,
             performanceHighlight: {
-              label: "Completion rate",
-              current: Math.round(currentCompletion * 10) / 10,
-              target: Math.round(targetCompletion * 10) / 10,
+              label: "Fraud approval rate",
+              current: Math.round(currentApproval * 10) / 10,
+              target: Math.round(targetApproval * 10) / 10,
               unit: "%",
               percentChange,
             },

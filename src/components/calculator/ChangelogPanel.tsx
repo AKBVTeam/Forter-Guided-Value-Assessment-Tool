@@ -7,8 +7,8 @@ import { CalculatorData, PersistedChangelogEntry } from "@/pages/Index";
 import { InvestmentInputs } from "@/lib/roiCalculations";
 
 const MAX_CHANGELOG_ENTRIES = 500;
-/** Delay (ms) after last edit before a change is recorded as "completed" (avoids logging every keystroke) */
-const CHANGELOG_COMMIT_DEBOUNCE_MS = 1500;
+/** Delay (ms) after last edit before a change is recorded (avoids logging every keystroke; short enough that changes feel responsive) */
+const CHANGELOG_COMMIT_DEBOUNCE_MS = 800;
 
 interface ChangelogPanelProps {
   currentData: CalculatorData;
@@ -301,7 +301,8 @@ export const ChangelogPanel = ({
   persistedChangelog = [],
   onChangelogUpdate,
 }: ChangelogPanelProps) => {
-  const prevDataRef = useRef<CalculatorData>(initialData);
+  // Use a copy so we never share reference with parent; ensures diff detects all field changes (e.g. commission, gross margin)
+  const prevDataRef = useRef<CalculatorData>({ ...initialData });
   const prevInvestmentRef = useRef<Record<string, unknown>>(flattenInvestmentInputs(initialInvestmentInputs));
   const analysisIdRef = useRef<string | undefined>(initialData._analysisId);
   const currentDataRef = useRef<CalculatorData>(currentData);
@@ -319,12 +320,12 @@ export const ChangelogPanel = ({
     return sa === sb;
   }, []);
 
-  // Reset baseline when analysis changes (e.g. load different analysis)
+  // Reset baseline when analysis changes (e.g. load different analysis); keep a full shallow copy so diff sees all field changes
   useEffect(() => {
     if (initialData._analysisId !== analysisIdRef.current) {
       analysisIdRef.current = initialData._analysisId;
       prevDataRef.current = { ...initialData };
-      prevInvestmentRef.current = flattenInvestmentInputs(initialInvestmentInputs);
+      prevInvestmentRef.current = { ...flattenInvestmentInputs(initialInvestmentInputs) };
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
