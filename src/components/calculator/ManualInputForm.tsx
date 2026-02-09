@@ -297,6 +297,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     
     // This is a real load of different analysis data
     loadedAnalysisIdRef.current = newAnalysisId;
+
+    // Always start on Profile when opening a saved analysis
+    setActiveTab("profile");
     
     // Reset all local state to match the loaded analysis - FULL state reset
     const newFormData = {
@@ -312,14 +315,16 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       ...initialData,
     };
     // Ensure base currency is always restored so investment costs (stored in that currency) are not reconverted or reset
-    if (initialData?.baseCurrency != null && initialData.baseCurrency !== '') {
-      newFormData.baseCurrency = initialData.baseCurrency;
-    } else {
-      newFormData.baseCurrency = newFormData.baseCurrency ?? 'USD';
-    }
+    const restoredCurrency = (initialData?.baseCurrency != null && initialData.baseCurrency !== '')
+      ? initialData.baseCurrency
+      : (newFormData.baseCurrency ?? 'USD');
+    newFormData.baseCurrency = restoredCurrency;
 
     setFormData(newFormData);
     setSelectedChallenges(initialData?.selectedChallenges ?? {});
+    // Sync restored base currency to parent so Index state stays correct and auto-save persists it
+    onFieldChange?.('baseCurrency' as keyof CalculatorData, restoredCurrency);
+    prevBaseCurrencyRef.current = restoredCurrency;
     setSegments(initialData?.segments ?? []);
     setSegmentationEnabled(initialData?.segmentationEnabled ?? false);
 
@@ -345,11 +350,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     if (initialData?._pathwayMode === 'custom') {
       console.log('[ManualInputForm] Detected custom pathway in initialData, setting showGuidedTabs to false');
       setShowGuidedTabs(false);
-      setActiveTab("profile");
     } else if (entryMode !== "custom") {
       console.log('[ManualInputForm] Setting showGuidedTabs to true for guided mode');
       setShowGuidedTabs(true);
-      setActiveTab("profile");
       // Don't show landing if we have use cases (challenges) or strategic objectives from the loaded analysis
       const hasChallenges = Object.keys(initialData?.selectedChallenges ?? {}).some(k => initialData?.selectedChallenges?.[k]);
       const hasObjectives = (initialData?.selectedObjectives?.length ?? 0) > 0;
@@ -2403,9 +2406,14 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
           {/* Forter Performance Assumptions Tab */}
           <TabsContent value="forter" className="space-y-4 mt-6" data-tab-title="Forter KPI">
             <div className="flex items-center justify-between gap-4 mb-4">
-              <p className="text-sm text-muted-foreground">
-                Configure Forter performance assumptions and targets used in the value model.
-              </p>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  Configure Forter performance assumptions and targets used in the value model.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Updates to this tab are optional (support by Risk/Analytics). Figures currently benchmarked to Forter and 3rd party data (based on Country, Industry, AoV etc.).
+                </p>
+              </div>
               <div className="flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
                 <Tooltip>
                   <TooltipTrigger asChild>

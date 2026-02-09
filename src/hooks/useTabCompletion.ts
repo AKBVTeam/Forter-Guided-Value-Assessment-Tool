@@ -139,7 +139,14 @@ export function useTabCompletion({ formData, selectedChallenges, valueTotals, ha
     return totalValue > 0;
   }, [valueTotals]);
   
-  // Trigger animation when report becomes unlocked
+  // When opening an analysis that already had Value Summary viewed, remember report was unlocked (no re-highlight animation)
+  useEffect(() => {
+    if (formData._valueSummaryViewed) {
+      wasReportUnlockedRef.current = true;
+    }
+  }, [formData._valueSummaryViewed]);
+
+  // Trigger animation when report becomes unlocked (skip if restored from saved analysis)
   useEffect(() => {
     if (canGenerateReports && !wasReportUnlockedRef.current) {
       wasReportUnlockedRef.current = true;

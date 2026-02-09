@@ -3679,7 +3679,7 @@ export const ValueSummaryOptionA = ({
                     )}
                     <div className="flex-1">
                       <p className="text-base font-semibold text-foreground mb-1">
-                        Contribution to EBITDA
+                        Annual run-rate Contribution to EBITDA
                       </p>
                       <p className="text-sm text-muted-foreground">
                         {businessGrowthTotal > 0
