@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +19,16 @@ import {
   Shield,
   FileText,
   Sparkles,
+  Users,
+  Download,
+  CreditCard,
+  ShieldCheck,
+  ShoppingBag,
+  PieChart,
+  Cpu,
+  LayoutDashboard,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const WHAT_IS_BUSINESS_VALUE_STORAGE_KEY = "gva_has_seen_what_is_business_value";
@@ -39,6 +48,8 @@ interface WhatIsBusinessValueModalProps {
   onOpenChange: (open: boolean) => void;
   /** When true, closing the modal marks it as "seen" for first-time logic */
   markAsSeenOnClose?: boolean;
+  /** When set, open with this tab active (e.g. "personas" for Buyer Personas) */
+  initialTab?: string;
 }
 
 const tabConfig = [
@@ -67,14 +78,35 @@ const tabConfig = [
     label: "Next Steps",
     icon: ArrowRight,
   },
+  {
+    value: "personas",
+    label: "Buyer Personas",
+    icon: Users,
+  },
+];
+
+export const BUYER_PERSONA_PDFS: { label: string; filename: string; icon: LucideIcon; jobToBeDone: string }[] = [
+  { label: "Payments Director", filename: "Payments Director Persona Card.pdf", icon: CreditCard, jobToBeDone: "Optimize approval rates and payment funnel performance." },
+  { label: "Fraud Director", filename: "Fraud Director Persona Card.pdf", icon: ShieldCheck, jobToBeDone: "Reduce fraud loss and chargebacks while protecting revenue." },
+  { label: "Digital / e-Commerce Director", filename: "Digital - e-Commerce Director Persona Card.pdf", icon: ShoppingBag, jobToBeDone: "Grow digital revenue and improve customer experience." },
+  { label: "Chief Financial Officer", filename: "Chief Financial Officer Persona Card.pdf", icon: PieChart, jobToBeDone: "Deliver measurable ROI and align investment to business outcomes." },
+  { label: "Chief Technology Officer", filename: "Chief Technology Officer Persona Card.pdf", icon: Cpu, jobToBeDone: "Simplify fraud tech stack and reduce operational complexity." },
+  { label: "Chief Digital Officer", filename: "Chief Digital Officer Persona Card.pdf", icon: LayoutDashboard, jobToBeDone: "Drive digital strategy and cross-functional value from identity solutions." },
 ];
 
 export function WhatIsBusinessValueModal({
   open,
   onOpenChange,
   markAsSeenOnClose = false,
+  initialTab,
 }: WhatIsBusinessValueModalProps) {
   const [activeTab, setActiveTab] = useState("intro");
+
+  useEffect(() => {
+    if (open && initialTab && tabConfig.some((t) => t.value === initialTab)) {
+      setActiveTab(initialTab);
+    }
+  }, [open, initialTab]);
 
   const handleOpenChange = (next: boolean) => {
     if (!next && markAsSeenOnClose) {
@@ -280,6 +312,49 @@ export function WhatIsBusinessValueModal({
                     <strong>Tip:</strong> Work through the tabs in order for the best experience. Value Summary and ROI unlock after you’ve selected use cases and (for ROI) viewed the Value Summary at least once.
                   </p>
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value="personas"
+              className="mt-0 px-6 py-5 data-[state=inactive]:hidden focus:outline-none"
+            >
+              <div className="space-y-4 animate-in fade-in-50 duration-300">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <Users className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground">Buyer Persona Cards</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Download PDF persona cards to align conversations and value messaging with key stakeholders.
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2">
+                  {BUYER_PERSONA_PDFS.map(({ label, filename, icon: Icon, jobToBeDone }, i) => (
+                    <li
+                      key={filename}
+                      className="animate-in slide-in-from-left-4 duration-300"
+                      style={{ animationDelay: `${i * 60}ms`, animationFillMode: "backwards" }}
+                    >
+                      <a
+                        href={`/buyer-personas/${encodeURIComponent(filename)}`}
+                        download={filename}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 rounded-lg border p-3 text-sm text-foreground transition-colors hover:border-primary/50 hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <Icon className="h-5 w-5 text-primary shrink-0 mt-0.5 self-start" aria-hidden />
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium block">{label}</span>
+                          <span className="text-xs text-muted-foreground block mt-0.5">{jobToBeDone}</span>
+                        </div>
+                        <Download className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </TabsContent>
           </ScrollArea>

@@ -19,6 +19,7 @@ import {
   Check,
   RotateCcw,
   MousePointerClick,
+  Star,
 } from "lucide-react";
 import { 
   STRATEGIC_OBJECTIVES, 
@@ -28,7 +29,9 @@ import {
   getUseCaseIdsFromChallenges,
   StrategicObjectiveId,
   USE_CASES,
+  isUseCaseRecommendedForPersonas,
 } from "@/lib/useCaseMapping";
+import { BUYER_PERSONA_PDFS } from "./WhatIsBusinessValueModal";
 import { ALL_CHALLENGES } from "@/lib/calculations";
 import { SolutionMapping } from "./SolutionMapping";
 import { cn } from "@/lib/utils";
@@ -47,6 +50,19 @@ interface UnifiedUseCaseSelectionProps {
   onChangePath: () => void;
   selectedObjectives: StrategicObjectiveId[];
   onObjectivesChange: (objectives: StrategicObjectiveId[]) => void;
+  /** Selected buyer persona PDF filenames from Profile; used to show recommended use cases */
+  selectedBuyerPersonas?: string[];
+}
+
+/** Get persona labels from selected PDF filenames (from Profile) */
+function getPersonaLabelsFromFilenames(filenames: string[]): string[] {
+  const labels: string[] = [];
+  const byFilename = new Map(BUYER_PERSONA_PDFS.map((p) => [p.filename, p.label]));
+  filenames.forEach((f) => {
+    const label = byFilename.get(f);
+    if (label) labels.push(label);
+  });
+  return labels;
 }
 
 export const UnifiedUseCaseSelection = ({
@@ -55,7 +71,9 @@ export const UnifiedUseCaseSelection = ({
   onChangePath,
   selectedObjectives,
   onObjectivesChange,
+  selectedBuyerPersonas = [],
 }: UnifiedUseCaseSelectionProps) => {
+  const selectedPersonaLabels = getPersonaLabelsFromFilenames(selectedBuyerPersonas);
   // Derive selected use cases from selected challenges (for persistence)
   const derivedSelectedUseCases = getUseCaseIdsFromChallenges(selectedChallenges);
   const [selectedUseCases, setSelectedUseCases] = useState<string[]>(derivedSelectedUseCases);
@@ -174,7 +192,11 @@ export const UnifiedUseCaseSelection = ({
         <div>
           <h3 className="text-lg font-semibold">Use Case Discovery</h3>
           <p className="text-sm text-muted-foreground">
-            Select objectives to filter use cases, then choose the relevant ones
+            Select objectives to filter use cases, then choose the relevant ones.{" "}
+            <span className="inline-flex items-center gap-1">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden />
+            </span>{" "}
+            are recommended for the buyer persona.
           </p>
         </div>
         <Button 
@@ -323,23 +345,29 @@ export const UnifiedUseCaseSelection = ({
                       );
                     }
 
+                    const isRecommended = isUseCaseRecommendedForPersonas(useCase.id, selectedPersonaLabels);
                     return (
                       <div
                         key={useCase.id}
-                        className={`p-3 rounded-lg cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] ${
+                        className={`p-3 rounded-lg cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] relative ${
                           isSelected 
                             ? 'bg-primary/10 border border-primary/30' 
                             : 'bg-muted/30 hover:bg-muted/50 border border-transparent'
                         }`}
                         onClick={() => handleUseCaseToggle(useCase.id)}
                       >
+                        {isRecommended && (
+                          <div className="absolute top-2 right-2 flex items-center justify-center" title="Recommended for your selected buyer persona">
+                            <Star className="h-4 w-4 fill-amber-400 text-amber-400 shrink-0" aria-label="Recommended for buyer persona" />
+                          </div>
+                        )}
                         <div className="flex items-start gap-2">
                           <Checkbox
                             checked={isSelected}
                             onCheckedChange={() => handleUseCaseToggle(useCase.id)}
                             className="mt-0.5"
                           />
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-0 pr-6">
                             <h5 className="text-sm font-medium">{useCase.name}</h5>
                             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                               {useCase.description}

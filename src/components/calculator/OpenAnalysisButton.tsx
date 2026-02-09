@@ -293,7 +293,7 @@ export const OpenAnalysisButton = ({ onLoadAnalysis }: OpenAnalysisButtonProps) 
                         </div>
                         {analysis.data.customerName && (
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            Customer: {analysis.data.customerName}
+                            Merchant: {analysis.data.customerName}
                           </div>
                         )}
                       </div>

@@ -33,7 +33,7 @@ import { StrategicObjectiveId, STRATEGIC_OBJECTIVES, USE_CASES } from "@/lib/use
 import { Segment, hasPaymentChallengesSelected, createEmptySegment, getSegmentSummary, getSegmentKPIStatus, countSegmentFilledFields } from "@/lib/segments";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import { FlaskConical, ChevronLeft, ChevronRight, Download, Info, Trash2, Layers, Plus, Pencil, Upload, FileText, Lock, FastForward, Unlock, User, ListChecks, ClipboardList, Gauge, PieChart, TrendingUp, List, LayoutGrid } from "lucide-react";
+import { FlaskConical, ChevronLeft, ChevronRight, Download, Info, Trash2, Layers, Plus, Pencil, Upload, FileText, Lock, FastForward, Unlock, User, Users, ListChecks, ClipboardList, Gauge, PieChart, TrendingUp, List, LayoutGrid } from "lucide-react";
 import { PrintTabButton } from "./PrintTabButton";
 import { TabCompletionIndicator } from "./TabCompletionIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -49,6 +49,8 @@ import { toast } from "sonner";
 import { ValueAgentChat } from "./ValueAgentChat";
 import { GenerateReportModal } from "./GenerateReportModal";
 import { GuidedValueWelcome } from "./GuidedValueWelcome";
+import { BUYER_PERSONA_PDFS } from "./WhatIsBusinessValueModal";
+import { cn } from "@/lib/utils";
 
 interface ManualInputFormProps {
   onComplete: (data: CalculatorData) => void;
@@ -65,9 +67,11 @@ interface ManualInputFormProps {
   onCompletionChange?: (completion: { profile: number; challenges: number; inputs: number; forter: number; summary: number; roi: number }) => void;
   /** Persist investment inputs to parent so re-opening an analysis restores investment cost */
   onInvestmentPersist?: (inputs: InvestmentInputs) => void;
+  /** Open the GVA overview modal with the Buyer Personas tab active */
+  onOpenBuyerPersonas?: () => void;
 }
 
-export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange, onInvestmentPersist }: ManualInputFormProps) => {
+export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange, onInvestmentPersist, onOpenBuyerPersonas }: ManualInputFormProps) => {
   const [formData, setFormData] = useState<CalculatorData>(() => {
     // For custom mode with no existing analysis, start with zeroed customer inputs
     const isNewCustomAssessment = entryMode === "custom" && !initialData?._analysisId;
@@ -82,6 +86,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         baseCurrency: initialData?.baseCurrency,
         isMarketplace: initialData?.isMarketplace,
         commissionRate: initialData?.commissionRate,
+        selectedBuyerPersonas: initialData?.selectedBuyerPersonas,
         existingFraudVendor: initialData?.existingFraudVendor,
         // Forter KPIs use defaults
         forterKPIs: defaultForterKPIs,
@@ -1787,10 +1792,10 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
             
             <div className="grid md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="customerName">Customer Name</Label>
+                <Label htmlFor="customerName">Merchant Name</Label>
                 <Input
                   id="customerName"
-                  placeholder="Enter customer name"
+                  placeholder="Enter merchant name"
                   value={formData.customerName || ""}
                   onChange={(e) => updateField("customerName", e.target.value)}
                 />
@@ -1888,8 +1893,62 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   </p>
                 </div>
               )}
+            {/* Buyer Personas (multi-select) */}
+            <div className="space-y-3 pt-6 border-t mt-6 md:col-span-2">
+              <p className="text-sm font-medium text-muted-foreground">Buyer Personas (multi-select)</p>
+              <p className="text-xs text-muted-foreground">Select the buyer persona for this opportunity. Download a PDF to showcase the primary interests of this Persona.</p>
+              <div className="grid grid-cols-6 gap-3">
+                {BUYER_PERSONA_PDFS.map(({ label, filename, icon: Icon, jobToBeDone }) => {
+                  const selected = (formData.selectedBuyerPersonas ?? []).includes(filename);
+                  const togglePersona = () => {
+                    const current = formData.selectedBuyerPersonas ?? [];
+                    const next = selected ? current.filter((f) => f !== filename) : [...current, filename];
+                    updateField("selectedBuyerPersonas", next);
+                  };
+                  return (
+                    <Tooltip key={filename}>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={cn(
+                            "rounded-lg border p-4 min-h-[140px] transition-colors flex flex-col",
+                            selected
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-muted-foreground/40 hover:bg-muted/30"
+                          )}
+                        >
+                          <div className="flex justify-end items-start shrink-0 min-h-[24px]">
+                            <a
+                              href={`/buyer-personas/${encodeURIComponent(filename)}`}
+                              download={filename}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-muted-foreground hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 rounded p-0.5"
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Download ${label} persona PDF`}
+                            >
+                              <Download className="h-4 w-4 shrink-0" aria-hidden />
+                            </a>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={togglePersona}
+                            className="flex-1 flex flex-col items-center justify-center gap-2 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 rounded"
+                          >
+                            <Icon className="h-8 w-8 text-primary shrink-0" aria-hidden />
+                            <span className="font-medium text-sm text-center leading-tight">{label}</span>
+                          </button>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[220px]">
+                        <p className="text-xs">{jobToBeDone}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </div>
             {/* Navigation Buttons - Prominent */}
-            <div className="flex justify-between pt-6 border-t mt-6">
+            <div className="flex justify-between pt-6 border-t mt-6 md:col-span-2">
               <div />
               <Button onClick={goToNextTab} size="lg" className="gap-2 px-6">
                 Next: {getNextTabName()} <ChevronRight className="w-4 h-4" />
@@ -1900,9 +1959,22 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
 
           {/* Use Cases Tab */}
           <TabsContent value="challenges" className="space-y-4 mt-6" data-tab-title="Use Cases">
-            <p className="text-sm text-muted-foreground mb-4">
-              Select strategic objectives and use cases that match your prospect&apos;s priorities.
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p className="text-sm text-muted-foreground">
+                Select strategic objectives and use cases that match your prospect&apos;s priorities.
+              </p>
+              {onOpenBuyerPersonas && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenBuyerPersonas}
+                  className="gap-2 shrink-0"
+                >
+                  <Users className="h-4 w-4" />
+                  Buyer Personas
+                </Button>
+              )}
+            </div>
             {showUseCaseLanding ? (
               <>
                 <UseCaseLanding onSelectPath={handleEntryPathSelect} />
@@ -1936,6 +2008,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   onChangePath={handleBackToLanding}
                   selectedObjectives={selectedObjectives}
                   onObjectivesChange={handleObjectivesChange}
+                  selectedBuyerPersonas={formData.selectedBuyerPersonas}
                 />
                 {/* Skip to Value Summary option - show when no challenges selected */}
                 {!hasSelectedChallenges && (
@@ -1951,6 +2024,19 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                     </Button>
                   </div>
                 )}
+                {/* Add additional context/notes - above Back/Next */}
+                <div className="mt-6 pt-6 border-t space-y-2">
+                  <Label htmlFor="use-case-notes-strategic" className="text-sm text-muted-foreground">
+                    Add additional context/notes
+                  </Label>
+                  <Textarea
+                    id="use-case-notes-strategic"
+                    value={formData.useCaseNotes ?? ""}
+                    onChange={(e) => updateField("useCaseNotes", e.target.value)}
+                    placeholder="e.g. CFO mentioned in annual report that they target to maintain double digit growth over the next 3 years, whilst the CTO mentioned they are aiming to reduce Operational spend (OpEx) related to fraud prevention by 25% through the use of better automation."
+                    className="min-h-[120px] resize-y placeholder:opacity-50 placeholder:text-muted-foreground"
+                  />
+                </div>
                 {/* Navigation Buttons */}
                 <div className="flex justify-between pt-6 border-t mt-6">
                   <Button variant="outline" onClick={goToPreviousTab} className="gap-2">
@@ -1976,7 +2062,21 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                 <ChallengeSelection
                   selectedChallenges={selectedChallenges}
                   onChallengeChange={handleChallengeChange}
+                  selectedBuyerPersonas={formData.selectedBuyerPersonas}
                 />
+                {/* Add additional context/notes - above Back/Next */}
+                <div className="mt-6 pt-6 border-t space-y-2">
+                  <Label htmlFor="use-case-notes-direct" className="text-sm text-muted-foreground">
+                    Add additional context/notes
+                  </Label>
+                  <Textarea
+                    id="use-case-notes-direct"
+                    value={formData.useCaseNotes ?? ""}
+                    onChange={(e) => updateField("useCaseNotes", e.target.value)}
+                    placeholder="e.g. CFO mentioned in annual report that they target to maintain double digit growth over the next 3 years, whilst the CTO mentioned they are aiming to reduce Operational spend (OpEx) related to fraud prevention by 25% through the use of better automation."
+                    className="min-h-[120px] resize-y placeholder:opacity-50 placeholder:text-muted-foreground"
+                  />
+                </div>
                 {/* Navigation Buttons */}
                 <div className="flex justify-between pt-6 border-t mt-6">
                   <Button variant="outline" onClick={handleBackToLanding} className="gap-2">
@@ -2001,19 +2101,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                 </div>
               </>
             )}
-            {/* Shared notes for use case discovery and challenges - persisted with analysis */}
-            <div className="mt-6 pt-6 border-t space-y-2">
-              <Label htmlFor="use-case-notes" className="text-sm text-muted-foreground">
-                Add additional context/notes
-              </Label>
-              <Textarea
-                id="use-case-notes"
-                value={formData.useCaseNotes ?? ""}
-                onChange={(e) => updateField("useCaseNotes", e.target.value)}
-                placeholder="e.g. CFO mentioned in annual report that they target to maintain double digit growth over the next 3 years, whilst the CTO mentioned they are aiming to reduce Operational spend (OpEx) related to fraud prevention by 25% through the use of better automation."
-                className="min-h-[120px] resize-y placeholder:opacity-50 placeholder:text-muted-foreground"
-              />
-            </div>
           </TabsContent>
 
           <TabsContent value="inputs" className="space-y-6 mt-6" data-tab-title="Customer Inputs">

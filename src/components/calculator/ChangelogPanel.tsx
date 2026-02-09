@@ -24,7 +24,7 @@ interface ChangelogPanelProps {
 // Exact labels matching ChallengeInputs.tsx and ManualInputForm.tsx
 const fieldLabels: Record<string, string> = {
   // Profile
-  customerName: "Customer Name",
+  customerName: "Merchant Name",
   industry: "Industry",
   hqLocation: "HQ Location",
   isMarketplace: "Business Model",

@@ -38,6 +38,8 @@ export type CalculatorData = {
   baseCurrency?: string; // ISO 4217 currency code (e.g., "USD", "EUR")
   isMarketplace?: boolean;
   commissionRate?: number;
+  /** Optional: selected buyer persona PDF filenames for "who is the buyer" */
+  selectedBuyerPersonas?: string[];
   
   // Existing vendor selection (for dynamic KPI lookups)
   existingFraudVendor?: string;
@@ -258,6 +260,7 @@ const Index = () => {
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(true);
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [showWhatIsBusinessValueModal, setShowWhatIsBusinessValueModal] = useState(false);
+  const [gvaModalInitialTab, setGvaModalInitialTab] = useState<string | undefined>(undefined);
   const initialDataRef = useRef<CalculatorData>({ forterKPIs: defaultForterKPIs });
   // Changelog baseline: only updated on load / start new / save as so edits are detected reliably
   const [changelogBaseline, setChangelogBaseline] = useState<CalculatorData>(() => ({ forterKPIs: defaultForterKPIs }));
@@ -590,7 +593,7 @@ const Index = () => {
                   )}
                   {calculatorData.customerName && (
                     <span className="text-xs text-muted-foreground">
-                      Report prepared for {calculatorData.customerName}
+                      Merchant: {calculatorData.customerName}
                     </span>
                   )}
                 </div>
@@ -835,7 +838,7 @@ const Index = () => {
                 )}
                 {calculatorData.customerName && (
                   <span className="text-xs text-muted-foreground">
-                    Report prepared for {calculatorData.customerName}
+                    Merchant: {calculatorData.customerName}
                   </span>
                 )}
               </div>
@@ -853,14 +856,22 @@ const Index = () => {
               externalActiveTab={activeTab}
               onCompletionChange={setTabCompletion}
               onInvestmentPersist={(inputs) => setCalculatorData(prev => ({ ...prev, investmentInputs: inputs }))}
+              onOpenBuyerPersonas={() => {
+                setGvaModalInitialTab("personas");
+                setShowWhatIsBusinessValueModal(true);
+              }}
             />
           </div>
         </div>
 
         <WhatIsBusinessValueModal
           open={showWhatIsBusinessValueModal}
-          onOpenChange={setShowWhatIsBusinessValueModal}
+          onOpenChange={(open) => {
+            setShowWhatIsBusinessValueModal(open);
+            if (!open) setGvaModalInitialTab(undefined);
+          }}
           markAsSeenOnClose
+          initialTab={gvaModalInitialTab}
         />
         
         {/* Chat side panel - consistent 380px width */}

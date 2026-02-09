@@ -216,3 +216,75 @@ export function getUseCaseIdsFromChallenges(selectedChallenges: { [key: string]:
   });
   return Array.from(useCaseIds);
 }
+
+/** Persona labels matching Profile buyer persona cards (same as BUYER_PERSONA_PDFS labels) */
+export const PERSONA_LABELS = [
+  "Payments Director",
+  "Fraud Director",
+  "Digital / e-Commerce Director",
+  "Chief Financial Officer",
+  "Chief Technology Officer",
+  "Chief Digital Officer",
+] as const;
+
+/**
+ * Use case → buyer personas mapping (from spreadsheet Column E).
+ * A use case is "recommended" when any of the user's selected personas appear in this list.
+ */
+export const USE_CASE_TO_PERSONAS: Record<string, readonly string[]> = {
+  reduce_false_declines: ["Payments Director", "Fraud Director", "Digital / e-Commerce Director", "Chief Financial Officer", "Chief Digital Officer"],
+  dynamic_checkout: ["Payments Director", "Fraud Director", "Digital / e-Commerce Director", "Chief Financial Officer", "Chief Digital Officer"],
+  automate_fraud_operations: ["Fraud Director", "Digital / e-Commerce Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  smarter_3ds: ["Payments Director", "Digital / e-Commerce Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  intelligent_routing: ["Payments Director", "Digital / e-Commerce Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  chargeback_recovery: ["Fraud Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  policy_integrity: ["Fraud Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  instant_refunds: ["Digital / e-Commerce Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  promotion_optimization: ["Payments Director", "Digital / e-Commerce Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  loyalty_protection: ["Fraud Director", "Digital / e-Commerce Director", "Chief Financial Officer", "Chief Technology Officer", "Chief Digital Officer"],
+  new_customer_verification: ["Fraud Director", "Chief Technology Officer", "Chief Digital Officer"],
+};
+
+/**
+ * Returns true if the use case is recommended for at least one of the selected persona labels.
+ * selectedPersonaLabels should match PERSONA_LABELS (e.g. from Profile selected buyer personas).
+ */
+export function isUseCaseRecommendedForPersonas(useCaseId: string, selectedPersonaLabels: string[]): boolean {
+  if (selectedPersonaLabels.length === 0) return false;
+  const personas = USE_CASE_TO_PERSONAS[useCaseId];
+  if (!personas) return false;
+  const set = new Set(personas);
+  return selectedPersonaLabels.some((label) => set.has(label));
+}
+
+/**
+ * Challenge id → buyer personas (derived from use cases that include this challenge).
+ * A challenge is "common for buyer persona" when any selected persona appears in this list.
+ */
+export const CHALLENGE_TO_PERSONAS: Record<string, readonly string[]> = (() => {
+  const map: Record<string, Set<string>> = {};
+  USE_CASES.forEach((uc) => {
+    const personas = USE_CASE_TO_PERSONAS[uc.id];
+    if (!personas) return;
+    uc.challengeIds.forEach((cid) => {
+      if (!map[cid]) map[cid] = new Set();
+      personas.forEach((p) => map[cid].add(p));
+    });
+  });
+  const result: Record<string, readonly string[]> = {};
+  Object.keys(map).forEach((cid) => {
+    result[cid] = Array.from(map[cid]);
+  });
+  return result;
+})();
+
+/**
+ * Returns true if the challenge is recommended (common) for at least one of the selected persona labels.
+ */
+export function isChallengeRecommendedForPersonas(challengeId: string, selectedPersonaLabels: string[]): boolean {
+  if (selectedPersonaLabels.length === 0) return false;
+  const personas = CHALLENGE_TO_PERSONAS[challengeId];
+  if (!personas) return false;
+  const set = new Set(personas);
+  return selectedPersonaLabels.some((label) => set.has(label));
+}
