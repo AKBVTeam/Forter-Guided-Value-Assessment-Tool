@@ -308,10 +308,16 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       amerPostAuthImplemented: false,
       amerPostAuthApprovalRate: 100,
       forterKPIs: defaultForterKPIs,
-      // Spread ALL fields from initialData including isMarketplace, commissionRate, etc.
+      // Spread ALL fields from initialData including isMarketplace, commissionRate, baseCurrency, investmentInputs, etc.
       ...initialData,
     };
-    
+    // Ensure base currency is always restored so investment costs (stored in that currency) are not reconverted or reset
+    if (initialData?.baseCurrency != null && initialData.baseCurrency !== '') {
+      newFormData.baseCurrency = initialData.baseCurrency;
+    } else {
+      newFormData.baseCurrency = newFormData.baseCurrency ?? 'USD';
+    }
+
     setFormData(newFormData);
     setSelectedChallenges(initialData?.selectedChallenges ?? {});
     setSegments(initialData?.segments ?? []);
@@ -349,9 +355,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       const hasObjectives = (initialData?.selectedObjectives?.length ?? 0) > 0;
       setShowUseCaseLanding(!hasChallenges && !hasObjectives);
     }
-  }, [initialData?._analysisId, initialData?.selectedChallenges, initialData?.selectedObjectives, initialData?.customerName, initialData?._pathwayMode, entryMode]);
+  }, [initialData?._analysisId, initialData?.selectedChallenges, initialData?.selectedObjectives, initialData?.customerName, initialData?.baseCurrency, initialData?._pathwayMode, entryMode]);
 
-  // When parent has loaded data (e.g. Open analysis): keep use cases in sync if we're viewing that analysis and our state is empty/stale
+  // When parent has loaded data (e.g. Open analysis): keep use cases and baseCurrency in sync if we're viewing that analysis
   useEffect(() => {
     const analysisId = initialData?._analysisId;
     if (!analysisId || analysisId !== loadedAnalysisIdRef.current) return;
@@ -370,7 +376,12 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         setSelectedObjectives(objectivesFromParent as StrategicObjectiveId[]);
       }
     }
-  }, [initialData?._analysisId, initialData?.selectedChallenges, initialData?.selectedObjectives]);
+    // Keep base currency in sync so investment costs (stored in that currency) are not reset
+    const parentCurrency = initialData?.baseCurrency;
+    if (parentCurrency != null && parentCurrency !== '' && parentCurrency !== formData.baseCurrency) {
+      setFormData((prev) => ({ ...prev, baseCurrency: parentCurrency }));
+    }
+  }, [initialData?._analysisId, initialData?.selectedChallenges, initialData?.selectedObjectives, initialData?.baseCurrency]);
 
   // When navigating back to Use Cases tab, restore strategic objectives from parent if local state is empty but parent has them (fixes out-of-sync)
   useEffect(() => {
