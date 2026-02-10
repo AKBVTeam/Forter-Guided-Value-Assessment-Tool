@@ -906,7 +906,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     const parsed = typeof value === 'string' ? parseFloat(value) : value;
     const toStore = isNumeric ? value : (typeof parsed === 'number' && !Number.isNaN(parsed) ? parsed : value);
     setFormData((prev) => ({ ...prev, [field]: toStore }));
-    // Notify parent of the field change (same value so Index stays in sync)
     if (onFieldChange) {
       onFieldChange(field, toStore);
     }

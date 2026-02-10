@@ -14,7 +14,7 @@ import { PercentageInput } from "@/components/calculator/PercentageInput";
 import { IncludeExcludeChip } from "@/components/calculator/IncludeExcludeChip";
 import { Segment, SegmentKPIs } from "@/lib/segments";
 import { ForterKPIs } from "./ForterKPIConfig";
-import { Copy, Info } from "lucide-react";
+import { Copy, Info, RotateCcw } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { get3DSRateByCountryAndAOV, getVendorCBReductionFactor, getCurrencySymbol } from "@/lib/benchmarkData";
 
@@ -125,6 +125,37 @@ export function ForterKPISegmentModal({
     }
   };
   
+  const SEGMENT_KPI_EPS = 0.0001;
+  const segmentValuesEqual = (a: number | undefined, b: number | undefined) =>
+    a === b || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < SEGMENT_KPI_EPS);
+
+  const SegmentResetButton = ({
+    currentValue,
+    benchmarkValue,
+    onReset,
+  }: { currentValue: number | undefined; benchmarkValue: number | undefined; onReset: () => void }) => {
+    if (benchmarkValue === undefined || segmentValuesEqual(currentValue, benchmarkValue)) return null;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+            onClick={onReset}
+            aria-label="Reset to benchmark"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="text-xs">Reset to benchmark</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
   // Helper to calculate percent change
   const calculatePercentChange = (current: number | undefined, target: number | undefined): string | null => {
     if (current === undefined || target === undefined || current === 0) return null;
@@ -173,51 +204,84 @@ export function ForterKPISegmentModal({
         <div className="space-y-6 py-4">
           <div className="space-y-4">
             {/* Challenge 1 only: Simple approval rate target */}
-            {isChallenge1Selected && !isChallenge245Selected && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Target Fraud Approval Rate (%)</Label>
-                  <PercentageInput
-                    value={editedSegment.kpis.approvalRateTarget}
-                    onChange={(v) => updateKPI('approvalRateTarget', v)}
-                    placeholder="99"
-                  />
-                  <div className="min-h-5">
-                    {renderCurrentComparison(
-                      segmentInputs.preAuthApprovalRate,
-                      editedSegment.kpis.approvalRateTarget
-                    )}
+            {isChallenge1Selected && !isChallenge245Selected && (() => {
+              const approvalBenchmark = globalKPIs.approvalRateImprovement ?? 99;
+              const cbBenchmark = existingFraudVendor && (segmentInputs.fraudCBRate ?? 0) > 0
+                ? parseFloat(((segmentInputs.fraudCBRate ?? 0) * getVendorCBReductionFactor(existingFraudVendor)).toFixed(3))
+                : 0.25;
+              return (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Label>Target Fraud Approval Rate (%)</Label>
+                      <SegmentResetButton
+                        currentValue={editedSegment.kpis.approvalRateTarget}
+                        benchmarkValue={approvalBenchmark}
+                        onReset={() => updateKPI('approvalRateTarget', approvalBenchmark)}
+                      />
+                    </div>
+                    <PercentageInput
+                      key={`seg-approval-${editedSegment.kpis.approvalRateTarget}`}
+                      value={editedSegment.kpis.approvalRateTarget}
+                      onChange={(v) => updateKPI('approvalRateTarget', v)}
+                      placeholder="99"
+                    />
+                    <div className="min-h-5">
+                      {renderCurrentComparison(
+                        segmentInputs.preAuthApprovalRate,
+                        editedSegment.kpis.approvalRateTarget
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Label>Target Fraud CB Rate (%)</Label>
+                      <SegmentResetButton
+                        currentValue={editedSegment.kpis.chargebackRateTarget}
+                        benchmarkValue={cbBenchmark}
+                        onReset={() => updateKPI('chargebackRateTarget', cbBenchmark)}
+                      />
+                    </div>
+                    <PercentageInput
+                      key={`seg-cb-${editedSegment.kpis.chargebackRateTarget}`}
+                      value={editedSegment.kpis.chargebackRateTarget}
+                      onChange={(v) => updateKPI('chargebackRateTarget', v)}
+                      placeholder="0.25"
+                      max={10}
+                      step={0.01}
+                    />
+                    <div className="min-h-5">
+                      {renderCurrentComparison(
+                        segmentInputs.fraudCBRate,
+                        editedSegment.kpis.chargebackRateTarget
+                      )}
+                    </div>
                   </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <Label>Target Fraud CB Rate (%)</Label>
-                  <PercentageInput
-                    value={editedSegment.kpis.chargebackRateTarget}
-                    onChange={(v) => updateKPI('chargebackRateTarget', v)}
-                    placeholder="0.25"
-                    max={10}
-                    step={0.01}
-                  />
-                  <div className="min-h-5">
-                    {renderCurrentComparison(
-                      segmentInputs.fraudCBRate,
-                      editedSegment.kpis.chargebackRateTarget
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
             
             {/* Challenge 2/4/5: Pre-Auth, Post-Auth, 3DS, CB targets */}
             {isChallenge245Selected && (
               <div className="space-y-4">
                 {/* Pre-Auth with Include/Exclude */}
+                {(() => {
+                  const preAuthBenchmark = globalKPIs.preAuthApprovalImprovement ?? 99;
+                  return (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <Label className={editedSegment.kpis.preAuthIncluded === false ? "text-muted-foreground" : ""}>
-                      Target Pre-Auth Fraud Approval Rate (%)
-                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Label className={editedSegment.kpis.preAuthIncluded === false ? "text-muted-foreground" : ""}>
+                        Target Pre-Auth Fraud Approval Rate (%)
+                      </Label>
+                      {editedSegment.kpis.preAuthIncluded !== false && (
+                        <SegmentResetButton
+                          currentValue={editedSegment.kpis.preAuthApprovalTarget}
+                          benchmarkValue={preAuthBenchmark}
+                          onReset={() => updateKPI('preAuthApprovalTarget', preAuthBenchmark)}
+                        />
+                      )}
+                    </div>
                     <IncludeExcludeChip
                       included={editedSegment.kpis.preAuthIncluded !== false}
                       onIncludedChange={(included) => {
@@ -229,6 +293,7 @@ export function ForterKPISegmentModal({
                     />
                   </div>
                   <PercentageInput
+                    key={`seg-preAuth-${editedSegment.kpis.preAuthIncluded === false ? 100 : editedSegment.kpis.preAuthApprovalTarget}`}
                     value={editedSegment.kpis.preAuthIncluded === false ? 100 : editedSegment.kpis.preAuthApprovalTarget}
                     onChange={(v) => updateKPI('preAuthApprovalTarget', v)}
                     placeholder={globalKPIs.preAuthApprovalImprovement?.toString() || "99"}
@@ -241,13 +306,26 @@ export function ForterKPISegmentModal({
                     )}
                   </div>
                 </div>
-                
+                  );
+                })()}
                 {/* Post-Auth with Include/Exclude */}
+                {(() => {
+                  const postAuthBenchmark = globalKPIs.postAuthApprovalImprovement ?? 100;
+                  return (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <Label className={editedSegment.kpis.postAuthIncluded === false ? "text-muted-foreground" : ""}>
-                      Target Post-Auth Fraud Approval Rate (%)
-                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Label className={editedSegment.kpis.postAuthIncluded === false ? "text-muted-foreground" : ""}>
+                        Target Post-Auth Fraud Approval Rate (%)
+                      </Label>
+                      {editedSegment.kpis.postAuthIncluded !== false && (
+                        <SegmentResetButton
+                          currentValue={editedSegment.kpis.postAuthApprovalTarget}
+                          benchmarkValue={postAuthBenchmark}
+                          onReset={() => updateKPI('postAuthApprovalTarget', postAuthBenchmark)}
+                        />
+                      )}
+                    </div>
                     <IncludeExcludeChip
                       included={editedSegment.kpis.postAuthIncluded !== false}
                       onIncludedChange={(included) => {
@@ -259,6 +337,7 @@ export function ForterKPISegmentModal({
                     />
                   </div>
                   <PercentageInput
+                    key={`seg-postAuth-${editedSegment.kpis.postAuthIncluded === false ? 100 : editedSegment.kpis.postAuthApprovalTarget}`}
                     value={editedSegment.kpis.postAuthIncluded === false ? 100 : editedSegment.kpis.postAuthApprovalTarget}
                     onChange={(v) => updateKPI('postAuthApprovalTarget', v)}
                     placeholder={globalKPIs.postAuthApprovalImprovement?.toString() || "99"}
@@ -271,7 +350,8 @@ export function ForterKPISegmentModal({
                     )}
                   </div>
                 </div>
-                
+                  );
+                })()}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -301,8 +381,14 @@ export function ForterKPISegmentModal({
                           </TooltipContent>
                         </Tooltip>
                       )}
+                      <SegmentResetButton
+                        currentValue={editedSegment.kpis.threeDSRateTarget}
+                        benchmarkValue={threeDSLookup?.rate}
+                        onReset={() => threeDSLookup && updateKPI('threeDSRateTarget', threeDSLookup.rate)}
+                      />
                     </div>
                     <PercentageInput
+                      key={`seg-3ds-${editedSegment.kpis.threeDSRateTarget}`}
                       value={editedSegment.kpis.threeDSRateTarget}
                       onChange={(v) => updateKPI('threeDSRateTarget', v)}
                       placeholder={globalKPIs.threeDSReduction?.toString() || "10"}
@@ -314,10 +400,21 @@ export function ForterKPISegmentModal({
                       )}
                     </div>
                   </div>
-                  
                   <div className="space-y-2">
-                    <Label>Target Fraud CB Rate (%)</Label>
+                    <div className="flex items-center gap-2">
+                      <Label>Target Fraud CB Rate (%)</Label>
+                      <SegmentResetButton
+                        currentValue={editedSegment.kpis.chargebackRateTarget}
+                        benchmarkValue={existingFraudVendor && (segmentInputs.fraudCBRate ?? 0) > 0
+                          ? parseFloat(((segmentInputs.fraudCBRate ?? 0) * getVendorCBReductionFactor(existingFraudVendor)).toFixed(3))
+                          : 0.25}
+                        onReset={() => updateKPI('chargebackRateTarget', existingFraudVendor && (segmentInputs.fraudCBRate ?? 0) > 0
+                          ? parseFloat(((segmentInputs.fraudCBRate ?? 0) * getVendorCBReductionFactor(existingFraudVendor)).toFixed(3))
+                          : 0.25)}
+                      />
+                    </div>
                     <PercentageInput
+                      key={`seg-cb2-${editedSegment.kpis.chargebackRateTarget}`}
                       value={editedSegment.kpis.chargebackRateTarget}
                       onChange={(v) => updateKPI('chargebackRateTarget', v)}
                       placeholder="0.25"

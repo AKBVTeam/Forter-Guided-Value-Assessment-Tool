@@ -301,11 +301,17 @@ export const ForterKPIConfig = ({
       </Tooltip>
     );
   };
+  // Epsilon for comparing KPI values (avoids float noise; reset button works reliably)
+  const KPI_EPS = 0.0001;
+  const valuesEqual = (a: number | undefined, b: number | undefined) =>
+    a === b || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < KPI_EPS);
+
   const ResetToBenchmarkButton = ({ fieldId }: { fieldId: keyof ForterKPIs }) => {
     const benchmarkValue = forterBenchmarkValues[fieldId];
     if (benchmarkValue === undefined || isSegmentMode) return null;
     const currentValue = kpis[fieldId as keyof typeof kpis];
-    if (typeof currentValue !== 'number' || currentValue === benchmarkValue) return null;
+    if (valuesEqual(typeof currentValue === 'number' ? currentValue : undefined, benchmarkValue)) return null;
+    const roundedBenchmark = Math.round(benchmarkValue * 10000) / 10000;
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -314,7 +320,7 @@ export const ForterKPIConfig = ({
             variant="ghost"
             size="icon"
             className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
-            onClick={() => updateKPI(fieldId, benchmarkValue)}
+            onClick={() => updateKPI(fieldId, roundedBenchmark)}
             aria-label="Reset to Forter benchmark"
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -338,12 +344,11 @@ export const ForterKPIConfig = ({
   const [editingSegment, setEditingSegment] = useState<Segment | null>(null);
   const [abuseBenchmarksModalOpen, setAbuseBenchmarksModalOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
-  const updateKPI = (field: keyof ForterKPIs, value: number | boolean) => {
+  const kpisRef = useRef(kpis);
+  kpisRef.current = kpis;
+
+  const updateKPI = useCallback((field: keyof ForterKPIs, value: number | boolean) => {
     const updates: Partial<ForterKPIs> = { [field]: value };
-    
-    // Ensure absolute flags are set for target-based fields
-    // Since UI shows "Target X Rate", we're always in absolute mode
     if (field === 'chargebackReduction') {
       updates.chargebackReductionIsAbsolute = true;
     } else if (field === 'approvalRateImprovement') {
@@ -355,9 +360,8 @@ export const ForterKPIConfig = ({
     } else if (field === 'threeDSReduction') {
       updates.threeDSReductionIsAbsolute = true;
     }
-    
-    onUpdate({ ...kpis, ...updates });
-  };
+    onUpdate({ ...kpisRef.current, ...updates });
+  }, [onUpdate]);
 
   const challenge1 = selectedChallenges['1'] === true;
   const challenge2 = selectedChallenges['2'] === true;
@@ -565,7 +569,9 @@ export const ForterKPIConfig = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <PercentageInput className={fieldInputClass}
+                <PercentageInput
+                  key={isSegmentMode ? 'agg-approval' : `approval-${kpis.approvalRateImprovement}`}
+                  className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedApprovalRateTarget ?? 0) : kpis.approvalRateImprovement}
                   onChange={(v) => updateKPI("approvalRateImprovement", v)}
                   readOnly={isSegmentMode}
@@ -613,7 +619,9 @@ export const ForterKPIConfig = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <PercentageInput className={fieldInputClass}
+                <PercentageInput
+                  key={isSegmentMode ? 'agg-cb' : `cb-${kpis.chargebackReduction}`}
+                  className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
                   onChange={(v) => updateKPI("chargebackReduction", v)}
                   readOnly={isSegmentMode}
@@ -711,7 +719,9 @@ export const ForterKPIConfig = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <PercentageInput className={fieldInputClass}
+                <PercentageInput
+                  key={isSegmentMode ? 'agg-preAuth' : `preAuth-${kpis.preAuthApprovalImprovement}`}
+                  className={fieldInputClass}
                   value={isSegmentMode 
                     ? (aggregatedKPIs?.weightedPreAuthApprovalTarget ?? 0)
                     : (kpis.preAuthIncluded === false ? 100 : kpis.preAuthApprovalImprovement)}
@@ -771,7 +781,9 @@ export const ForterKPIConfig = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <PercentageInput className={fieldInputClass}
+                <PercentageInput
+                  key={isSegmentMode ? 'agg-postAuth' : `postAuth-${kpis.postAuthApprovalImprovement}`}
+                  className={fieldInputClass}
                   value={isSegmentMode 
                     ? (aggregatedKPIs?.weightedPostAuthApprovalTarget ?? 0)
                     : (kpis.postAuthIncluded === false ? 100 : kpis.postAuthApprovalImprovement)}
@@ -823,7 +835,9 @@ export const ForterKPIConfig = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <PercentageInput className={fieldInputClass}
+                <PercentageInput
+                  key={isSegmentMode ? 'agg-3ds' : `3ds-${kpis.threeDSReduction}`}
+                  className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedThreeDSRateTarget ?? 0) : kpis.threeDSReduction}
                   onChange={(v) => updateKPI("threeDSReduction", v)}
                   readOnly={isSegmentMode}
@@ -872,7 +886,9 @@ export const ForterKPIConfig = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <PercentageInput className={fieldInputClass}
+                <PercentageInput
+                  key={isSegmentMode ? 'agg-cb' : `cb-${kpis.chargebackReduction}`}
+                  className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
                   onChange={(v) => updateKPI("chargebackReduction", v)}
                   readOnly={isSegmentMode}
