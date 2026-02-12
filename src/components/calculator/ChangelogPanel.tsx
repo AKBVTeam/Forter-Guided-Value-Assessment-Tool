@@ -132,7 +132,8 @@ const investmentFieldLabels: Record<string, string> = {
   "contractTenure": "Contract Tenure (years)",
   "monthsToIntegrate": "Months to Integrate",
   "annualSalesGrowthPct": "Annual Sales Growth (%)",
-  "manualOverride": "Manual Override Enabled",
+  "pricingMode": "Investment Pricing",
+  "manualOverride": "Manual Override Enabled (legacy)",
   "manualInvestmentCost": "Manual Investment Cost ($)",
   "manualIntegrationCost": "Manual Integration Cost ($)",
   
@@ -152,8 +153,11 @@ const investmentFieldLabels: Record<string, string> = {
   
   // Dispute Management
   "disputeManagement.enabled": "Dispute Management - Enabled",
+  "disputeManagement.model": "Dispute Management - Model",
   "disputeManagement.valueOfWonChargebacks": "Dispute Management - Value of Won Chargebacks ($)",
   "disputeManagement.revenueSharePct": "Dispute Management - Revenue Share (%)",
+  "disputeManagement.numberOfDisputes": "Dispute Management - Number of Chargeback Disputes",
+  "disputeManagement.costPerDispute": "Dispute Management - Cost per Dispute ($)",
   
   // Abuse Prevention
   "abusePrevention.enabled": "Abuse Prevention - Enabled",
@@ -182,6 +186,12 @@ const formatChangelogValue = (value: unknown, field?: string): string => {
   if (field === "isMarketplace" && typeof value === "boolean") {
     return value ? "Marketplace" : "Retailer";
   }
+  if (field === "pricingMode" && typeof value === "string") {
+    return value === "manual" ? "Custom Pricing" : "Guided Pricing";
+  }
+  if (field === "disputeManagement.model" && typeof value === "string") {
+    return value === "costPerDispute" ? "Cost per dispute" : "Rev Share";
+  }
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (value === 0) return "0";
@@ -202,6 +212,7 @@ const flattenInvestmentInputs = (inputs: InvestmentInputs | undefined): Record<s
   flat.contractTenure = inputs.contractTenure;
   flat.monthsToIntegrate = inputs.monthsToIntegrate;
   flat.annualSalesGrowthPct = inputs.annualSalesGrowthPct;
+  flat.pricingMode = inputs.pricingMode;
   flat.manualOverride = inputs.manualOverride;
   flat.manualInvestmentCost = inputs.manualInvestmentCost;
   flat.manualIntegrationCost = inputs.manualIntegrationCost;
@@ -222,9 +233,12 @@ const flattenInvestmentInputs = (inputs: InvestmentInputs | undefined): Record<s
   
   // Dispute Management
   flat["disputeManagement.enabled"] = inputs.disputeManagement?.enabled;
+  flat["disputeManagement.model"] = inputs.disputeManagement?.model;
   flat["disputeManagement.valueOfWonChargebacks"] = inputs.disputeManagement?.valueOfWonChargebacks;
   flat["disputeManagement.revenueSharePct"] = inputs.disputeManagement?.revenueSharePct;
-  
+  flat["disputeManagement.numberOfDisputes"] = inputs.disputeManagement?.numberOfDisputes;
+  flat["disputeManagement.costPerDispute"] = inputs.disputeManagement?.costPerDispute;
+
   // Abuse Prevention
   flat["abusePrevention.enabled"] = inputs.abusePrevention?.enabled;
   flat["abusePrevention.annualTransactions"] = inputs.abusePrevention?.annualTransactions;

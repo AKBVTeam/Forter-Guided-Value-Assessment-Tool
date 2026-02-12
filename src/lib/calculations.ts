@@ -703,6 +703,8 @@ export interface Challenge7Inputs {
 export interface Challenge7Results {
   calculator1: { rows: CalculatorRow[]; costReduction: number; };
   calculator2: { rows: CalculatorRow[]; costReduction: number; };
+  /** Forter total recoveries ($) - "Total recoveries ($)" forter outcome in the Increase chargeback recoveries calculator */
+  fortTotalRecoveries: number;
 }
 
 export function calculateChallenge7(inputs: Challenge7Inputs): Challenge7Results {
@@ -858,7 +860,8 @@ export function calculateChallenge7(inputs: Challenge7Inputs): Challenge7Results
 
   return { 
     calculator1: { rows: calculator1Rows, costReduction: additionalRecoveries },
-    calculator2: { rows: calculator2Rows, costReduction: opExSavings }
+    calculator2: { rows: calculator2Rows, costReduction: opExSavings },
+    fortTotalRecoveries,
   };
 }
 

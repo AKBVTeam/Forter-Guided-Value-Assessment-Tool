@@ -75,13 +75,17 @@ export interface CustomInvestmentItem {
   sourceUrl?: string;
 }
 
+export type InvestmentPricingMode = 'guided' | 'manual';
+
 export interface InvestmentInputs {
-  // Manual override
-  manualOverride: boolean;
+  // Which pricing is active: selected tab in Enter Investment modal (guided = calculated, manual = custom cost)
+  pricingMode: InvestmentPricingMode;
   manualInvestmentCost?: number;
   manualIntegrationCost?: number;
   manualSourceUrl?: string; // Optional link to Google Sheets or other calculator source
-  
+  /** @deprecated Use pricingMode === 'manual'. Kept for backward compatibility when loading saved data. */
+  manualOverride?: boolean;
+
   // Track which currency the cost values are stored in
   // This allows proper rebasing when base currency changes
   pricingCurrency?: string;
@@ -115,8 +119,12 @@ export interface InvestmentInputs {
   
   disputeManagement: {
     enabled: boolean;
+    /** 'revShare' = value of won chargebacks × revenue share %; 'costPerDispute' = number of disputes × cost per dispute */
+    model?: 'revShare' | 'costPerDispute';
     valueOfWonChargebacks?: number;
     revenueSharePct?: number;
+    numberOfDisputes?: number;
+    costPerDispute?: number;
   };
   
   abusePrevention: {
@@ -152,7 +160,7 @@ export interface InvestmentInputs {
 }
 
 export const defaultInvestmentInputs: InvestmentInputs = {
-  manualOverride: false,
+  pricingMode: 'guided',
   pricingCurrency: 'USD', // Default pricing is in USD
   fraudManagement: {
     enabled: false,
@@ -171,6 +179,7 @@ export const defaultInvestmentInputs: InvestmentInputs = {
   },
   disputeManagement: {
     enabled: false,
+    model: 'revShare',
     revenueSharePct: 20,
   },
   abusePrevention: {
@@ -185,7 +194,7 @@ export const defaultInvestmentInputs: InvestmentInputs = {
   contractTenure: 3,
   annualSalesGrowthPct: 5,
   integrationCost: 0,
-  annualACVGrowthPct: 0,
+  annualACVGrowthPct: 5, // default linked to annual sales growth
   year1DiscountPct: 0,
   year2DiscountPct: 0,
   year3DiscountPct: 0,
@@ -210,7 +219,8 @@ export function calculateInvestmentCosts(
   inputs: InvestmentInputs,
   formData: CalculatorData
 ): { totalACV: number; integrationCost: number; breakdown: Record<string, number> } {
-  if (inputs.manualOverride) {
+  const useManualCost = inputs.pricingMode === 'manual' || inputs.manualOverride === true;
+  if (useManualCost) {
     return {
       totalACV: numOrZero(inputs.manualInvestmentCost),
       integrationCost: numOrZero(inputs.manualIntegrationCost),
@@ -263,12 +273,18 @@ export function calculateInvestmentCosts(
     breakdown['Payment Optimization'] = paymentACV;
   }
   
-  // Dispute Management: when fields cleared, 0
+  // Dispute Management: rev share or cost per dispute
   if (inputs.disputeManagement.enabled) {
-    const valueOfWonCBs = numOrZero(inputs.disputeManagement.valueOfWonChargebacks);
-    const revenueSharePct = numOrZero(inputs.disputeManagement.revenueSharePct);
-    const disputeACV = valueOfWonCBs * (revenueSharePct / 100);
-    breakdown['Dispute Management'] = disputeACV;
+    const model = inputs.disputeManagement.model || 'revShare';
+    if (model === 'costPerDispute') {
+      const numDisputes = numOrZero(inputs.disputeManagement.numberOfDisputes);
+      const costPerDispute = numOrZero(inputs.disputeManagement.costPerDispute);
+      breakdown['Dispute Management'] = numDisputes * costPerDispute;
+    } else {
+      const valueOfWonCBs = numOrZero(inputs.disputeManagement.valueOfWonChargebacks);
+      const revenueSharePct = numOrZero(inputs.disputeManagement.revenueSharePct);
+      breakdown['Dispute Management'] = valueOfWonCBs * (revenueSharePct / 100);
+    }
   }
   
   // Abuse Prevention: when fields cleared, 0

@@ -413,6 +413,67 @@ export function runStandaloneCalculator(
   }
 }
 
+/**
+ * Get Forter "Total recoveries ($)" from the Increase chargeback recoveries (c7-disputes) calculator.
+ * Used to sync Value of won chargebacks in the Enter Investment modal.
+ */
+export function getForterTotalRecoveriesC7(
+  data: CalculatorData,
+  forterKPIs: ForterKPIs,
+  includesFraudCBCoverage: boolean = false
+): number {
+  const currentFraudDisputeRate = d(data, "fraudDisputeRate", 50);
+  const currentFraudWinRate = d(data, "fraudWinRate", 30);
+  const currentServiceDisputeRate = d(data, "serviceDisputeRate", 50);
+  const currentServiceWinRate = d(data, "serviceWinRate", 40);
+  let fraudDisputeImprovement = forterKPIs.fraudDisputeRateImprovement ?? 45;
+  if (forterKPIs.fraudDisputeIsAbsolute) {
+    fraudDisputeImprovement = Math.min(100, forterKPIs.fraudDisputeRateImprovement ?? 45) - currentFraudDisputeRate;
+  }
+  let fraudWinChange = forterKPIs.fraudWinRateChange ?? -10;
+  if (forterKPIs.fraudWinRateIsAbsolute) {
+    fraudWinChange = Math.min(100, Math.max(0, forterKPIs.fraudWinRateChange ?? 0)) - currentFraudWinRate;
+  }
+  let serviceDisputeImprovement = forterKPIs.serviceDisputeRateImprovement ?? 65;
+  if (forterKPIs.serviceDisputeIsAbsolute) {
+    serviceDisputeImprovement = Math.min(100, forterKPIs.serviceDisputeRateImprovement ?? 65) - currentServiceDisputeRate;
+  }
+  let serviceWinChange = forterKPIs.serviceWinRateChange ?? -10;
+  if (forterKPIs.serviceWinRateIsAbsolute) {
+    serviceWinChange = Math.min(100, Math.max(0, forterKPIs.serviceWinRateChange ?? 0)) - currentServiceWinRate;
+  }
+  const transactionAttemptsValue = d(data, "amerAnnualGMV", 0);
+  const fraudChargebackRate = d(data, "fraudCBRate", 0.5);
+  const serviceChargebackRate = d(data, "serviceCBRate", 0.2);
+  const estFraud = data.estFraudChargebackValue ?? (transactionAttemptsValue * (fraudChargebackRate / 100));
+  const estService = data.estServiceChargebackValue ?? (transactionAttemptsValue * (serviceChargebackRate / 100));
+  const inputs: Challenge7Inputs = {
+    transactionAttempts: d(data, "amerGrossAttempts", 0),
+    transactionAttemptsValue,
+    fraudChargebackRate,
+    fraudDisputeRate: currentFraudDisputeRate,
+    fraudWinRate: currentFraudWinRate,
+    serviceChargebackRate,
+    serviceDisputeRate: currentServiceDisputeRate,
+    serviceWinRate: currentServiceWinRate,
+    avgTimeToReviewCB: d(data, "avgTimeToReviewCB", 20),
+    annualCBDisputes: d(data, "annualCBDisputes", 0),
+    costPerHourAnalyst: d(data, "costPerHourAnalyst", 0),
+    currencyCode: data.baseCurrency || "USD",
+    forterFraudDisputeImprovement: fraudDisputeImprovement,
+    forterFraudWinChange: fraudWinChange,
+    forterServiceDisputeImprovement: serviceDisputeImprovement,
+    forterServiceWinChange: serviceWinChange,
+    forterTargetReviewTime: forterKPIs.disputeTimeReduction ?? 5,
+    estFraudChargebackValue: estFraud,
+    estServiceChargebackValue: estService,
+    hasPaymentChallenges: false,
+    includesFraudCBCoverage,
+  };
+  const result = calculateChallenge7(inputs);
+  return result.fortTotalRecoveries;
+}
+
 /** Section for each source calculator ID (GMV Uplift / Cost Reduction / Risk Mitigation) */
 export const STANDALONE_CALC_SECTION: Record<string, "gmv" | "cost" | "risk"> = {
   "c1-revenue": "gmv",

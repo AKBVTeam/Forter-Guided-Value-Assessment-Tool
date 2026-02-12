@@ -1825,7 +1825,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   </SelectTrigger>
                   <SelectContent>
                     {verticalBenchmarks.map((vertical) => (
-                      <SelectItem key={vertical.name} value={vertical.name}>
+                      <SelectItem key={vertical.name} value={vertical.name} textValue={vertical.name}>
                         {vertical.name}
                       </SelectItem>
                     ))}
@@ -1844,7 +1844,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   </SelectTrigger>
                   <SelectContent>
                     {countryBenchmarksSortedForHQ.map((country) => (
-                      <SelectItem key={country.name} value={country.name}>
+                      <SelectItem key={country.name} value={country.name} textValue={country.name}>
                         <span className="flex items-center gap-2">
                           <span>{country.flag}</span>
                           <span>{country.name}</span>
@@ -1866,7 +1866,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   </SelectTrigger>
                   <SelectContent>
                     {topCurrencies.map((currency) => (
-                      <SelectItem key={currency.code} value={currency.code}>
+                      <SelectItem key={currency.code} value={currency.code} textValue={`${currency.code} ${currency.name}`}>
                         <span className="flex items-center gap-2">
                           <span className="font-medium">{currency.symbol}</span>
                           <span>{currency.name}</span>

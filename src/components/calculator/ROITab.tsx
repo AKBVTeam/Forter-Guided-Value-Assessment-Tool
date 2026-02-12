@@ -161,9 +161,11 @@ export function ROITab({
     const value = parseFloat(localGrowth) || 0;
     const clampedValue = Math.max(0, value);
     setLocalGrowth(clampedValue.toString());
+    const acvCurrentlyLinked = investmentInputs.annualACVGrowthPct === investmentInputs.annualSalesGrowthPct;
     onInvestmentInputsChange({
       ...investmentInputs,
       annualSalesGrowthPct: clampedValue,
+      annualACVGrowthPct: acvCurrentlyLinked ? clampedValue : investmentInputs.annualACVGrowthPct,
     });
   };
 
@@ -239,6 +241,7 @@ export function ROITab({
     investmentInputs.disputeManagement.enabled ||
     investmentInputs.abusePrevention.enabled ||
     investmentInputs.accountProtection.enabled ||
+    investmentInputs.pricingMode === 'manual' ||
     investmentInputs.manualOverride ||
     investmentInputs.integrationCost > 0;
   const hasInvestmentData = roiResults.hasInvestment || hasAnyInvestmentEnabled;

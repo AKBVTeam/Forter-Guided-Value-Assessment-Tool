@@ -656,7 +656,7 @@ export const ChallengeInputs = ({
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
                     {existingVendorBenchmarks.map((vendor) => (
-                      <SelectItem key={vendor.name} value={vendor.name}>
+                      <SelectItem key={vendor.name} value={vendor.name} textValue={vendor.name}>
                         {vendor.name}
                       </SelectItem>
                     ))}

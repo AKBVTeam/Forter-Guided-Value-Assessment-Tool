@@ -1,6 +1,8 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { CalculatorData } from "@/pages/Index";
 import { ValueTotals } from "@/components/calculator/ValueSummaryOptionA";
+import { getRequiredInputFields } from "@/lib/csvExport";
+import { getCurrencySymbol } from "@/lib/benchmarkData";
 
 export interface TabCompletionState {
   profile: number; // 0-1 progress
@@ -79,21 +81,15 @@ export function useTabCompletion({ formData, selectedChallenges, valueTotals, ha
     // Use Cases: Binary - at least one selected
     const challengesProgress = Object.values(selectedChallenges).some(Boolean) ? 1 : 0;
 
-    // Customer Inputs: Count filled core input fields
-    const inputFields: (keyof CalculatorData)[] = [
-      'amerAnnualGMV', 'amerGrossAttempts', 'amerPreAuthApprovalRate',
-      'emeaAnnualGMV', 'emeaGrossAttempts', 
-      'apacAnnualGMV', 'apacGrossAttempts',
-      'fraudCBRate', 'serviceCBRate', 
-      'manualReviewPct', 'refundRate', 
-      'monthlyLogins', 'monthlySignups',
-    ];
-    const inputsFilled = inputFields.filter(field => {
-      const value = formData[field];
-      return value !== undefined && value !== null && value !== '' && value !== 0;
+    // Customer Inputs: Use same required fields as the tab (challenge-aware) so progress shows as soon as user enters any input
+    const currencySymbol = getCurrencySymbol(formData.baseCurrency || 'USD');
+    const requiredInputFields = getRequiredInputFields(selectedChallenges, currencySymbol, formData.isMarketplace);
+    const inputsFilled = requiredInputFields.filter(f => {
+      const value = formData[f.field as keyof CalculatorData];
+      return value !== undefined && value !== null && value !== '' && (typeof value !== 'number' || value !== 0);
     }).length;
-    // Use min of 5 required fields for meaningful progress
-    const inputsProgress = Math.min(inputsFilled / 5, 1);
+    const inputsTotal = requiredInputFields.length;
+    const inputsProgress = inputsTotal > 0 ? Math.min(inputsFilled / inputsTotal, 1) : 0;
 
     // Forter KPIs: Check key KPI fields (3 main ones)
     const kpiFields = [

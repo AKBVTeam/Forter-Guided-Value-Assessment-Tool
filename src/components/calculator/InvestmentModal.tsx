@@ -27,8 +27,10 @@ import {
   chargebackRecoveryPricing,
 } from "@/lib/roiCalculations";
 import { getCurrencySymbol, getExchangeRateFromUSD, convertFromUSD, convertCurrencyViaUSD } from "@/lib/benchmarkData";
+import { getForterTotalRecoveriesC7 } from "@/lib/runStandaloneCalculator";
 import { Calculator, Settings, DollarSign, ChevronDown, ChevronUp, Info, Plus, Trash2, ExternalLink, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 interface InvestmentModalProps {
@@ -87,7 +89,17 @@ export function InvestmentModal({
   
   useEffect(() => {
     if (!isEditingRef.current) {
-      setLocalInputs(investmentInputs);
+      const pricingMode = investmentInputs.pricingMode ?? (investmentInputs.manualOverride ? 'manual' : 'guided');
+      const salesGrowth = investmentInputs.annualSalesGrowthPct ?? 0;
+      const acvGrowth = investmentInputs.annualACVGrowthPct ?? 0;
+      const linkedByDefault = acvGrowth === 0;
+      const normalized = {
+        ...investmentInputs,
+        pricingMode,
+        annualACVGrowthPct: linkedByDefault ? salesGrowth : acvGrowth,
+      };
+      setLocalInputs(normalized);
+      setActiveTab(normalized.pricingMode === 'manual' ? 'manual' : 'guided');
     }
   }, [investmentInputs]);
 
@@ -251,21 +263,35 @@ export function InvestmentModal({
       
       // Dispute Management
       if (enabledSolutions.disputeManagement) {
-        if (!updated.disputeManagement.valueOfWonChargebacks) {
-          const fraudCBRate = (formData.fraudCBRate || 0.5) / 100;
-          const fraudWinRate = (formData.forterKPIs?.fraudWinRateChange || 40) / 100;
-          const serviceCBRate = (formData.serviceCBRate || 0.5) / 100;
-          const serviceWinRate = (formData.forterKPIs?.serviceWinRateChange || 40) / 100;
-          const cbAOV = formData.fraudCBAOV || 150;
-          
-          const fraudCBs = aggregatedAttempts * fraudCBRate;
-          const serviceCBs = aggregatedAttempts * serviceCBRate;
-          const wonValue = (fraudCBs * fraudWinRate + serviceCBs * serviceWinRate) * cbAOV;
-          
-          updated.disputeManagement.valueOfWonChargebacks = Math.round(wonValue) || 0;
-        }
-        if (!updated.disputeManagement.revenueSharePct) {
-          updated.disputeManagement.revenueSharePct = 20;
+        const dm = updated.disputeManagement;
+        if (dm.model !== 'costPerDispute') {
+          dm.model = dm.model || 'revShare';
+          if (!dm.valueOfWonChargebacks) {
+            // Tie to Total recoveries ($) from Increase chargeback recoveries (c7-disputes) calculator
+            const forterKPIs = formData.forterKPIs || {};
+            const includesFraudCBCoverage = updated.fraudManagement?.includesFraudCBCoverage ?? false;
+            const totalRecoveries = getForterTotalRecoveriesC7(formData, forterKPIs, includesFraudCBCoverage);
+            dm.valueOfWonChargebacks = Math.round(totalRecoveries) || 0;
+          }
+          if (dm.revenueSharePct === undefined || dm.revenueSharePct === null) {
+            dm.revenueSharePct = 20;
+          }
+        } else {
+          // Cost per dispute model: default number of disputes = (annual CB disputes / current dispute rate) * Forter dispute rate
+          if (dm.numberOfDisputes === undefined || dm.numberOfDisputes === null || dm.numberOfDisputes === 0) {
+            const annualCBDisputes = formData.annualCBDisputes ?? 0;
+            const currentDisputeRatePct = (formData.fraudDisputeRate ?? 0) || 1; // avoid div by 0
+            const kpis = formData.forterKPIs;
+            const forterDisputeRatePct = kpis?.fraudDisputeIsAbsolute
+              ? Math.min(100, kpis.fraudDisputeRateImprovement ?? 0)
+              : Math.min(100, currentDisputeRatePct + (kpis?.fraudDisputeRateImprovement ?? 0));
+            const totalCB = currentDisputeRatePct > 0 ? annualCBDisputes / (currentDisputeRatePct / 100) : 0;
+            const forterDisputes = totalCB * (forterDisputeRatePct / 100);
+            dm.numberOfDisputes = Math.round(forterDisputes) || 0;
+          }
+          if (dm.costPerDispute === undefined || dm.costPerDispute === null || currencyChanged) {
+            dm.costPerDispute = convertPrice(getPriceByAOV(chargebackRecoveryPricing, aov));
+          }
         }
       }
       
@@ -409,15 +435,42 @@ export function InvestmentModal({
         <p className="text-xs text-muted-foreground">One-time cost applied in Year 1 only</p>
       </div>
       
-      {/* Annual ACV Growth */}
+      {/* Annual ACV Growth - default linked to Annual Sales Growth */}
       <div className="space-y-2">
-        <Label>Annual ACV Growth (%)</Label>
+        <div className="flex items-center gap-2">
+          <Label>Annual ACV Growth (%)</Label>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="w-3.5 h-3.5 cursor-help text-muted-foreground/70 hover:text-muted-foreground shrink-0" aria-label="Info" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p className="text-xs">Assumes pricing grows in-line with organic volume growth of merchant</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          {(localInputs.annualACVGrowthPct ?? 0) !== (localInputs.annualSalesGrowthPct ?? 0) && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-primary"
+              onClick={() => updateLocalInputs(prev => ({ ...prev, annualACVGrowthPct: prev.annualSalesGrowthPct ?? 0 }))}
+            >
+              Reset to match sales growth
+            </Button>
+          )}
+        </div>
         <NumericInput
           value={localInputs.annualACVGrowthPct ?? 0}
           onChange={(v) => updateLocalInputs(prev => ({ ...prev, annualACVGrowthPct: v || 0 }))}
-          placeholder="0"
+          placeholder={String(localInputs.annualSalesGrowthPct ?? 0)}
         />
-        <p className="text-xs text-muted-foreground">Annual growth rate applied to investment cost (e.g., 5 = 5% per year)</p>
+        <p className="text-xs text-muted-foreground">
+          {(localInputs.annualACVGrowthPct ?? 0) === (localInputs.annualSalesGrowthPct ?? 0)
+            ? `Linked to Annual Sales Growth (${localInputs.annualSalesGrowthPct ?? 0}%). Edit to override.`
+            : 'Annual growth rate applied to investment cost. Use Reset to match sales growth.'}
+        </p>
       </div>
       
       {/* Year-by-Year Discounts - only show years matching contract tenure */}
@@ -476,81 +529,84 @@ export function InvestmentModal({
           )}
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'guided' | 'manual')}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            const mode = v as 'guided' | 'manual';
+            setActiveTab(mode);
+            updateLocalInputs(prev => ({ ...prev, pricingMode: mode }));
+          }}
+        >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="guided" className="gap-2">
               <Calculator className="w-4 h-4" />
               Guided Pricing
+              {activeTab === 'guided' && (
+                <Badge variant="secondary" className="ml-1 text-[10px] font-medium px-1.5 py-0 bg-primary/15 text-primary border-primary/30">
+                  Active
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="manual" className="gap-2">
               <Settings className="w-4 h-4" />
-              Manual Override
+              Custom Pricing
+              {activeTab === 'manual' && (
+                <Badge variant="secondary" className="ml-1 text-[10px] font-medium px-1.5 py-0 bg-primary/15 text-primary border-primary/30">
+                  Active
+                </Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
-          {/* Manual Override Tab */}
+          {/* Custom Pricing Tab — cost comes from the value entered here when this tab is selected */}
           <TabsContent value="manual" className="space-y-4 mt-4">
             {/* Contract Settings at top */}
             {contractSettingsJSX}
             
             <Card className="p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Enable Manual Override</Label>
-                <Switch
-                  checked={localInputs.manualOverride}
-                  onCheckedChange={(checked) => 
-                    updateLocalInputs(prev => ({ ...prev, manualOverride: checked }))
-                  }
+              <div className="space-y-2">
+                <Label>Forter Investment Cost ({currencySymbol})</Label>
+                <NumericInput
+                  value={localInputs.manualInvestmentCost}
+                  onChange={(v) => updateLocalInputs(prev => ({ ...prev, manualInvestmentCost: v }))}
+                  placeholder="Enter annual investment"
+                  formatWithCommas
                 />
               </div>
               
-              {localInputs.manualOverride && (
-                <div className="pt-4 border-t space-y-4">
-                  <div className="space-y-2">
-                    <Label>Forter Investment Cost ({currencySymbol})</Label>
-                    <NumericInput
-                      value={localInputs.manualInvestmentCost}
-                      onChange={(v) => updateLocalInputs(prev => ({ ...prev, manualInvestmentCost: v }))}
-                      placeholder="Enter annual investment"
-                      formatWithCommas
-                    />
-                  </div>
-                  
-                  {/* Optional source link */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Label>Calculator Source Link</Label>
-                      <Badge variant="outline" className="text-xs">Optional</Badge>
-                    </div>
-                    <div className="flex gap-2">
-                      <Input
-                        type="url"
-                        value={localInputs.manualSourceUrl || ''}
-                        onChange={(e) => updateLocalInputs(prev => ({ ...prev, manualSourceUrl: e.target.value }))}
-                        placeholder="https://docs.google.com/spreadsheets/..."
-                        className="flex-1"
-                      />
-                      {localInputs.manualSourceUrl && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => window.open(localInputs.manualSourceUrl, '_blank')}
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Open calculator</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Share a Google Sheets link or other calculator reference for transparency
-                    </p>
-                  </div>
+              {/* Optional source link */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label>Calculator Source Link</Label>
+                  <Badge variant="outline" className="text-xs">Optional</Badge>
                 </div>
-              )}
+                <div className="flex gap-2">
+                  <Input
+                    type="url"
+                    value={localInputs.manualSourceUrl || ''}
+                    onChange={(e) => updateLocalInputs(prev => ({ ...prev, manualSourceUrl: e.target.value }))}
+                    placeholder="https://docs.google.com/spreadsheets/..."
+                    className="flex-1"
+                  />
+                  {localInputs.manualSourceUrl && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => window.open(localInputs.manualSourceUrl, '_blank')}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Open calculator</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Share a Google Sheets link or other calculator reference for transparency
+                </p>
+              </div>
             </Card>
           </TabsContent>
 
@@ -620,19 +676,7 @@ export function InvestmentModal({
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Average Order Value - AOV ({currencySymbol})</Label>
-                        <NumericInput
-                          value={localInputs.fraudManagement.aov || (totalAttempts > 0 ? Math.round(totalGMV / totalAttempts) : undefined)}
-                          onChange={(v) => updateFraudManagement('aov', v)}
-                          placeholder={aov.toFixed(0)}
-                          formatWithCommas
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Calculated: {currencySymbol}{aov.toFixed(0)} (GMV ÷ Transactions)
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Cost per fraud decision ({currencySymbol})</Label>
+                        <Label>Cost per decision ({currencySymbol})</Label>
                         <NumericInput
                           value={localInputs.fraudManagement.costPerDecision}
                           onChange={(v) => updateFraudManagement('costPerDecision', v)}
@@ -642,6 +686,18 @@ export function InvestmentModal({
                         <p className="text-xs text-muted-foreground">
                           Default: {currencySymbol}{convertPrice(getPriceByAOV(fraudManagementPricing, aov)).toFixed(2)}
                           {isNotUSD && <span className="text-muted-foreground/70"> (${getPriceByAOV(fraudManagementPricing, aov).toFixed(2)} USD)</span>}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Average Order Value - AOV ({currencySymbol})</Label>
+                        <NumericInput
+                          value={localInputs.fraudManagement.aov || (totalAttempts > 0 ? Math.round(totalGMV / totalAttempts) : undefined)}
+                          onChange={(v) => updateFraudManagement('aov', v)}
+                          placeholder={aov.toFixed(0)}
+                          formatWithCommas
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Calculated: {currencySymbol}{aov.toFixed(0)} (GMV ÷ Transactions)
                         </p>
                       </div>
                       <div className="space-y-2">
@@ -760,15 +816,7 @@ export function InvestmentModal({
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>% of credit card traffic</Label>
-                        <NumericInput
-                          value={localInputs.paymentOptimization.creditCardTrafficPct}
-                          onChange={(v) => updatePaymentOptimization('creditCardTrafficPct', v)}
-                          placeholder={formData.amerCreditCardPct?.toString() || "80"}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Cost per payment optimization decision ({currencySymbol})</Label>
+                        <Label>Cost per decision ({currencySymbol})</Label>
                         <NumericInput
                           value={localInputs.paymentOptimization.costPerDecision}
                           onChange={(v) => updatePaymentOptimization('costPerDecision', v)}
@@ -779,6 +827,14 @@ export function InvestmentModal({
                           Default: {currencySymbol}{convertPrice(0.02).toFixed(2)}
                           {isNotUSD && <span className="text-muted-foreground/70"> ($0.02 USD)</span>}
                         </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>% of credit card traffic</Label>
+                        <NumericInput
+                          value={localInputs.paymentOptimization.creditCardTrafficPct}
+                          onChange={(v) => updatePaymentOptimization('creditCardTrafficPct', v)}
+                          placeholder={formData.amerCreditCardPct?.toString() || "80"}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Discount (%)</Label>
@@ -851,28 +907,99 @@ export function InvestmentModal({
                 
                 {expandedSections.disputeManagement && (
                   <div className="px-4 pb-4 space-y-4 border-t pt-4">
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Value of won chargebacks ({currencySymbol})</Label>
-                        <NumericInput
-                          value={localInputs.disputeManagement.valueOfWonChargebacks}
-                          onChange={(v) => updateDisputeManagement('valueOfWonChargebacks', v)}
-                          placeholder="0"
-                          formatWithCommas
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Revenue share (%)</Label>
-                        <NumericInput
-                          value={localInputs.disputeManagement.revenueSharePct}
-                          onChange={(v) => updateDisputeManagement('revenueSharePct', v)}
-                          placeholder="20"
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <Label>Model</Label>
+                      <Select
+                        value={localInputs.disputeManagement.model || 'revShare'}
+                        onValueChange={(v: 'revShare' | 'costPerDispute') => {
+                          if (v === 'revShare') {
+                            updateDisputeManagement('model', 'revShare');
+                            return;
+                          }
+                          const annualCBDisputes = formData.annualCBDisputes ?? 0;
+                          const currentRate = (formData.fraudDisputeRate ?? 0) || 1;
+                          const kpis = formData.forterKPIs;
+                          const forterRate = kpis?.fraudDisputeIsAbsolute
+                            ? Math.min(100, kpis.fraudDisputeRateImprovement ?? 0)
+                            : Math.min(100, currentRate + (kpis?.fraudDisputeRateImprovement ?? 0));
+                          const totalCB = currentRate > 0 ? annualCBDisputes / (currentRate / 100) : 0;
+                          const defaultDisputes = Math.round(totalCB * (forterRate / 100)) || 0;
+                          const defaultCost = convertPrice(getPriceByAOV(chargebackRecoveryPricing, aov));
+                          updateLocalInputs(prev => ({
+                            ...prev,
+                            disputeManagement: {
+                              ...prev.disputeManagement,
+                              model: 'costPerDispute',
+                              numberOfDisputes: prev.disputeManagement.numberOfDisputes ?? defaultDisputes,
+                              costPerDispute: prev.disputeManagement.costPerDispute ?? defaultCost,
+                            },
+                          }));
+                        }}
+                      >
+                        <SelectTrigger className="w-full max-w-xs">
+                          <SelectValue placeholder="Select model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="revShare">Rev Share</SelectItem>
+                          <SelectItem value="costPerDispute">Cost per dispute</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
+                    {(localInputs.disputeManagement.model || 'revShare') === 'revShare' ? (
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Value of won chargebacks ({currencySymbol})</Label>
+                          <NumericInput
+                            value={localInputs.disputeManagement.valueOfWonChargebacks}
+                            onChange={(v) => updateDisputeManagement('valueOfWonChargebacks', v)}
+                            placeholder="0"
+                            formatWithCommas
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Tied to Total recoveries ($) Forter outcome in &apos;Increase chargeback recoveries&apos; benefit
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Revenue share (%)</Label>
+                          <NumericInput
+                            value={localInputs.disputeManagement.revenueSharePct}
+                            onChange={(v) => updateDisputeManagement('revenueSharePct', v)}
+                            placeholder="20"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Number of chargeback disputes</Label>
+                          <NumericInput
+                            value={localInputs.disputeManagement.numberOfDisputes}
+                            onChange={(v) => updateDisputeManagement('numberOfDisputes', v)}
+                            placeholder="0"
+                            formatWithCommas
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Default: (Current annual CB disputes ÷ current dispute rate) × Forter KPI dispute rate
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Cost per dispute decision ({currencySymbol})</Label>
+                          <NumericInput
+                            value={localInputs.disputeManagement.costPerDispute}
+                            onChange={(v) => updateDisputeManagement('costPerDispute', v)}
+                            placeholder={convertPrice(getPriceByAOV(chargebackRecoveryPricing, aov)).toFixed(2)}
+                            decimalPlaces={2}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Default: {currencySymbol}{convertPrice(getPriceByAOV(chargebackRecoveryPricing, aov)).toFixed(2)}
+                            {isNotUSD && <span className="text-muted-foreground/70"> (by AOV tier)</span>}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     {/* Solution Total */}
                     <div className="mt-4 p-3 bg-muted/50 rounded-lg flex items-center justify-between">
-                      <span className="text-sm font-medium text-muted-foreground">Dispute Management Total</span>
+                      <span className="text-sm font-medium text-muted-foreground">Dispute Management ACV</span>
                       <span className="text-lg font-semibold text-primary">
                         {formatCurrency(costs.breakdown['Dispute Management'] || 0)}
                       </span>
@@ -943,7 +1070,7 @@ export function InvestmentModal({
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Cost per abuse decision ({currencySymbol})</Label>
+                        <Label>Cost per decision ({currencySymbol})</Label>
                         <NumericInput
                           value={localInputs.abusePrevention.costPerDecision}
                           onChange={(v) => updateAbusePrevention('costPerDecision', v)}

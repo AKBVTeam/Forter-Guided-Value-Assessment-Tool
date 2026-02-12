@@ -242,7 +242,7 @@ export function SegmentEditorModal({
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
                     {countryBenchmarksSortedForHQ.map((country) => (
-                      <SelectItem key={country.name} value={country.name}>
+                      <SelectItem key={country.name} value={country.name} textValue={country.name}>
                         {country.flag} {country.name}
                       </SelectItem>
                     ))}
@@ -266,7 +266,7 @@ export function SegmentEditorModal({
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
                     {verticalBenchmarks.map((vertical) => (
-                      <SelectItem key={vertical.name} value={vertical.name}>
+                      <SelectItem key={vertical.name} value={vertical.name} textValue={vertical.name}>
                         {vertical.name}
                       </SelectItem>
                     ))}
