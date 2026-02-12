@@ -197,6 +197,11 @@ interface KPIInputRowProps {
   fieldHelperWrapClass?: string;
   /** From parent: input class for list view (right-align, width) */
   fieldInputClass?: string;
+  /** When true, render a 0-100 slider instead of numeric input */
+  useSlider?: boolean;
+  /** Slider range (default 0-100 when useSlider) */
+  sliderMin?: number;
+  sliderMax?: number;
 }
 
 const KPIInputRow = ({ 
@@ -215,6 +220,9 @@ const KPIInputRow = ({
   fieldLabelWrapClass = 'flex items-center justify-between gap-2',
   fieldHelperWrapClass = '',
   fieldInputClass = '',
+  useSlider = false,
+  sliderMin = 0,
+  sliderMax = 100,
 }: KPIInputRowProps) => {
   // Calculate actual % reduction: (target - current) / current * 100
   const calculatePercentChange = (): string | null => {
@@ -226,7 +234,6 @@ const KPIInputRow = ({
 
   const percentChange = calculatePercentChange();
   const warning = fieldName && included ? getValidationWarning(fieldName, value) : null;
-  
   return (
     <div className={fieldRowClass}>
       <div className={fieldLabelWrapClass}>
@@ -242,14 +249,28 @@ const KPIInputRow = ({
           )}
         </div>
       </div>
-      <NumericInput className={fieldInputClass} 
-        value={included ? value : 0} 
-        onChange={onValueChange} 
-        placeholder="0" 
-        disabled={!included}
-        warning={warning}
-        decimalPlaces={decimalPlaces}
-      />
+      {useSlider ? (
+        <PercentageInput
+          value={included ? value : 0}
+          onChange={(v) => included && onValueChange(v)}
+          min={sliderMin}
+          max={sliderMax}
+          decimalPlaces={decimalPlaces ?? 2}
+          step={1}
+          disabled={!included}
+          warning={warning}
+          placeholder="0"
+        />
+      ) : (
+        <NumericInput className={fieldInputClass}
+          value={included ? value : 0}
+          onChange={onValueChange}
+          placeholder="0"
+          disabled={!included}
+          warning={warning}
+          decimalPlaces={decimalPlaces}
+        />
+      )}
       {/* Fixed height container to prevent layout bouncing */}
       <div className={`min-h-5 flex items-center ${fieldHelperWrapClass}`.trim()}>
         {currentValue !== undefined && currentValueLabel && (
@@ -973,6 +994,9 @@ export const ForterKPIConfig = ({
               currentValueLabel="Fraud Dispute Rate"
               fieldName="fraudDisputeRateImprovement"
               decimalPlaces={2}
+              useSlider
+              sliderMin={0}
+              sliderMax={100}
             />
             <KPIInputRow
               fieldRowClass={fieldRowClass}
@@ -986,6 +1010,9 @@ export const ForterKPIConfig = ({
               currentValueLabel="Fraud Win Rate"
               fieldName="fraudWinRateChange"
               decimalPlaces={2}
+              useSlider
+              sliderMin={0}
+              sliderMax={100}
             />
             <KPIInputRow
               fieldRowClass={fieldRowClass}
@@ -999,6 +1026,9 @@ export const ForterKPIConfig = ({
               currentValueLabel="Service Dispute Rate"
               fieldName="serviceDisputeRateImprovement"
               decimalPlaces={2}
+              useSlider
+              sliderMin={0}
+              sliderMax={100}
             />
             <KPIInputRow
               fieldRowClass={fieldRowClass}
@@ -1012,6 +1042,9 @@ export const ForterKPIConfig = ({
               currentValueLabel="Service Win Rate"
               fieldName="serviceWinRateChange"
               decimalPlaces={2}
+              useSlider
+              sliderMin={0}
+              sliderMax={100}
             />
             <div className={fieldRowClass}>
               <Label className={fieldLabelClass}>Target Time to Review CB (mins)</Label>

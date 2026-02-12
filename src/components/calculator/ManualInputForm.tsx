@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { CalculatorData, CustomCalculation } from "@/pages/Index";
 import { ForterKPIConfig, defaultForterKPIs, ForterKPIs, type ForterKPIFocusSection } from "@/components/calculator/ForterKPIConfig";
 import { ChallengeSelection } from "@/components/calculator/ChallengeSelection";
@@ -198,6 +199,13 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   );
   const [showResults, setShowResults] = useState(false);
   const [activeTab, setActiveTab] = useState(() => "profile");
+  // Guided vs custom tab bar; must be declared before tabOrder/validTabs which depend on it
+  const [showGuidedTabs, setShowGuidedTabs] = useState(() => {
+    if (initialData?._pathwayMode) {
+      return initialData._pathwayMode === 'manual';
+    }
+    return entryMode !== "custom";
+  });
   
   // Sync with external tab control
   useEffect(() => {
@@ -207,6 +215,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   }, [externalActiveTab]);
   const [showInMillions, setShowInMillions] = useState(false);
   const [forterKPIFocusTarget, setForterKPIFocusTarget] = useState<ForterKPIFocusSection | null>(null);
+  const [forterKPIModalOpen, setForterKPIModalOpen] = useState(false);
   /** Shared list/grid layout for both Customer Inputs and Forter KPI tabs */
   const [inputsLayoutView, setInputsLayoutView] = useState<'list' | 'grid'>('grid');
   const [entryPath, setEntryPath] = useState<EntryPath | null>(() => entryMode === "custom" ? "custom" : null);
@@ -579,11 +588,11 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   // Don't show in custom mode
   useEffect(() => {
     if (hasSelectedChallenges && !prevHasSelectedChallengesRef.current && !isCustomMode) {
-      // Only inputs, forter, summary unlock when use cases are selected; ROI unlocks after viewing Value Summary
-      const unlockedTabs = ['inputs', 'forter', 'summary'];
+      // Only inputs and summary unlock when use cases are selected; ROI unlocks after viewing Value Summary
+      const unlockedTabs = ['inputs', 'summary'];
       setRecentlyUnlockedTabs(unlockedTabs);
       toast.success("Tabs unlocked!", {
-        description: "You can now access Customer Inputs, Forter KPI, and Value Summary. View Value Summary to unlock ROI.",
+        description: "You can now access Customer Inputs and Value Summary. Use \"Refine Forter KPI assumptions\" when needed. View Value Summary to unlock ROI.",
         duration: 4000,
         icon: <Unlock className="h-4 w-4" />,
       });
@@ -617,22 +626,22 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     prevHasViewedValueSummaryRef.current = hasViewedValueSummary;
   }, [hasViewedValueSummary, hasSelectedChallenges, isCustomMode]);
   
-  // Fixed tab order (segments removed from tabs, now in Customer Inputs)
-  const tabOrder = ["profile", "challenges", "inputs", "forter", "summary", "roi"];
+  // Tab order: in guided mode Forter KPI is in a modal, not a tab
+  const tabOrder = showGuidedTabs ? ["profile", "challenges", "inputs", "summary", "roi"] : ["profile", "summary", "roi"];
+  const tabNames: Record<string, string> = {
+    profile: "Profile",
+    challenges: "Use Cases",
+    inputs: "Customer Inputs",
+    forter: "Forter KPI",
+    summary: "Value Summary",
+    roi: "ROI",
+  };
   
   // Get next/previous tab names for navigation buttons
   const getNextTabName = () => {
     const currentIndex = tabOrder.indexOf(activeTab);
     if (currentIndex < tabOrder.length - 1) {
       const nextTab = tabOrder[currentIndex + 1];
-      const tabNames: Record<string, string> = {
-        profile: "Profile",
-        challenges: "Use Cases",
-        inputs: "Customer Inputs",
-        forter: "Forter KPI",
-        summary: "Value Summary",
-        roi: "ROI",
-      };
       return tabNames[nextTab] || nextTab;
     }
     return "";
@@ -642,14 +651,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     const currentIndex = tabOrder.indexOf(activeTab);
     if (currentIndex > 0) {
       const prevTab = tabOrder[currentIndex - 1];
-      const tabNames: Record<string, string> = {
-        profile: "Profile",
-        challenges: "Use Cases",
-        inputs: "Customer Inputs",
-        forter: "Forter KPI",
-        summary: "Value Summary",
-        roi: "ROI",
-      };
       return tabNames[prevTab] || prevTab;
     }
     return "";
@@ -1422,15 +1423,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     );
   }
   
-  // State for switching from custom to guided mode
-  // Initialize based on persisted pathway mode if available, otherwise use entryMode
-  const [showGuidedTabs, setShowGuidedTabs] = useState(() => {
-    if (initialData?._pathwayMode) {
-      return initialData._pathwayMode === 'manual';
-    }
-    return entryMode !== "custom";
-  });
-  
   // Sync showGuidedTabs when entryMode prop changes (e.g., when loading a saved analysis)
   useEffect(() => {
     console.log('[ManualInputForm] entryMode changed to:', entryMode);
@@ -1446,15 +1438,18 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   }, [entryMode]);
 
   // Ensure activeTab always matches a visible tab (prevents blank screen when Tabs value doesn't match any trigger)
-  const guidedTabs = ["profile", "challenges", "inputs", "forter", "summary", "roi"];
+  // In guided mode, Forter KPI is in a modal (Refine Forter KPI assumptions), not a tab
+  const guidedTabs = ["profile", "challenges", "inputs", "summary", "roi"];
   const customTabs = ["profile", "summary", "roi"];
+  const validTabs = showGuidedTabs ? guidedTabs : customTabs;
   useEffect(() => {
-    const validTabs = showGuidedTabs ? guidedTabs : customTabs;
     if (activeTab && !validTabs.includes(activeTab)) {
       setActiveTab("profile");
     }
   }, [showGuidedTabs, activeTab]);
-  
+  // Never pass an invalid value to Tabs (e.g. "forter" when in guided mode) to avoid Radix/React errors
+  const tabsValue = (activeTab && validTabs.includes(activeTab)) ? activeTab : "profile";
+
   // Confirmation dialogs for pathway switching
   const [showSwitchToGuidedConfirm, setShowSwitchToGuidedConfirm] = useState(false);
   const [showSwitchToCustomConfirm, setShowSwitchToCustomConfirm] = useState(false);
@@ -1592,13 +1587,13 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
           </div>
         </div>
 
-        <Tabs value={activeTab || "profile"} onValueChange={(value) => {
+        <Tabs value={tabsValue} onValueChange={(value) => {
           // Mark Value Summary as viewed when user navigates to it (unlocks ROI tab)
           if (value === 'summary') {
             setHasViewedValueSummary(true);
           }
           // In guided mode, prevent navigation to locked tabs if no challenges selected
-          if (showGuidedTabs && !hasSelectedChallenges && ['inputs', 'forter', 'summary'].includes(value)) {
+          if (showGuidedTabs && !hasSelectedChallenges && ['inputs', 'summary'].includes(value)) {
             toast.error("Please select at least one use case first, or skip to Value Summary");
             return;
           }
@@ -1650,38 +1645,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   className={`flex-1 ${recentlyUnlockedTabs.includes('inputs') ? "animate-pulse ring-2 ring-green-500 ring-offset-1" : ""}`}
                 >
                   {renderTabLabel('inputs', 'Customer Inputs')}
-                </TabsTrigger>
-              )}
-              
-              {/* Forter KPI Tab - conditional tooltip only when locked (wrapper span receives hover; disabled button does not) */}
-              {!hasSelectedChallenges ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="flex-1 flex cursor-not-allowed min-w-0">
-                      <TabsTrigger 
-                        value="forter" 
-                        disabled
-                        className="w-full opacity-50 pointer-events-none"
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <Lock className="h-3 w-3" />
-                          {renderTabLabel('forter', 'Forter KPI', true)}
-                        </span>
-                      </TabsTrigger>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-xs">
-                    <p className="text-sm">
-                      Use Cases are required to unlock Forter KPI tab
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <TabsTrigger 
-                  value="forter" 
-                  className={`flex-1 ${recentlyUnlockedTabs.includes('forter') ? "animate-pulse ring-2 ring-green-500 ring-offset-1" : ""}`}
-                >
-                  {renderTabLabel('forter', 'Forter KPI')}
                 </TabsTrigger>
               )}
               
@@ -2391,92 +2354,20 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               segments={segments}
               viewMode={inputsLayoutView}
             />
-            {/* Navigation Buttons */}
-            <div className="flex justify-between pt-6 border-t mt-6">
-              <Button variant="outline" onClick={goToPreviousTab} className="gap-2">
-                <ChevronLeft className="w-4 h-4" /> Back
-              </Button>
-              <Button onClick={goToNextTab} className="gap-2">
-                Next <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </TabsContent>
-
-          {/* Forter Performance Assumptions Tab */}
-          <TabsContent value="forter" className="space-y-4 mt-6" data-tab-title="Forter KPI">
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">
-                  Configure Forter performance assumptions and targets used in the value model.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Updates to this tab are optional (support by Risk/Analytics). Figures currently benchmarked to Forter and 3rd party data (based on Country, Industry, AoV etc.).
-                </p>
+            {showGuidedTabs && (
+              <div className="pt-4 border-t mt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setForterKPIModalOpen(true)}
+                >
+                  <Gauge className="h-4 w-4" />
+                  Refine Forter KPI assumptions
+                </Button>
               </div>
-              <div className="flex items-center gap-0.5 rounded-md border bg-muted/30 p-0.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => setInputsLayoutView('list')}
-                      className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'list' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
-                      aria-label="List view"
-                    >
-                      <List className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">List</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => setInputsLayoutView('grid')}
-                      className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'grid' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
-                      aria-label="Grid view"
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Grid</TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-            <ForterKPIConfig
-              kpis={formData.forterKPIs || defaultForterKPIs}
-              onUpdate={(kpis) => updateField("forterKPIs", kpis)}
-              selectedChallenges={selectedChallenges}
-              focusTarget={forterKPIFocusTarget}
-              onFocusHandled={() => setForterKPIFocusTarget(null)}
-              viewMode={inputsLayoutView}
-              forterBenchmarkSources={forterBenchmarkSources}
-              forterBenchmarkValues={forterBenchmarkValues}
-              suggested3DSFromPSD2={suggested3DSFromPSD2}
-              customerInputs={{
-                amerPreAuthApprovalRate: formData.amerPreAuthApprovalRate,
-                amerPostAuthApprovalRate: formData.amerPostAuthApprovalRate,
-                amer3DSChallengeRate: formData.amer3DSChallengeRate,
-                fraudCBRate: formData.fraudCBRate,
-                manualReviewPct: formData.manualReviewPct,
-                timePerReview: formData.timePerReview,
-                fraudDisputeRate: formData.fraudDisputeRate,
-                fraudWinRate: formData.fraudWinRate,
-                serviceDisputeRate: formData.serviceDisputeRate,
-                serviceWinRate: formData.serviceWinRate,
-                avgTimeToReviewCB: formData.avgTimeToReviewCB,
-                annualCBDisputes: formData.annualCBDisputes,
-                costPerHourAnalyst: formData.costPerHourAnalyst,
-                // For AOV display
-                amerAnnualGMV: formData.amerAnnualGMV,
-                amerGrossAttempts: formData.amerGrossAttempts,
-                baseCurrency: formData.baseCurrency,
-                // For vendor-based CB rate lookup in segments
-                existingFraudVendor: formData.existingFraudVendor,
-              }}
-              segmentationEnabled={segmentationEnabled}
-              segments={segments}
-              onSegmentUpdate={handleSaveSegment}
-            />
+            )}
             {/* Navigation Buttons */}
             <div className="flex justify-between pt-6 border-t mt-6">
               <Button variant="outline" onClick={goToPreviousTab} className="gap-2">
@@ -2490,9 +2381,23 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
 
           {/* Value Summary Tab */}
           <TabsContent value="summary" className="space-y-4 mt-6" data-tab-title="Value Summary">
-            <p className="text-sm text-muted-foreground mb-4">
-              Review the calculated value drivers and annual potential from your inputs.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <p className="text-sm text-muted-foreground">
+                Review the calculated value drivers and annual potential from your inputs.
+              </p>
+              {showGuidedTabs && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 shrink-0"
+                  onClick={() => setForterKPIModalOpen(true)}
+                >
+                  <Gauge className="h-4 w-4" />
+                  Refine Forter KPI assumptions
+                </Button>
+              )}
+            </div>
             <ValueSummaryOptionA
               formData={formData}
               selectedChallenges={selectedChallenges}
@@ -2500,7 +2405,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               onForterKPIChange={handleSummaryForterKPIChange}
               onNavigateToForterKPI={showGuidedTabs ? (target) => {
                 setForterKPIFocusTarget(target);
-                setActiveTab("forter");
+                setForterKPIModalOpen(true);
               } : undefined}
               onCustomCalculationsChange={(calcs) => updateField("customCalculations", calcs)}
               onSegmentInputChange={(segmentId, field, value) => {
@@ -2589,7 +2494,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               onForterKPIChange={handleSummaryForterKPIChange}
               onNavigateToForterKPI={showGuidedTabs ? (target) => {
                 setForterKPIFocusTarget(target);
-                setActiveTab("forter");
+                setForterKPIModalOpen(true);
               } : undefined}
               onCustomCalculationsChange={(calcs) => updateField("customCalculations", calcs)}
               onSegmentInputChange={(segmentId, field, value) => {
@@ -2618,6 +2523,90 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
           </div>
         )}
       </Card>
+      
+      {/* Refine Forter KPI assumptions modal (guided mode) */}
+      <Dialog
+        open={forterKPIModalOpen}
+        onOpenChange={(open) => {
+          setForterKPIModalOpen(open);
+          if (!open) setForterKPIFocusTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Refine Forter KPI assumptions</DialogTitle>
+            <DialogDescription>
+              Configure Forter performance assumptions and targets used in the value model. Updates are optional; figures are benchmarked to Forter and 3rd party data (Country, Industry, AoV, etc.).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0 space-y-4 py-2">
+            <div className="flex items-center justify-end gap-0.5 rounded-md border bg-muted/30 p-0.5 w-fit ml-auto">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setInputsLayoutView('list')}
+                    className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'list' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
+                    aria-label="List view"
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">List</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setInputsLayoutView('grid')}
+                    className={`inline-flex items-center justify-center rounded p-1.5 transition-[transform,color,background-color,box-shadow] duration-200 ease-out hover:scale-110 active:scale-95 ${inputsLayoutView === 'grid' ? 'scale-105 bg-background shadow-sm' : 'scale-100 text-muted-foreground hover:text-foreground'}`}
+                    aria-label="Grid view"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Grid</TooltipContent>
+              </Tooltip>
+            </div>
+            <ForterKPIConfig
+              kpis={formData.forterKPIs || defaultForterKPIs}
+              onUpdate={(kpis) => updateField("forterKPIs", kpis)}
+              selectedChallenges={selectedChallenges}
+              focusTarget={forterKPIFocusTarget}
+              onFocusHandled={() => setForterKPIFocusTarget(null)}
+              viewMode={inputsLayoutView}
+              forterBenchmarkSources={forterBenchmarkSources}
+              forterBenchmarkValues={forterBenchmarkValues}
+              suggested3DSFromPSD2={suggested3DSFromPSD2}
+              customerInputs={{
+                amerPreAuthApprovalRate: formData.amerPreAuthApprovalRate,
+                amerPostAuthApprovalRate: formData.amerPostAuthApprovalRate,
+                amer3DSChallengeRate: formData.amer3DSChallengeRate,
+                fraudCBRate: formData.fraudCBRate,
+                manualReviewPct: formData.manualReviewPct,
+                timePerReview: formData.timePerReview,
+                fraudDisputeRate: formData.fraudDisputeRate,
+                fraudWinRate: formData.fraudWinRate,
+                serviceDisputeRate: formData.serviceDisputeRate,
+                serviceWinRate: formData.serviceWinRate,
+                avgTimeToReviewCB: formData.avgTimeToReviewCB,
+                annualCBDisputes: formData.annualCBDisputes,
+                costPerHourAnalyst: formData.costPerHourAnalyst,
+                amerAnnualGMV: formData.amerAnnualGMV,
+                amerGrossAttempts: formData.amerGrossAttempts,
+                baseCurrency: formData.baseCurrency,
+                existingFraudVendor: formData.existingFraudVendor,
+              }}
+              segmentationEnabled={segmentationEnabled}
+              segments={segments}
+              onSegmentUpdate={handleSaveSegment}
+            />
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setForterKPIModalOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Currency Change Confirmation Dialog */}
       <AlertDialog open={!!pendingCurrencyChange} onOpenChange={(open) => !open && handleDeclineCurrencyChange()}>
@@ -2711,8 +2700,8 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
           <AlertDialogHeader>
             <AlertDialogTitle>Switch to Guided Value Pathway?</AlertDialogTitle>
             <AlertDialogDescription>
-              Switching to the Guided pathway will show additional tabs for Use Cases, Customer Inputs, and Forter KPIs. 
-              This enables discovery and configuration of value drivers through a structured process.
+              Switching to the Guided pathway will show additional tabs for Use Cases, Customer Inputs, and Value Summary. 
+              You can refine Forter KPI assumptions from Customer Inputs or Value Summary when needed.
               <br /><br />
               <strong className="text-foreground">All existing data will be preserved.</strong> All custom calculations and any previously entered values will remain intact.
             </AlertDialogDescription>
