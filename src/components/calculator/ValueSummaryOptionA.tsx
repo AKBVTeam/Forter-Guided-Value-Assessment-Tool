@@ -2365,12 +2365,14 @@ export const ValueSummaryOptionA = ({
   const grossMarginPercent = formData.amerGrossMarginPercent || 50;
   const isMarketplace = formData.isMarketplace || false;
   const commissionRate = formData.commissionRate || 100;
-  // EBITDA from GMV: retailer = GMV × gross margin; marketplace = GMV × commission × gross margin (both applied)
+  // GMV to net sales deduction (sales tax, returns/cancellations) – same as in calculators
+  const netSalesMultiplier = 1 - getGmvToNetSalesDeductionPct(formData) / 100;
+  // EBITDA from GMV: value of approved → net sales (× (1-deduction%)) → then commission & margin
   const standardGmvProfitability = isMarketplace
-    ? standardGrowthTotal * (commissionRate / 100) * (grossMarginPercent / 100)
-    : standardGrowthTotal * (grossMarginPercent / 100);
-  // Custom GMV calculations already entered as GMV - apply the same margin logic
-  const customGmvProfitability = customGmvTotal * (isMarketplace ? (commissionRate / 100) : 1) * (grossMarginPercent / 100);
+    ? standardGrowthTotal * netSalesMultiplier * (commissionRate / 100) * (grossMarginPercent / 100)
+    : standardGrowthTotal * netSalesMultiplier * (grossMarginPercent / 100);
+  // Custom GMV calculations: apply same net sales deduction then margin
+  const customGmvProfitability = customGmvTotal * netSalesMultiplier * (isMarketplace ? (commissionRate / 100) : 1) * (grossMarginPercent / 100);
   const gmvProfitability = standardGmvProfitability + customGmvProfitability;
   const ebitdaContribution = gmvProfitability + riskAvoidanceTotal + riskMitigationTotal;
 
@@ -2461,7 +2463,8 @@ export const ValueSummaryOptionA = ({
     const toMultiLine = (label: string) => label.split(" ").join("\n");
     const getBenefitLabel = (driver: { id: string; calculatorTitle?: string; label: string }) =>
       driver.calculatorTitle ?? driver.label ?? getChallengeBenefitContent(driver.id)?.benefitTitle ?? driver.label;
-    // EBITDA from GMV: retailer = GMV × gross margin; marketplace = GMV × commission × gross margin
+    // EBITDA from GMV: value → net sales (× (1-deduction%)) → then commission & margin (align with calculators)
+    const netSalesMultiplier = 1 - getGmvToNetSalesDeductionPct(formData) / 100;
     const marginMultiplier = formData.isMarketplace
       ? ((formData.commissionRate || 100) / 100) * ((formData.amerGrossMarginPercent || 50) / 100)
       : (formData.amerGrossMarginPercent || 50) / 100;
@@ -2469,7 +2472,7 @@ export const ValueSummaryOptionA = ({
     const nonCustomGrowthDrivers = businessGrowthDrivers.filter(d => !d.id.startsWith('custom-'));
     nonCustomGrowthDrivers.forEach((driver) => {
       if (driver.enabled && driver.value > 0) {
-        const ebitdaValue = driver.value * marginMultiplier;
+        const ebitdaValue = driver.value * netSalesMultiplier * marginMultiplier;
         const label = getBenefitLabel(driver);
         rawData.push({ name: toMultiLine(label), originalLabel: label, value: ebitdaValue, base: 0, isTotal: false });
       }
@@ -2477,7 +2480,7 @@ export const ValueSummaryOptionA = ({
     const customGmvDrivers = businessGrowthDrivers.filter(d => d.id.startsWith('custom-'));
     customGmvDrivers.forEach((driver) => {
       if (driver.enabled && driver.value > 0) {
-        const ebitdaValue = driver.value * marginMultiplier;
+        const ebitdaValue = driver.value * netSalesMultiplier * marginMultiplier;
         const label = driver.calculatorTitle ?? driver.label;
         rawData.push({ name: toMultiLine(label), originalLabel: label, value: ebitdaValue, base: 0, isTotal: false });
       }
@@ -2495,7 +2498,7 @@ export const ValueSummaryOptionA = ({
       }
     });
     return [...rawData].sort((a, b) => b.value - a.value);
-  }, [businessGrowthDrivers, riskAvoidanceDrivers, riskMitigationDrivers, formData.isMarketplace, formData.commissionRate, formData.amerGrossMarginPercent]);
+  }, [businessGrowthDrivers, riskAvoidanceDrivers, riskMitigationDrivers, formData.isMarketplace, formData.commissionRate, formData.amerGrossMarginPercent, formData.gmvToNetSalesDeductionPct, formData.country]);
 
   const buildWaterfallChartData = (sortedData: { name: string; value: number }[], maxBars: number): WaterfallEntry[] => {
     const chartData: WaterfallEntry[] = [];
@@ -3709,8 +3712,8 @@ export const ValueSummaryOptionA = ({
                       <p className="text-sm text-muted-foreground">
                         {businessGrowthTotal > 0
                           ? isMarketplace
-                            ? "Applies commission and gross margin to GMV uplift"
-                            : "Applies gross margin to GMV uplift"
+                            ? "Net of GMV→net sales deduction, then commission and gross margin"
+                            : "Net of GMV→net sales deduction, then gross margin"
                           : "Cost Reduction"}
                       </p>
                     </div>

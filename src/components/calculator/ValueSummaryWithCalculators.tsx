@@ -878,13 +878,14 @@ export const ValueSummaryWithCalculators = ({
   );
   const totalValue = businessGrowthTotal + riskAvoidanceTotal + riskMitigationTotal;
 
-  // EBITDA Contribution = (GMV Uplift × margin) + Cost Reduction + Risk Mitigation
-  // Retailer: GMV × gross margin; Marketplace: GMV × commission × gross margin (both applied)
+  // EBITDA Contribution = (GMV Uplift → net sales → margin) + Cost Reduction + Risk Mitigation
+  // Apply GMV to net sales deduction (sales tax, returns/cancellations) then commission & margin (align with calculators)
   const isMarketplace = formData.isMarketplace || false;
   const commissionRate = formData.commissionRate || 100;
+  const netSalesMultiplier = 1 - getGmvToNetSalesDeductionPct(formData) / 100;
   const gmvProfitability = isMarketplace
-    ? businessGrowthTotal * (commissionRate / 100) * (grossMarginPercent / 100)
-    : businessGrowthTotal * (grossMarginPercent / 100);
+    ? businessGrowthTotal * netSalesMultiplier * (commissionRate / 100) * (grossMarginPercent / 100)
+    : businessGrowthTotal * netSalesMultiplier * (grossMarginPercent / 100);
   const ebitdaContribution = gmvProfitability + riskAvoidanceTotal + riskMitigationTotal;
 
   // Waterfall chart data - limit to top 5 bars + "Other" bucket to prevent overlap
@@ -1260,8 +1261,8 @@ export const ValueSummaryWithCalculators = ({
                       <p className="text-sm text-muted-foreground">
                         {businessGrowthTotal > 0
                           ? isMarketplace 
-                            ? `(GMV Uplift × ${commissionRate}% commission) + Cost Reduction`
-                            : `(GMV Uplift × ${grossMarginPercent}% margin) + Cost Reduction`
+                            ? `(GMV uplift → net sales → ${commissionRate}% commission × margin) + Cost Reduction`
+                            : `(GMV uplift → net sales → ${grossMarginPercent}% margin) + Cost Reduction`
                           : "Cost Reduction"}
                       </p>
                     </div>
