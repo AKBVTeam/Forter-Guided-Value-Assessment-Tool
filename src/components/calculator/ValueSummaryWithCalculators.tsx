@@ -55,6 +55,7 @@ import {
   ALL_CHALLENGES,
   SOLUTION_PRODUCTS,
 } from "@/lib/calculations";
+import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
 import { defaultAbuseBenchmarks } from "./AbuseBenchmarksModal";
 import {
   BarChart,
@@ -393,6 +394,8 @@ export const ValueSummaryWithCalculators = ({
       creditCard3DSPct: current3DSRate,
       threeDSFailureRate: formData.amer3DSAbandonmentRate ?? 0,
       issuingBankDeclineRate: formData.amerIssuingBankDeclineRate ?? 0,
+      forter3DSAbandonmentRate: forterKPIs.forter3DSAbandonmentRate ?? formData.amer3DSAbandonmentRate ?? 0,
+      forterIssuingBankDeclineRate: forterKPIs.forterIssuingBankDeclineRate ?? formData.amerIssuingBankDeclineRate ?? 0,
       fraudChargebackRate: currentCBRate,
       isMarketplace: formData.isMarketplace ?? false,
       commissionRate: formData.commissionRate ?? 100,
@@ -615,6 +618,7 @@ export const ValueSummaryWithCalculators = ({
       pctFraudulentLogins: forterKPIs.pctFraudulentLogins || 1,
       churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO || 50,
       atoCatchRate: forterKPIs.atoCatchRate || 90,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     return calculateChallenge12_13(inputs);

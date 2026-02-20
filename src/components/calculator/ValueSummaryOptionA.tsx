@@ -54,6 +54,7 @@ import { EditableCalculatorDisplay } from "./EditableCalculatorDisplay";
 import { CalculatorData, CustomCalculation, type StandaloneCalculator } from "@/pages/Index";
 import { ForterKPIs, defaultForterKPIs, type ForterKPIFocusSection } from "./ForterKPIConfig";
 import { getChallengeBenefitContent } from "@/lib/challengeBenefitContent";
+import { hasCaseStudy, getCaseStudyImagePath } from "@/lib/caseStudyMapping";
 import {
   calculateChallenge1,
   calculateChallenge245,
@@ -84,6 +85,7 @@ import {
 } from "@/lib/calculations";
 import { defaultAbuseBenchmarks } from "./AbuseBenchmarksModal";
 import { getCurrencySymbol } from "@/lib/benchmarkData";
+import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
 import { SegmentCalculatorTabs, computeSegmentedAggregateValue, computeSegmentedAggregateRows, computeSegmentedAggregateDeduplicationBreakdown } from "./SegmentCalculatorTabs";
 import { BenefitSelector, BENEFIT_OPTIONS } from "./BenefitSelector";
 import { CalculatorInputsTab, hasCalculatorMissingInputs, getCalculatorCompletionPercentage, CALCULATOR_REQUIRED_INPUTS } from "./CalculatorInputsTab";
@@ -239,7 +241,8 @@ export const ValueSummaryOptionA = ({
   const [riskMitigationOpen, setRiskMitigationOpen] = useState(true);
   const [selectedCalculatorId, setSelectedCalculatorId] = useState<string | null>(null);
   const [ebitdaChartModalOpen, setEbitdaChartModalOpen] = useState(false);
-  const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator'>('summary');
+  const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator' | 'success-stories'>('summary');
+  const [successStoriesViewed, setSuccessStoriesViewed] = useState<Set<string>>(new Set());
   const calculatorDialogRef = useRef<HTMLDivElement>(null);
   const [isCapturingBenefitPdf, setIsCapturingBenefitPdf] = useState(false);
 
@@ -860,6 +863,7 @@ export const ValueSummaryOptionA = ({
       forterChargebackReduction: cbReduction,
       deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
       includesFraudCBCoverage: fraudCBCoverageEnabled,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     return calculateChallenge1(inputs);
@@ -930,6 +934,8 @@ export const ValueSummaryOptionA = ({
       creditCard3DSPct: current3DSRate,
       threeDSFailureRate: formData.amer3DSAbandonmentRate ?? 0,
       issuingBankDeclineRate: formData.amerIssuingBankDeclineRate ?? 0,
+      forter3DSAbandonmentRate: forterKPIs.forter3DSAbandonmentRate ?? formData.amer3DSAbandonmentRate ?? 0,
+      forterIssuingBankDeclineRate: forterKPIs.forterIssuingBankDeclineRate ?? formData.amerIssuingBankDeclineRate ?? 0,
       fraudChargebackRate: currentCBRate,
       isMarketplace: formData.isMarketplace ?? false,
       commissionRate: formData.commissionRate ?? 100,
@@ -943,6 +949,7 @@ export const ValueSummaryOptionA = ({
       forterTargetPostAuthRate: targetPostAuthRate,
       deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
       includesFraudCBCoverage: fraudCBCoverageEnabled,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     return calculateChallenge245(inputs);
@@ -1220,6 +1227,7 @@ export const ValueSummaryOptionA = ({
       pctFraudulentLogins: forterKPIs.pctFraudulentLogins ?? 1,
       churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO ?? 50,
       atoCatchRate: forterKPIs.atoCatchRate ?? 90,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     return calculateChallenge12_13(inputs);
@@ -2301,15 +2309,32 @@ export const ValueSummaryOptionA = ({
       isDuplicateSelected && formData.standaloneCalculators?.[selectedCalculatorId]
         ? { ...formData, ...formData.standaloneCalculators[selectedCalculatorId].inputs }
         : formData;
+    // Clamp payment-funnel percent fields to 0–100 when editing from calculator or inputs
+    const clampPaymentFunnelPercent = (field: keyof CalculatorData, value: number | Record<string, string>): number | Record<string, string> => {
+      if ((field === 'amer3DSAbandonmentRate' || field === 'amerIssuingBankDeclineRate') && typeof value === 'number') {
+        return Math.max(0, Math.min(100, value));
+      }
+      return value;
+    };
+    // Global fields: always update main formData so calculator maths, ROI tab, and exports stay in sync
+    const GLOBAL_FORM_FIELDS = new Set<keyof CalculatorData>(['gmvToNetSalesDeductionPct']);
     const modalOnFormDataChange = isDuplicateSelected
       ? (field: keyof CalculatorData, value: number) => {
+          const v = clampPaymentFunnelPercent(field, value) as number;
+          if (GLOBAL_FORM_FIELDS.has(field)) {
+            onFormDataChange?.(field, v);
+            return;
+          }
           const dup = formData.standaloneCalculators![selectedCalculatorId];
           onFormDataChange?.('standaloneCalculators' as keyof CalculatorData, {
             ...(formData.standaloneCalculators || {}),
-            [selectedCalculatorId]: { ...dup, inputs: { ...dup.inputs, [field]: value } },
+            [selectedCalculatorId]: { ...dup, inputs: { ...dup.inputs, [field]: v } },
           } as any);
         }
-      : onFormDataChange;
+      : (field: keyof CalculatorData, value: number | Record<string, string>) => {
+          const v = clampPaymentFunnelPercent(field, value);
+          onFormDataChange?.(field, v);
+        };
     return { sourceIdForModal, isDuplicateSelected, modalFormData, modalOnFormDataChange };
   }, [selectedCalculatorId, formData, onFormDataChange]);
 
@@ -4108,7 +4133,7 @@ export const ValueSummaryOptionA = ({
               {selectedCalculatorId && selectedCalculator && (() => {
                 const captureBenefitPdf = async () => {
                   setIsCapturingBenefitPdf(true);
-                  const tabsInOrder = ['summary', 'inputs', 'calculator'] as const;
+                  const tabsInOrder = (hasCaseStudy(selectedCalculatorId ?? '') ? ['summary', 'inputs', 'calculator', 'success-stories'] : ['summary', 'inputs', 'calculator']) as const;
                   const prevTab = calculatorModalTab;
                   try {
                     const html2canvas = (await import('html2canvas')).default;
@@ -4731,7 +4756,13 @@ export const ValueSummaryOptionA = ({
           </DialogHeader>
           
           {/* Tabs for Benefit Summary vs Calculator */}
-          <Tabs value={calculatorModalTab} onValueChange={(v) => setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator')} className="w-full">
+          <Tabs value={calculatorModalTab} onValueChange={(v) => {
+              setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'success-stories');
+              if (v === 'success-stories') {
+                const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
+                if (calcId) setSuccessStoriesViewed(prev => new Set(prev).add(calcId));
+              }
+            }} className="w-full">
             {/* Show all 3 tabs (Benefit Summary, Inputs, Calculator) in both Guided and Custom mode when calculator has required inputs */}
             {(() => {
               const { sourceIdForModal, modalFormData } = modalContext;
@@ -4742,9 +4773,10 @@ export const ValueSummaryOptionA = ({
               const showInputsTab = selectedCalculatorId && hasInputsConfig; // Always show if config exists
               const isInputsComplete = sourceIdForModal ? getCalculatorCompletionPercentage(sourceIdForModal, modalFormData) === 100 : false;
               
-              // Calculate number of visible tabs (Benefit Summary, optional Inputs, optional Calculator, Success Stories)
-              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0);
-              const gridCols = tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
+              // Calculate number of visible tabs (Benefit Summary, optional Inputs, optional Calculator, Success Story)
+              const showSuccessStoriesTab = hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '');
+              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + 1;
+              const gridCols = tabCount === 5 ? 'grid-cols-5' : tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
               
               return (
                 <TabsList className={`grid w-full max-w-2xl ${gridCols}`}>
@@ -4764,19 +4796,28 @@ export const ValueSummaryOptionA = ({
                       {isInputsComplete && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                     </TabsTrigger>
                   )}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <TabsTrigger value="success-stories" className="gap-2" disabled>
-                          <Lock className="w-4 h-4 shrink-0" />
-                          Success Stories
-                        </TabsTrigger>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>To be added at a later date</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  {showSuccessStoriesTab ? (
+                    <TabsTrigger value="success-stories" className="gap-2">
+                      Success Story
+                      {successStoriesViewed.has(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-green-500" />
+                      )}
+                    </TabsTrigger>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">
+                          <TabsTrigger value="success-stories" className="gap-2" disabled>
+                            <Lock className="w-4 h-4 shrink-0" />
+                            Success Story
+                          </TabsTrigger>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>No case study available for this benefit</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </TabsList>
               );
             })()}
@@ -4916,6 +4957,7 @@ export const ValueSummaryOptionA = ({
                         includesFraudCBCoverage={fraudCBCoverageEnabled}
                         onSegmentInputChange={onSegmentInputChange}
                         onSegmentKPIChange={onSegmentKPIChange}
+                        onFormDataChange={(field, value) => (modalContext.modalOnFormDataChange ?? onFormDataChange)?.(field, value)}
                       />
                     ) : (
                       <EditableCalculatorDisplay 
@@ -4954,6 +4996,8 @@ export const ValueSummaryOptionA = ({
                             const currentBenchmarks = forterKPIs.abuseBenchmarks || defaultAbuseBenchmarks;
                             const updatedBenchmarks = { ...currentBenchmarks, [fieldStr]: value };
                             onForterKPIChange?.('abuseBenchmarks' as keyof ForterKPIs, updatedBenchmarks as any);
+                          } else if (fieldStr === 'forter3DSAbandonmentRate' || fieldStr === 'forterIssuingBankDeclineRate') {
+                            onForterKPIChange?.(field, Math.max(0, Math.min(100, value)));
                           } else {
                             onForterKPIChange?.(field, value);
                           }
@@ -4968,6 +5012,32 @@ export const ValueSummaryOptionA = ({
               </div>
             </TabsContent>
 
+            {/* Success Story Tab – case study slide image when available */}
+            <TabsContent value="success-stories" className="mt-4">
+              <div data-benefit-pdf="success-stories" className="min-h-0">
+                {(() => {
+                  const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
+                  const imagePath = getCaseStudyImagePath(calcId);
+                  if (!imagePath) {
+                    return (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>No success story available for this benefit.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex justify-center">
+                      <img
+                        src={imagePath}
+                        alt="Success story case study"
+                        className="max-w-full h-auto rounded-lg border object-contain"
+                      />
+                    </div>
+                  );
+                })()}
+              </div>
+            </TabsContent>
+
             {/* Footer: Back bottom-left, Go-forward bottom-right */}
             {(() => {
               const hasInputsConfig = modalContext.sourceIdForModal ? !!CALCULATOR_REQUIRED_INPUTS[modalContext.sourceIdForModal] : false;
@@ -4978,11 +5048,11 @@ export const ValueSummaryOptionA = ({
               return (
                 <div className="flex justify-between items-center pt-4 mt-4 border-t">
                   <div className="flex items-center">
-                    {(calculatorModalTab === 'inputs' || calculatorModalTab === 'calculator') && (
-                      <Button variant="outline" size="sm" className="gap-1" onClick={() => setCalculatorModalTab('summary')}>
-                        <ChevronLeft className="w-4 h-4" /> Back
-                      </Button>
-                    )}
+{(calculatorModalTab === 'inputs' || calculatorModalTab === 'calculator' || calculatorModalTab === 'success-stories') && (
+                        <Button variant="outline" size="sm" className="gap-1" onClick={() => setCalculatorModalTab('summary')}>
+                          <ChevronLeft className="w-4 h-4" /> Back
+                        </Button>
+                      )}
                   </div>
                   <div className="flex items-center gap-2">
                     {calculatorModalTab === 'summary' && showForwardFromSummary && (

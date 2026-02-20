@@ -7,6 +7,7 @@ import { ROIResults } from "@/lib/roiCalculations";
 import { getCurrencySymbol } from "@/lib/benchmarkData";
 import { StrategicObjectiveId, STRATEGIC_OBJECTIVES, USE_CASES } from "@/lib/useCaseMapping";
 import { generateHeadline, getSelectedChallengeProblems, getSolutionApproaches } from "@/lib/reportGeneration";
+import { getCaseStudySlideNumbersInOrder } from "@/lib/caseStudyMapping";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ReportPreviewProps {
@@ -462,9 +463,69 @@ export function ReportPreview({
     ),
   });
 
+  // Case Studies (value deck — before Appendix)
+  const caseStudySlideNumbers = getCaseStudySlideNumbersInOrder();
+  const caseStudiesPageNum = nextPageNum + 1;
+  if (caseStudySlideNumbers.length > 0) {
+    slides.push({
+      name: 'Case Studies',
+      content: (
+        <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_NAVY }}>
+          <div className="flex-1 flex flex-col justify-center items-center min-h-0">
+            <p className="text-sm font-bold text-white">Case Studies</p>
+            <p className="text-[9px] mt-1.5" style={{ color: '#A5C8FF' }}>Success stories from the GVA Case Study Deck</p>
+            <div className="mt-3 bg-white/10 rounded p-2 text-center">
+              <p className="text-[8px] text-white/90">
+                {caseStudySlideNumbers.length} success story slide{caseStudySlideNumbers.length !== 1 ? 's' : ''}
+              </p>
+              <p className="text-[7px] text-white/70 mt-0.5">One slide per benefit with a case study</p>
+            </div>
+          </div>
+          <div className="flex justify-between px-2 pt-1 text-[7px] shrink-0" style={{ color: 'rgba(255,255,255,0.8)' }}>
+            <span>{caseStudiesPageNum}</span>
+            <span>© Forter, Inc. All rights Reserved  |  Confidential</span>
+          </div>
+        </div>
+      ),
+    });
+    // Preview: one slide showing thumbnails of case study images
+    const previewCount = Math.min(6, caseStudySlideNumbers.length);
+    const moreCount = caseStudySlideNumbers.length - previewCount;
+    slides.push({
+      name: 'Stories',
+      content: (
+        <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
+          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+          <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Case Studies — Success Stories</h3>
+          <div className={`grid gap-1 mt-1.5 flex-1 min-h-0 ${previewCount <= 2 ? 'grid-cols-2' : previewCount <= 4 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+            {caseStudySlideNumbers.slice(0, previewCount).map((slideNum) => (
+              <div key={slideNum} className="rounded border overflow-hidden bg-white flex flex-col min-h-0" style={{ borderColor: BORDER_GRAY }}>
+                <div className="flex-1 min-h-0 relative">
+                  <img
+                    src={`/case-studies/slide${slideNum}.png`}
+                    alt={`Case study ${slideNum}`}
+                    className="w-full h-full object-cover object-top"
+                  />
+                </div>
+                <p className="text-[6px] px-0.5 py-0.5 text-center truncate" style={{ color: FORTER_GRAY }}>Slide {slideNum}</p>
+              </div>
+            ))}
+          </div>
+          {moreCount > 0 && (
+            <p className="text-[7px] text-center mt-1 shrink-0" style={{ color: FORTER_GRAY }}>+{moreCount} more in deck</p>
+          )}
+          <div className="border-t pt-1 mt-1 flex justify-between shrink-0" style={{ borderColor: BORDER_GRAY }}>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>{caseStudiesPageNum + 1}</span>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+          </div>
+        </div>
+      ),
+    });
+  }
+
   // Appendix (value deck Slide 8+)
   const activeChallengeCount = Object.values(safeChallenges).filter(Boolean).length;
-  const appendixPageNum = nextPageNum + 1;
+  const appendixPageNum = nextPageNum + 1 + (caseStudySlideNumbers.length > 0 ? 2 : 0);
   if (activeChallengeCount > 0) {
     slides.push({
       name: 'Appendix',

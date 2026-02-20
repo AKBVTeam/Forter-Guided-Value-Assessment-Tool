@@ -8,6 +8,7 @@
  * - Investment cost calculations with pricing lookups
  */
 import { CalculatorData } from "@/pages/Index";
+import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
 
 // Contract tenure options
 export type ContractTenure = 1 | 2 | 3;
@@ -378,7 +379,9 @@ export function calculateROI(
   const baseCostReduction = valueTotals.costReduction;
   const baseRiskMitigation = valueTotals.riskMitigation;
   
-  // Commission and margin for EBITDA calculation
+  // GMV to Net sales deductions (sales tax, returns/cancellations); then commission and margin for EBITDA
+  const gmvToNetSalesDeductionPct = getGmvToNetSalesDeductionPct(formData);
+  const netSalesMultiplier = 1 - gmvToNetSalesDeductionPct / 100;
   const commissionRate = formData.isMarketplace ? (formData.commissionRate || 25) / 100 : 1;
   const grossMargin = (formData.amerGrossMarginPercent || 50) / 100;
   const profitabilityFactor = formData.isMarketplace ? commissionRate * grossMargin : grossMargin;
@@ -390,7 +393,8 @@ export function calculateROI(
     const growthFactor = Math.pow(1 + annualGrowth, year - 1);
     
     const gmvUplift = baseGMVUplift * growthFactor;
-    const profitabilityFromGMV = gmvUplift * profitabilityFactor;
+    const netSalesFromGMV = gmvUplift * netSalesMultiplier;
+    const profitabilityFromGMV = netSalesFromGMV * profitabilityFactor;
     const costReduction = baseCostReduction * growthFactor;
     const riskMitigation = baseRiskMitigation * growthFactor;
     const totalProfitabilityContribution = profitabilityFromGMV + costReduction + riskMitigation;

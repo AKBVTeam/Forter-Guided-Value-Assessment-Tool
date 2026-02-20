@@ -604,7 +604,7 @@ export const ChallengeInputs = ({
                 </div>
                 <PercentageInput className={fieldInputClass}
                   value={isPaymentFieldLocked ? aggregatedData?.weighted3DSAbandonmentRate : formData.amer3DSAbandonmentRate}
-                  onChange={(v) => onFieldChange("amer3DSAbandonmentRate", v)}
+                  onChange={(v) => onFieldChange("amer3DSAbandonmentRate", typeof v === 'number' ? Math.max(0, Math.min(100, v)) : v)}
                   readOnly={isPaymentFieldLocked}
                   disabled={!isPaymentFieldLocked && formData.amer3DSImplemented === false}
                   warning={!isPaymentFieldLocked && formData.amer3DSImplemented !== false ? getValidationWarning("amer3DSAbandonmentRate", formData.amer3DSAbandonmentRate) : null}
@@ -627,7 +627,7 @@ export const ChallengeInputs = ({
                 </div>
                 <PercentageInput className={fieldInputClass}
                   value={isPaymentFieldLocked ? aggregatedData?.weightedIssuingBankDeclineRate : formData.amerIssuingBankDeclineRate}
-                  onChange={(v) => onFieldChange("amerIssuingBankDeclineRate", v)}
+                  onChange={(v) => onFieldChange("amerIssuingBankDeclineRate", typeof v === 'number' ? Math.max(0, Math.min(100, v)) : v)}
                   warning={!isPaymentFieldLocked ? getValidationWarning("amerIssuingBankDeclineRate", formData.amerIssuingBankDeclineRate) : null}
                   max={100}
                   min={0}

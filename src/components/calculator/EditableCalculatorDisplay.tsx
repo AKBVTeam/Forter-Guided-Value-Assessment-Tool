@@ -70,6 +70,9 @@ const FIELD_LABELS: Record<string, string> = {
   promotionAbuseCatchRateToday: "Estimated Promotion Abuse Catch Rate Today (%)",
   returnsAbuseBlockRate: "Returns abuse block rate %",
   inrAbuseBlockRate: "INR abuse block rate %",
+  forter3DSAbandonmentRate: "3DS failure & abandonment rate %",
+  forterIssuingBankDeclineRate: "Issuing bank decline rate %",
+  gmvToNetSalesDeductionPct: "GMV to Net sales deductions (sales tax/cancellations) %",
   pctFraudulentLogins: "% fraudulent logins",
   pctFraudulentSignups: "% fraudulent sign-ups",
   // Challenge 7 Forter KPIs
@@ -152,9 +155,9 @@ export const EditableCalculatorDisplay = ({
       }
       const valueAsNumber = Number(numValue);
       if (editingCell.type === 'customer' && row.editableCustomerField) {
-        // If the customer field is actually a Forter KPI field, or if the row has an editableForterField
-        // (meaning it's a shared field like abuseAovMultiplier), route to Forter handler
-        if ((FORTER_KPI_FIELDS.has(row.editableCustomerField) || row.editableForterField) && onForterFieldChange) {
+        // Route to Forter handler only when the customer column field is a Forter KPI (e.g. approvalRateImprovement).
+        // Rows with both editableCustomerField and editableForterField (e.g. 3DS / bank decline) use customer column for customer data, Forter column for Forter outcome.
+        if (FORTER_KPI_FIELDS.has(row.editableCustomerField) && onForterFieldChange) {
           onForterFieldChange(row.editableCustomerField as keyof ForterKPIs, valueAsNumber);
         } else if (onCustomerFieldChange) {
           onCustomerFieldChange(row.editableCustomerField as keyof CalculatorData, valueAsNumber);

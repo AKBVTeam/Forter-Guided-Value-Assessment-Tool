@@ -9,6 +9,7 @@ import { ROIResults } from '@/lib/roiCalculations';
 import { getCurrencySymbol } from '@/lib/benchmarkData';
 import { StrategicObjectiveId, STRATEGIC_OBJECTIVES, USE_CASES } from '@/lib/useCaseMapping';
 import { getChallengeBenefitContent } from '@/lib/challengeBenefitContent';
+import { getCaseStudySlideNumbersInOrder, hasCaseStudy, getCaseStudySlideNumber } from '@/lib/caseStudyMapping';
 import { 
   calculateChallenge1, 
   calculateChallenge245, 
@@ -22,6 +23,7 @@ import {
   CalculatorRow,
   defaultDeduplicationAssumptions 
 } from '@/lib/calculations';
+import { getGmvToNetSalesDeductionPct } from '@/lib/gmvToNetSalesDeductionByCountry';
 
 // Forter brand design system (hex without #)
 const NAVY = '0D1B3E';       // slide titles, table headers, dark backgrounds
@@ -64,6 +66,18 @@ function formatDateMMDDYY(): string {
   const dd = String(now.getDate()).padStart(2, '0');
   const yy = String(now.getFullYear()).slice(-2);
   return `${mm}${dd}${yy}`;
+}
+
+/** Encode ArrayBuffer to base64 in chunks to avoid "too many arguments" for large images. */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
 }
 
 // Currency formatting helper
@@ -506,6 +520,7 @@ function getCalculatorRowsForBenefitGroup(
         churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO || 30,
         atoCatchRate: forterKPIs.atoCatchRate || 95,
         currencyCode,
+        gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
       });
       calculators.push({ title: 'ATO protection OpEx savings', rows: result.calculator1.rows });
       calculators.push({ title: 'Mitigate CLV loss from ATO churn', rows: result.calculator2.rows });
@@ -700,9 +715,13 @@ function buildMetricsTable(formData: CalculatorData): Array<{ metric: string; cu
 /**
  * Generate and download calculator slide(s) as PPTX
  * Used from the calculator modal "Download Slide" button
- * 
- * For segmented analysis: generates one slide per segment + a Total slide
- * For non-segmented: generates a single slide
+ *
+ * Layout: Single-slide per benefit (no multi-page table split). Table fits on one slide
+ * with dynamic row height. If the benefit has a case study, an additional Success Story
+ * slide is appended.
+ *
+ * For segmented analysis: one slide per segment + Total slide (+ success story if applicable)
+ * For non-segmented: one calculator slide (+ success story if applicable)
  */
 export async function generateCalculatorSlide(
   calculatorId: string,
@@ -718,19 +737,34 @@ export async function generateCalculatorSlide(
     import('pptxgenjs'),
     import('file-saver'),
   ]);
-  
+
   const pptx = new pptxGenJS.default();
+  pptx.defineLayout({ name: 'WIDE', width: 13.33, height: 7.5 });
+  pptx.layout = 'WIDE';
+
   const analysisName = (formData as any)._analysisName || formData.customerName || 'Customer';
+  const customerName = formData.customerName || 'Customer';
   const currency = formData.baseCurrency || 'USD';
-  
-  // Define default font for all text
-  const FONT_FACE = 'Proxima Nova';
-  const withFont = (opts: any) => ({ ...opts, fontFace: FONT_FACE });
-  
-  // Get benefit content for the calculator
+
+  const FONT_HEAD = 'Poppins';
+  const FONT_BODY = 'Proxima Nova';
+  const colWCalc = [1.07, 4.07, 1.97, 1.97, 3.25];
+
+  const applyContentSlide = (slide: any) => {
+    slide.background = { color: LIGHT_BG };
+    slide.addText(`${customerName} x Forter Business Value Assessment`, {
+      x: 0.5, y: 0.18, w: 12, h: 0.2,
+      fontSize: 7.5, bold: true, color: BLUE, fontFace: FONT_HEAD, charSpacing: 1.5,
+    });
+    slide.addText('© Forter, Inc. All rights Reserved  |  Confidential', {
+      x: 7.0, y: 7.15, w: 6.0, h: 0.2,
+      fontSize: 7.5, color: GRAY, align: 'right', fontFace: FONT_BODY,
+    });
+  };
+
   const benefitContent = getChallengeBenefitContent(calculatorId);
-  
-  // Helper function to create a TBD narrative slide (no calculator table)
+
+  // TBD narrative slide – matches main deck appendix layout (single slide, no table)
   const createTBDNarrativeSlide = (
     slideTitle: string,
     challengeDescription: string,
@@ -739,69 +773,37 @@ export async function generateCalculatorSlide(
     segmentLabel?: string
   ) => {
     const slide = pptx.addSlide();
-    
-    // Title = Benefit Name (+ segment label if applicable)
+    applyContentSlide(slide);
     const fullTitle = segmentLabel ? `${slideTitle} - ${segmentLabel}` : slideTitle;
-    slide.addText(fullTitle, withFont({
-      x: 0.3, y: 0.2, w: '95%', h: 0.5,
-      fontSize: 22, bold: true, color: FORTER_DARK,
-    }));
-    
-    // Challenge Section
-    slide.addText('The Challenge', withFont({
-      x: 0.3, y: 1.15, w: '95%', h: 0.3,
-      fontSize: 14, bold: true, color: FORTER_DARK,
-    }));
-    
-    slide.addText(challengeDescription, withFont({
-      x: 0.3, y: 1.45, w: '95%', h: 0.8,
-      fontSize: 10, color: FORTER_GRAY,
-      valign: 'top',
-    }));
-    
-    // Benefit Section
-    slide.addText('The Forter Solution', withFont({
-      x: 0.3, y: 2.35, w: '95%', h: 0.3,
-      fontSize: 14, bold: true, color: FORTER_BLUE,
-    }));
-    
-    slide.addText(benefitDescription, withFont({
-      x: 0.3, y: 2.65, w: '95%', h: 0.7,
-      fontSize: 10, color: FORTER_GRAY,
-      valign: 'top',
-    }));
-    
-    // Key Benefits Section (bullet points)
+    slide.addText(fullTitle, { x: 0.5, y: 0.38, w: 12.33, h: 0.5, fontSize: 22, bold: true, color: NAVY, fontFace: FONT_HEAD });
+    slide.addText('The Challenge', { x: 0.5, y: 1.0, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: NAVY, fontFace: FONT_HEAD });
+    slide.addText(challengeDescription, { x: 0.5, y: 1.28, w: 12.33, h: 0.9, fontSize: 10, color: GRAY, fontFace: FONT_BODY, valign: 'top' });
+    slide.addText('The Forter Solution', { x: 0.5, y: 2.3, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: BLUE, fontFace: FONT_HEAD });
+    slide.addText(benefitDescription, { x: 0.5, y: 2.58, w: 12.33, h: 0.8, fontSize: 10, color: GRAY, fontFace: FONT_BODY, valign: 'top' });
     if (benefitPoints && benefitPoints.length > 0) {
-      slide.addText('Key Benefits', withFont({
-        x: 0.3, y: 3.45, w: '95%', h: 0.3,
-        fontSize: 12, bold: true, color: FORTER_DARK,
-      }));
-      
-      let bulletY = 3.75;
-      benefitPoints.forEach((point, idx) => {
-        // Bullet point with title and description
+      slide.addText('Key Benefits', { x: 0.5, y: 3.5, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: NAVY, fontFace: FONT_HEAD });
+      let bulletY = 3.8;
+      benefitPoints.forEach((point: { title: string; description: string }) => {
         slide.addText([
-          { text: '• ', options: { bold: true, color: FORTER_BLUE } },
-          { text: `${point.title}: `, options: { bold: true, color: FORTER_DARK } },
-          { text: point.description, options: { color: FORTER_GRAY } },
-        ], withFont({
-          x: 0.4, y: bulletY, w: '90%', h: 0.35,
-          fontSize: 9,
-          valign: 'top',
-        }));
+          { text: '• ', options: { bold: true, color: BLUE } },
+          { text: `${point.title}: `, options: { bold: true, color: NAVY } },
+          { text: point.description, options: { color: GRAY } },
+        ], { x: 0.6, y: bulletY, w: 12.0, h: 0.35, fontSize: 9, fontFace: FONT_BODY, valign: 'top' });
         bulletY += 0.35;
       });
     }
-    
-    // Footer note
-    slide.addText('Complete the customer inputs to generate detailed value calculations for this benefit.', withFont({
-      x: 0.3, y: 5.0, w: '95%', h: 0.3,
-      fontSize: 9, italic: true, color: FORTER_GRAY,
-    }));
+    slide.addText('Complete the customer inputs to generate detailed value calculations for this benefit.', { x: 0.5, y: 6.5, w: 12.33, h: 0.25, fontSize: 9, italic: true, color: GRAY, fontFace: FONT_BODY });
   };
 
-  // Helper function to create a slide with a calculator table
+  // Calculator table slide – single slide only, matches main deck appendix styling (no multi-page split)
+  const headerRow = [
+    { text: 'Formula', options: { bold: true, fill: { color: '374151' }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Description', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Customer Inputs', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Forter Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Forter Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+  ];
+
   const createCalculatorSlide = (
     slideTitle: string,
     slideSubtitle: string | undefined,
@@ -809,100 +811,47 @@ export async function generateCalculatorSlide(
     segmentLabel?: string
   ) => {
     const slide = pptx.addSlide();
-    
-    // Title = Benefit Name (+ segment label if applicable)
+    applyContentSlide(slide);
     const fullTitle = segmentLabel ? `${slideTitle} - ${segmentLabel}` : slideTitle;
-    slide.addText(fullTitle, withFont({
-      x: 0.3, y: 0.2, w: '95%', h: 0.45,
-      fontSize: 18, bold: true, color: FORTER_DARK,
-    }));
-    
-    // Benefit text paragraph
-    if (slideSubtitle) {
-      slide.addText(slideSubtitle, withFont({
-        x: 0.3, y: 0.6, w: '95%', h: 0.4,
-        fontSize: 9, color: FORTER_GRAY,
-      }));
-    }
-    
-    let yPosition = slideSubtitle ? 1.05 : 0.7;
-    
-    // Build the full calculator table
-    const calcTableRows: Array<Array<{ text: string; options?: any }>> = [
-      [
-        { text: 'Formula', options: { bold: true, fill: { color: FORTER_DARK }, color: 'FFFFFF', fontFace: FONT_FACE } },
-        { text: 'Description', options: { bold: true, fill: { color: FORTER_DARK }, color: 'FFFFFF', fontFace: FONT_FACE } },
-        { text: 'Customer inputs', options: { bold: true, fill: { color: FORTER_DARK }, color: 'FFFFFF', align: 'right', fontFace: FONT_FACE } },
-        { text: 'Forter improvement', options: { bold: true, fill: { color: FORTER_BLUE }, color: 'FFFFFF', align: 'right', fontFace: FONT_FACE } },
-        { text: 'Forter outcome', options: { bold: true, fill: { color: FORTER_DARK }, color: 'FFFFFF', align: 'right', fontFace: FONT_FACE } },
-      ],
-    ];
-    
-    // Track totals for value driver rows
-    // For each value driver type (revenue, profit, cost), we want the LAST row
-    // because that represents the final/deduplicated value
-    const valueDriverTotals: { [key: string]: { value: number; label: string } } = {};
-    
+    slide.addText(fullTitle, { x: 0.5, y: 0.38, w: 12.33, h: 0.5, fontSize: 22, bold: true, color: NAVY, fontFace: FONT_HEAD });
+    slide.addText(slideSubtitle ?? '', { x: 0.5, y: 0.92, w: 12.33, h: 0.35, fontSize: 10, color: GRAY, fontFace: FONT_BODY });
+    const dataRows: Array<{ isSection: boolean; row: CalculatorRow }> = [];
     rows.forEach(row => {
-      // Track value driver totals - use Forter improvement (delta) instead of outcome
-      // Take the LAST value for each driver type (deduplicated value, not raw)
-      if (row.valueDriver && row.forterImprovement) {
-        const numericValue = parseFloat(row.forterImprovement.replace(/[^0-9.-]/g, ''));
-        if (!isNaN(numericValue)) {
-          const label = row.valueDriver === 'revenue' ? 'Total GMV Uplift' : 
-                       row.valueDriver === 'profit' ? 'Total EBITDA Contribution' : 
-                       row.valueDriver === 'cost' ? 'Total Cost Reduction' : 'Total Value';
-          // Override previous value of same type - we want the final/deduplicated row
-          valueDriverTotals[row.valueDriver] = { value: numericValue, label };
-        }
-      }
-      
-      // Skip section headers
-      if (!row.formula && row.label && !row.customerInput && !row.forterOutcome) {
+      const isSection = !row.formula && !!row.label && !row.customerInput && !row.forterOutcome;
+      dataRows.push({ isSection, row: row });
+    });
+    const calcTableRows: Array<Array<{ text: string; options?: any }>> = [headerRow.map(c => ({ text: c.text, options: { ...c.options } }))];
+    dataRows.forEach(({ isSection, row: r }, idx) => {
+      if (isSection) {
         calcTableRows.push([
-          { text: row.label, options: { bold: true, fill: { color: FORTER_LIGHT_GRAY }, fontFace: FONT_FACE, colspan: 5 } },
-          { text: '', options: {} },
-          { text: '', options: {} },
-          { text: '', options: {} },
-          { text: '', options: {} },
+          { text: (r.label || '').toUpperCase(), options: { bold: true, fill: { color: 'E5E7EB' }, color: NAVY, fontFace: FONT_HEAD, fontSize: 8.5, colspan: 5 } },
+          { text: '', options: {} }, { text: '', options: {} }, { text: '', options: {} }, { text: '', options: {} },
         ]);
       } else {
-        const isValueDriver = !!row.valueDriver;
-        const rowBg = isValueDriver ? FORTER_LIGHT_BG : undefined;
-        
+        const isValueDriver = !!r.valueDriver;
+        const rowFill = isValueDriver ? GREEN_FILL : (calcTableRows.length % 2 === 0 ? ALT_ROW : WHITE);
+        const textColor = isValueDriver ? GREEN_TEXT : undefined;
+        const impColor = r.forterImprovement?.startsWith('-') || r.forterImprovement?.startsWith('(') ? RED : GREEN;
+        const formulaOpts = { fontFace: 'Courier New', fontSize: 8, fill: { color: rowFill }, color: isValueDriver ? GREEN_TEXT : GRAY };
         calcTableRows.push([
-          { text: row.formula || '', options: { fontFace: 'Courier New', fontSize: 7, fill: rowBg ? { color: rowBg } : undefined } },
-          { text: row.label || '', options: { fontFace: FONT_FACE, fontSize: 7, fill: rowBg ? { color: rowBg } : undefined } },
-          { text: row.customerInput || '', options: { align: 'right', fontFace: FONT_FACE, fontSize: 7, fill: rowBg ? { color: rowBg } : undefined } },
-          { text: row.forterImprovement || '', options: { align: 'right', fontFace: FONT_FACE, fontSize: 7, color: row.forterImprovement?.startsWith('-') || row.forterImprovement?.startsWith('(') ? 'CC0000' : FORTER_GREEN, fill: rowBg ? { color: rowBg } : undefined } },
-          { text: row.forterOutcome || '', options: { align: 'right', fontFace: FONT_FACE, fontSize: 7, bold: isValueDriver, fill: rowBg ? { color: rowBg } : undefined } },
+          { text: r.formula || '', options: formulaOpts },
+          { text: r.label || '', options: { fontFace: FONT_BODY, fontSize: 8, fill: { color: rowFill }, color: textColor, bold: isValueDriver } },
+          { text: r.customerInput || '', options: { align: 'right', fontFace: FONT_BODY, fontSize: 8, fill: { color: rowFill }, color: textColor, bold: isValueDriver } },
+          { text: r.forterImprovement || '', options: { align: 'right', fontFace: FONT_BODY, fontSize: 8, color: impColor, fill: { color: rowFill }, bold: isValueDriver } },
+          { text: r.forterOutcome || '', options: { align: 'right', fontFace: FONT_BODY, fontSize: 8, bold: isValueDriver, fill: { color: rowFill }, color: textColor } },
         ]);
       }
     });
-    
-    // Calculate font size to fit
-    const baseRowHeight = 0.18;
-    const availableHeight = 3.8;
-    const neededHeight = calcTableRows.length * baseRowHeight;
-    let fontSize = 7;
-    let rowHeight = baseRowHeight;
-    
-    if (neededHeight > availableHeight) {
-      const scale = availableHeight / neededHeight;
-      fontSize = Math.max(5, Math.floor(7 * scale));
-      rowHeight = Math.max(0.12, baseRowHeight * scale);
-    }
-    
+    const tableHeight = 5.6;
+    const rowH = Math.min(0.22, tableHeight / Math.max(calcTableRows.length, 1));
     slide.addTable(calcTableRows, {
-      x: 0.2, y: yPosition, w: 9.6,
-      colW: [0.75, 3.8, 1.5, 1.5, 2.05],
-      fontSize: fontSize,
-      fontFace: FONT_FACE,
-      border: { pt: 0.5, color: 'DDDDDD' },
-      rowH: rowHeight,
+      x: 0.5, y: 1.4, w: 12.33,
+      colW: colWCalc,
+      fontSize: 8,
+      fontFace: FONT_BODY,
+      border: { pt: 0.5, color: 'E5E7EB' },
+      rowH,
     });
-    
-    // Callouts removed - the Forter improvement column already shows the value
   };
   
   const slideTitle = benefitContent?.benefitTitle || calculatorTitle;
@@ -940,7 +889,31 @@ export async function generateCalculatorSlide(
     // Single slide for non-segmented
     createCalculatorSlide(slideTitle, slideSubtitle, calculatorRows);
   }
-  
+
+  // Append Success Story slide when this benefit has a case study
+  if (hasCaseStudy(calculatorId)) {
+    const slideNum = getCaseStudySlideNumber(calculatorId);
+    if (slideNum != null) {
+      const imageUrl = `/case-studies/slide${slideNum}.png`;
+      try {
+        const resp = await fetch(imageUrl);
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer();
+          const base64 = arrayBufferToBase64(buf);
+          const slideStory = pptx.addSlide();
+          applyContentSlide(slideStory);
+          slideStory.addText('Success Story', {
+            x: 0.5, y: 0.38, w: 12.33, h: 0.4,
+            fontSize: 18, bold: true, color: NAVY, fontFace: FONT_HEAD,
+          });
+          slideStory.addImage({ data: `image/png;base64,${base64}`, x: 0.5, y: 0.9, w: 12.33, h: 6.0 });
+        }
+      } catch {
+        // Skip success story slide if image fails to load
+      }
+    }
+  }
+
   // Save - Format: AnalysisName_CalculatorTitle (MMDDYY).pptx
   const blob = await pptx.write({ outputType: 'blob' }) as Blob;
   const dateStr = formatDateMMDDYY();
@@ -1776,10 +1749,44 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     slideNext.addText(step.body, { x: xPos + 0.18, y: yPos + 0.66, w: 5.65, h: 1.3, fontSize: 11, color: '374151', fontFace: FONT_BODY, valign: 'top' });
   });
 
+  // ===== CASE STUDIES: One slide per benefit with a case study (before Appendix) =====
+  const caseStudySlideNumbers = getCaseStudySlideNumbersInOrder();
+  let caseStudiesPageNum = options.hasInvestment ? 8 : 7;
+  if (caseStudySlideNumbers.length > 0) {
+    const slideCaseStudiesTitle = pptx.addSlide();
+    applyDarkSlide(slideCaseStudiesTitle);
+    slideCaseStudiesTitle.addText('Case Studies', {
+      x: 0.5, y: 2.8, w: 12.3, h: 1.2,
+      fontSize: 52, bold: true, color: WHITE, align: 'center', fontFace: FONT_HEAD,
+    });
+    slideCaseStudiesTitle.addText('Success stories from the GVA Case Study Deck', {
+      x: 0.5, y: 4.0, w: 12.3, h: 0.5,
+      fontSize: 16, color: 'A5C8FF', align: 'center', fontFace: FONT_BODY,
+    });
+    caseStudiesPageNum += 1;
+    for (const slideNum of caseStudySlideNumbers) {
+      const imageUrl = `/case-studies/slide${slideNum}.png`;
+      try {
+        const resp = await fetch(imageUrl);
+        if (!resp.ok) continue;
+        const buf = await resp.arrayBuffer();
+        const base64 = arrayBufferToBase64(buf);
+        const slideCase = pptx.addSlide();
+        applyContentSlide(slideCase, caseStudiesPageNum++);
+        slideCase.addImage({
+          data: `image/png;base64,${base64}`,
+          x: 0.5, y: 0.5, w: 12.33, h: 6.2,
+        });
+      } catch {
+        // Skip this slide if image fails to load
+      }
+    }
+  }
+
   // ===== APPENDIX: Calculator Details (with multi-page split, max 18 rows per slide) =====
   const activeBenefitGroups = getActiveBenefitGroups(challenges);
   const MAX_ROWS_PER_SLIDE = 18;
-  let appendixPageNum = options.hasInvestment ? 8 : 7;
+  let appendixPageNum = caseStudiesPageNum;
 
   if (activeBenefitGroups.length > 0) {
     const slideAppendixTitle = pptx.addSlide();

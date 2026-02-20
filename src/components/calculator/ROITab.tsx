@@ -24,6 +24,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getChallengeBenefitContent } from "@/lib/challengeBenefitContent";
+import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
 import { ForterKPIs } from "./ForterKPIConfig";
 
 // Map benefit types to challenge IDs for popup modals
@@ -499,6 +500,54 @@ export function ROITab({
                 </TableRow>
 
                 <TableRow className="bg-muted/20">
+                  <TableCell className="text-muted-foreground pl-6 text-xs">
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      GMV to Net sales deductions (sales tax/cancellations)
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help shrink-0" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          Percentage deduction from GMV to net sales (e.g. sales tax/VAT, returns/cancellations). Enter as %.
+                        </TooltipContent>
+                      </Tooltip>
+                      {onFormDataChange && (
+                        <>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.5}
+                            placeholder="% deduction"
+                            className="h-7 w-16 text-xs inline"
+                            value={getGmvToNetSalesDeductionPct(formData)}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (!Number.isNaN(v)) onFormDataChange({ gmvToNetSalesDeductionPct: Math.max(0, Math.min(100, v)) });
+                            }}
+                          />
+                          <span className="text-muted-foreground text-xs">% deduction</span>
+                        </>
+                      )}
+                      {!onFormDataChange && (
+                        <span>({getGmvToNetSalesDeductionPct(formData)}%)</span>
+                      )}
+                    </span>
+                  </TableCell>
+                  {relevantYears.map(y => {
+                    const deductionPct = getGmvToNetSalesDeductionPct(formData);
+                    return (
+                      <TableCell key={y.year} className="text-right text-muted-foreground text-xs">
+                        ({deductionPct}%)
+                      </TableCell>
+                    );
+                  })}
+                  <TableCell className="text-right text-muted-foreground text-xs">
+                    ({getGmvToNetSalesDeductionPct(formData)}%)
+                  </TableCell>
+                </TableRow>
+
+                <TableRow className="bg-muted/20">
                   <TableCell className="text-muted-foreground pl-6 text-xs">× Commission rate</TableCell>
                   {relevantYears.map(y => (
                     <TableCell key={y.year} className="text-right text-muted-foreground text-xs">
@@ -545,9 +594,10 @@ export function ROITab({
                   </TableCell>
                 </TableRow>
                 {gmvUpliftExpanded && gmvUpliftBreakdown.map((item, idx) => {
-                  // Apply margin to GMV breakdown items
+                  // Apply net sales deduction then margin to GMV breakdown items
+                  const netSalesMultiplier = 1 - getGmvToNetSalesDeductionPct(formData) / 100;
                   const marginMultiplier = (formData.isMarketplace ? (formData.commissionRate || 25) : (formData.amerGrossMarginPercent || 50)) / 100;
-                  const itemProfitability = item.value * marginMultiplier;
+                  const itemProfitability = item.value * netSalesMultiplier * marginMultiplier;
                   return (
                     <TableRow key={`gmv-${idx}`} className="bg-muted/10">
                       <TableCell className="pl-10 text-sm text-muted-foreground">

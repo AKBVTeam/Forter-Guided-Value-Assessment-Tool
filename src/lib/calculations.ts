@@ -68,6 +68,8 @@ export interface Challenge1Inputs {
   deduplication?: DeduplicationAssumptions;
   // Fraud chargeback coverage - when enabled, Forter assumes chargeback liability (outcome $0)
   includesFraudCBCoverage?: boolean;
+  /** GMV to Net sales deductions (%); default 20. Applied to value of approved before margin/EBITDA. */
+  gmvToNetSalesDeductionPct?: number;
 }
 
 export interface DeduplicationBreakdown {
@@ -135,6 +137,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     forterChargebackReduction,
     deduplication = defaultDeduplicationAssumptions,
     includesFraudCBCoverage = false,
+    gmvToNetSalesDeductionPct = 20,
   } = inputs;
 
   const fmt = (n: number) => n.toLocaleString('en-US');
@@ -185,16 +188,24 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     : forterApprovedValue;
   const approvedValueImprovementDeduplicated = forterApprovedValueDeduplicated - customerApprovedValue;
 
-  // Profitability calculation:
-  // For marketplaces: GMV × Commission = Revenue, then Revenue × Gross Margin = Profitability
-  // For retailers: GMV × Gross Margin = Profitability
-  const customerRevenue = isMarketplace ? customerApprovedValue * commissionDecimal : customerApprovedValue;
-  const forterRevenue = isMarketplace ? forterApprovedValue * commissionDecimal : forterApprovedValue;
-  const forterRevenueDeduplicated = isMarketplace ? forterApprovedValueDeduplicated * commissionDecimal : forterApprovedValueDeduplicated;
+  // Net sales = value of approved × (1 - GMV to Net sales deductions %)
+  const netSalesMultiplier = 1 - gmvToNetSalesDeductionPct / 100;
+  const customerNetSales = customerApprovedValue * netSalesMultiplier;
+  const forterNetSales = forterApprovedValue * netSalesMultiplier;
+  const forterNetSalesDeduplicated = forterApprovedValueDeduplicated * netSalesMultiplier;
+  const netSalesImprovement = forterNetSales - customerNetSales;
+  const netSalesImprovementDeduplicated = forterNetSalesDeduplicated - customerNetSales;
+
+  // Profitability calculation: apply margin to net sales (not raw GMV)
+  // For marketplaces: Net sales × Commission = Revenue, then Revenue × Gross Margin = Profitability
+  // For retailers: Net sales × Gross Margin = Profitability
+  const customerRevenue = isMarketplace ? customerNetSales * commissionDecimal : customerNetSales;
+  const forterRevenue = isMarketplace ? forterNetSales * commissionDecimal : forterNetSales;
+  const forterRevenueDeduplicated = isMarketplace ? forterNetSalesDeduplicated * commissionDecimal : forterNetSalesDeduplicated;
   
-  const customerProfitability = customerApprovedValue * profitabilityMultiplier;
-  const forterProfitability = forterApprovedValue * profitabilityMultiplier;
-  const forterProfitabilityDeduplicated = forterApprovedValueDeduplicated * profitabilityMultiplier;
+  const customerProfitability = customerNetSales * profitabilityMultiplier;
+  const forterProfitability = forterNetSales * profitabilityMultiplier;
+  const forterProfitabilityDeduplicated = forterNetSalesDeduplicated * profitabilityMultiplier;
   const profitabilityImprovement = forterProfitability - customerProfitability;
   const profitabilityImprovementDeduplicated = forterProfitabilityDeduplicated - customerProfitability;
 
@@ -238,26 +249,31 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
       { formula: 'f\' = f - dedup', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: fmtCur(approvedValueImprovementDeduplicated), forterOutcome: fmtCur(forterApprovedValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
     { formula: 'g = f/b', label: 'Completion rate (%)', customerInput: fmtPct(customerCompletionRate), forterImprovement: formatPctImprovementRel(customerCompletionRate, forterCompletionRate), forterOutcome: fmtPct(forterCompletionRate), isCalculation: true },
-    { formula: 'h', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: isMarketplace ? 'commissionRate' : 'amerGrossMarginPercent', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
-    // For marketplaces: add Revenue row (GMV × Commission), then Gross Margin row, then Profitability (Revenue × Margin)
-    // For retailers: skip Revenue, just show Profitability (GMV × Gross Margin)
+    { formula: 'h', label: 'GMV to Net sales deductions (sales tax/cancellations) (%)', customerInput: fmtPct(gmvToNetSalesDeductionPct), forterImprovement: '', forterOutcome: fmtPct(gmvToNetSalesDeductionPct), editableCustomerField: 'gmvToNetSalesDeductionPct', rawCustomerValue: gmvToNetSalesDeductionPct, valueType: 'percent' },
+    { formula: 'i = f×(1-h)', label: 'Net sales ($)', customerInput: fmtCur(customerNetSales), forterImprovement: fmtCur(netSalesImprovement), forterOutcome: fmtCur(forterNetSales), isCalculation: true },
+    ...(deduplicationEnabled ? [
+      { formula: 'i\' = f\'×(1-h)', label: 'Net sales ($) (deduplicated)', customerInput: fmtCur(customerNetSales), forterImprovement: fmtCur(netSalesImprovementDeduplicated), forterOutcome: fmtCur(forterNetSalesDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
+    ] : []),
+    { formula: 'j', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: isMarketplace ? 'commissionRate' : 'amerGrossMarginPercent', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
+    // For marketplaces: add Revenue row (Net sales × Commission), then Gross Margin row, then Profitability (Revenue × Margin)
+    // For retailers: skip Revenue, just show Profitability (Net sales × Gross Margin)
     ...(isMarketplace ? [
-      { formula: 'i = f*h', label: 'Revenue ($)', customerInput: fmtCur(customerRevenue), forterImprovement: fmtCur(displayRevenueImprovement), forterOutcome: fmtCur(displayForterRevenue), isCalculation: true } as CalculatorRow,
-      { formula: 'j', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' as const } as CalculatorRow,
+      { formula: 'k = i*j', label: 'Revenue ($)', customerInput: fmtCur(customerRevenue), forterImprovement: fmtCur(displayRevenueImprovement), forterOutcome: fmtCur(displayForterRevenue), isCalculation: true } as CalculatorRow,
+      { formula: 'l', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' as const } as CalculatorRow,
       // Show non-deduplicated profitability first when deduplication is enabled
+      ...(deduplicationEnabled ? [
+        { formula: 'm = k*l', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovement), forterOutcome: fmtCur(forterProfitability), isCalculation: true } as CalculatorRow,
+        { formula: 'm\' = m - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovementDeduplicated), forterOutcome: fmtCur(forterProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+      ] : [
+        { formula: 'm = k*l', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(displayProfitabilityImprovement), forterOutcome: fmtCur(displayForterProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+      ]),
+    ] : [
+      // For retailers: show profitability directly (Net sales × Gross margin)
       ...(deduplicationEnabled ? [
         { formula: 'k = i*j', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovement), forterOutcome: fmtCur(forterProfitability), isCalculation: true } as CalculatorRow,
         { formula: 'k\' = k - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovementDeduplicated), forterOutcome: fmtCur(forterProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ] : [
         { formula: 'k = i*j', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(displayProfitabilityImprovement), forterOutcome: fmtCur(displayForterProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
-      ]),
-    ] : [
-      // For retailers: show profitability directly
-      ...(deduplicationEnabled ? [
-        { formula: 'i = f*h', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovement), forterOutcome: fmtCur(forterProfitability), isCalculation: true } as CalculatorRow,
-        { formula: 'i\' = i - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovementDeduplicated), forterOutcome: fmtCur(forterProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
-      ] : [
-        { formula: 'i = f*h', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(displayProfitabilityImprovement), forterOutcome: fmtCur(displayForterProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ]),
     ]),
   ];
@@ -318,6 +334,10 @@ export interface Challenge245Inputs {
   creditCard3DSPct: number;
   threeDSFailureRate: number;
   issuingBankDeclineRate: number;
+  /** Optional Forter override for 3DS failure rate (%); when set, used for Forter path. */
+  forter3DSAbandonmentRate?: number;
+  /** Optional Forter override for issuing bank decline rate (%); when set, used for Forter path. */
+  forterIssuingBankDeclineRate?: number;
   fraudChargebackRate: number;
   // Marketplace fields
   isMarketplace?: boolean;
@@ -338,6 +358,8 @@ export interface Challenge245Inputs {
   deduplication?: DeduplicationAssumptions;
   // Fraud chargeback coverage - when enabled, Forter assumes chargeback liability
   includesFraudCBCoverage?: boolean;
+  /** GMV to Net sales deductions (%); default 20. Applied to value of approved before margin/EBITDA. */
+  gmvToNetSalesDeductionPct?: number;
 }
 
 export interface Challenge245Results {
@@ -364,10 +386,12 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const {
     transactionAttempts, transactionAttemptsValue, grossMarginPercent,
     preAuthApprovalRate, postAuthApprovalRate, creditCardPct, creditCard3DSPct,
-    threeDSFailureRate, issuingBankDeclineRate, fraudChargebackRate,
+    threeDSFailureRate, issuingBankDeclineRate, forter3DSAbandonmentRate, forterIssuingBankDeclineRate,
+    fraudChargebackRate,
     isMarketplace = false, commissionRate = 100, completedAOV,
     forterPreAuthImprovement, forterPostAuthImprovement, forter3DSReduction, forterChargebackReduction,
-    forterTargetCBRate, forterTargetPostAuthRate
+    forterTargetCBRate, forterTargetPostAuthRate,
+    gmvToNetSalesDeductionPct = 20,
   } = inputs;
 
   // AOV calculated from transaction data
@@ -405,6 +429,9 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     ? forterTargetPostAuthRate / 100 
     : (postAuthApprovalRate + forterPostAuthImprovement) / 100;
   const fort3DSPct = Math.max(0, creditCard3DSPct - forter3DSReduction) / 100;
+  // Forter 3DS failure and bank decline: use overrides when set, else same as customer
+  const fort3DSFail = (forter3DSAbandonmentRate !== undefined && forter3DSAbandonmentRate !== null ? forter3DSAbandonmentRate : threeDSFailureRate) / 100;
+  const fortBankDecline = (forterIssuingBankDeclineRate !== undefined && forterIssuingBankDeclineRate !== null ? forterIssuingBankDeclineRate : issuingBankDeclineRate) / 100;
   // For CB rate: always use the target rate directly for accuracy
   const fortCBRate = forterTargetCBRate / 100;
 
@@ -421,26 +448,31 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const custFinalValue = custFinalApproved * effectiveCompletedAOV;
   // Completion rate (%) = Value of approved transactions ($) / Transaction Attempts ($) — r = q/b
   const custCompletionRate = transactionAttemptsValue > 0 ? (custFinalValue / transactionAttemptsValue) * 100 : 0;
-  // For marketplaces: Revenue = GMV × Commission, then Profitability = Revenue × Gross Margin
-  const custRevenue = isMarketplace ? custFinalValue * commissionDecimal : custFinalValue;
-  const custProfitability = custFinalValue * profitabilityMultiplier;
+  // Net sales = value of approved × (1 - GMV to Net sales deductions %)
+  const netSalesMultiplier = 1 - gmvToNetSalesDeductionPct / 100;
+  const custNetSales = custFinalValue * netSalesMultiplier;
 
-  // Forter calculations
+  // For marketplaces: Revenue = Net sales × Commission, then Profitability = Revenue × Gross Margin
+  const custRevenue = isMarketplace ? custNetSales * commissionDecimal : custNetSales;
+  const custProfitability = custNetSales * profitabilityMultiplier;
+
+  // Forter calculations (use Forter 3DS and bank decline rates so edits to Forter outcome drive downstream maths)
   const fortApprovedPreAuth = transactionAttempts * fortPreAuth;
   const fortCCTx = fortApprovedPreAuth * custCCPct;
   const fort3DSTx = fortCCTx * fort3DSPct;
-  const fort3DSFails = fort3DSTx * cust3DSFail;
+  const fort3DSFails = fort3DSTx * fort3DSFail;
   const fortToBank = fortApprovedPreAuth - fort3DSFails;
-  const fortBankDeclines = fortToBank * custBankDecline;
+  const fortBankDeclines = fortToBank * fortBankDecline;
   const fortPostBankTx = fortToBank - fortBankDeclines;
   const fortFinalApproved = fortPostBankTx * fortPostAuth;
   // Use Completed AOV for value of approved transactions (q = Completed AOV × p)
   const fortFinalValue = fortFinalApproved * effectiveCompletedAOV;
   // Completion rate (%) = Value of approved transactions ($) / Transaction Attempts ($) — r = q/b (forter: q'/b when dedup)
   const fortCompletionRate = transactionAttemptsValue > 0 ? (fortFinalValue / transactionAttemptsValue) * 100 : 0;
-  // For marketplaces: Revenue = GMV × Commission, then Profitability = Revenue × Gross Margin
-  const fortRevenue = isMarketplace ? fortFinalValue * commissionDecimal : fortFinalValue;
-  const fortProfitability = fortFinalValue * profitabilityMultiplier;
+  const fortNetSales = fortFinalValue * netSalesMultiplier;
+  // For marketplaces: Revenue = Net sales × Commission, then Profitability = Revenue × Gross Margin
+  const fortRevenue = isMarketplace ? fortNetSales * commissionDecimal : fortNetSales;
+  const fortProfitability = fortNetSales * profitabilityMultiplier;
 
   // Deduplication calculation for Challenge 245
   // Based on the spreadsheet: 
@@ -475,12 +507,13 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const fortFinalValueDeduplicated = deduplicationEnabled 
     ? fortFinalValue - deduplicationGMVReduction 
     : fortFinalValue;
+  const fortNetSalesDeduplicated = fortFinalValueDeduplicated * netSalesMultiplier;
   // r = q'/b when deduplication enabled
   const fortCompletionRateDeduplicated = transactionAttemptsValue > 0 
     ? (fortFinalValueDeduplicated / transactionAttemptsValue) * 100 
     : 0;
-  const fortRevenueDeduplicated = isMarketplace ? fortFinalValueDeduplicated * commissionDecimal : fortFinalValueDeduplicated;
-  const fortProfitabilityDeduplicated = fortFinalValueDeduplicated * profitabilityMultiplier;
+  const fortRevenueDeduplicated = isMarketplace ? fortNetSalesDeduplicated * commissionDecimal : fortNetSalesDeduplicated;
+  const fortProfitabilityDeduplicated = fortNetSalesDeduplicated * profitabilityMultiplier;
 
   const revenueUplift = fortFinalValue - custFinalValue;
   const profitUplift = fortProfitability - custProfitability;
@@ -516,11 +549,11 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     { formula: 'g = e*f', label: 'Transactions that are credit cards - Volume (#)', customerInput: fmt(Math.round(custCCTx)), forterImprovement: '', forterOutcome: fmt(Math.round(fortCCTx)), isCalculation: true },
     { formula: 'h', label: 'Challenge 3DS Rate (%)', customerInput: fmtPct(creditCard3DSPct), forterImprovement: formatPctImprovementRel(creditCard3DSPct, Math.max(0, creditCard3DSPct - forter3DSReduction)), forterOutcome: fmtPct(Math.max(0, creditCard3DSPct - forter3DSReduction)), editableCustomerField: 'amer3DSChallengeRate', rawCustomerValue: creditCard3DSPct, editableForterField: 'threeDSReduction', rawForterValue: Math.max(0, creditCard3DSPct - forter3DSReduction), valueType: 'percent' },
     { formula: 'i = g*h', label: 'Credit card transactions using 3DS - Volume (#)', customerInput: fmt(Math.round(cust3DSTx)), forterImprovement: '', forterOutcome: fmt(Math.round(fort3DSTx)), isCalculation: true },
-    { formula: 'j', label: '3DS Failure & Abandonment Rate (%)', customerInput: fmtPct(threeDSFailureRate), forterImprovement: '0.0% pts', forterOutcome: fmtPct(threeDSFailureRate), editableCustomerField: 'amer3DSAbandonmentRate', rawCustomerValue: threeDSFailureRate, valueType: 'percent' },
+    { formula: 'j', label: '3DS Failure & Abandonment Rate (%)', customerInput: fmtPct(threeDSFailureRate), forterImprovement: `${(threeDSFailureRate - (forter3DSAbandonmentRate ?? threeDSFailureRate)).toFixed(1)}% pts`, forterOutcome: fmtPct(forter3DSAbandonmentRate ?? threeDSFailureRate), editableCustomerField: 'amer3DSAbandonmentRate', rawCustomerValue: threeDSFailureRate, editableForterField: 'forter3DSAbandonmentRate', rawForterValue: forter3DSAbandonmentRate ?? threeDSFailureRate, valueType: 'percent' },
     { formula: 'k = i*j', label: '3DS failure & abandonment rate - Volume (#)', customerInput: fmt(Math.round(cust3DSFails)), forterImprovement: fmt(Math.round(fort3DSFails - cust3DSFails)), forterOutcome: fmt(Math.round(fort3DSFails)), isCalculation: true },
     { formula: '', label: 'Issuing bank', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'l = e-k', label: 'Transactions sent to issuing bank', customerInput: fmt(Math.round(custToBank)), forterImprovement: fmt(Math.round(fortToBank - custToBank)), forterOutcome: fmt(Math.round(fortToBank)), isCalculation: true },
-    { formula: 'm', label: 'Issuing Bank Decline Rate (%)', customerInput: fmtPct(issuingBankDeclineRate), forterImprovement: '0.0% pts', forterOutcome: fmtPct(issuingBankDeclineRate), editableCustomerField: 'amerIssuingBankDeclineRate', rawCustomerValue: issuingBankDeclineRate, valueType: 'percent' },
+    { formula: 'm', label: 'Issuing Bank Decline Rate (%)', customerInput: fmtPct(issuingBankDeclineRate), forterImprovement: `${(issuingBankDeclineRate - (forterIssuingBankDeclineRate ?? issuingBankDeclineRate)).toFixed(1)}% pts`, forterOutcome: fmtPct(forterIssuingBankDeclineRate ?? issuingBankDeclineRate), editableCustomerField: 'amerIssuingBankDeclineRate', rawCustomerValue: issuingBankDeclineRate, editableForterField: 'forterIssuingBankDeclineRate', rawForterValue: forterIssuingBankDeclineRate ?? issuingBankDeclineRate, valueType: 'percent' },
     { formula: 'n = l*m', label: 'Issuing bank declines', customerInput: fmt(Math.round(custBankDeclines)), forterImprovement: fmt(Math.round(fortBankDeclines - custBankDeclines)), forterOutcome: fmt(Math.round(fortBankDeclines)), isCalculation: true },
     { formula: '', label: 'Post-auth fraud', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'o', label: 'Post-Auth Approval Rate (%)', customerInput: fmtPct(postAuthApprovalRate), forterImprovement: formatPctImprovementRel(postAuthApprovalRate, fortPostAuth * 100), forterOutcome: fmtPct(fortPostAuth * 100), editableCustomerField: 'amerPostAuthApprovalRate', rawCustomerValue: postAuthApprovalRate, editableForterField: 'postAuthApprovalImprovement', rawForterValue: fortPostAuth * 100, valueType: 'percent' },
@@ -534,26 +567,31 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     ] : []),
     // forterOutcome = r = q'/b when dedup enabled (displayFortCompletionRate from fortFinalValueDeduplicated)
     { formula: 'r = q/b', label: 'Completion rate (%)', customerInput: fmtPct(custCompletionRate), forterImprovement: formatPctImprovementRel(custCompletionRate, displayFortCompletionRate, 2), forterOutcome: fmtPct(displayFortCompletionRate), isCalculation: true },
-    { formula: 's', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: isMarketplace ? 'commissionRate' : 'amerGrossMarginPercent', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
-    // For marketplaces: add Revenue row (GMV × Commission), then Gross Margin row, then Profitability (Revenue × Margin)
-    // For retailers: skip Revenue, just show Profitability (GMV × Gross Margin)
+    { formula: 's', label: 'GMV to Net sales deductions (sales tax/cancellations) (%)', customerInput: fmtPct(gmvToNetSalesDeductionPct), forterImprovement: '', forterOutcome: fmtPct(gmvToNetSalesDeductionPct), editableCustomerField: 'gmvToNetSalesDeductionPct', rawCustomerValue: gmvToNetSalesDeductionPct, valueType: 'percent' },
+    { formula: 't = q×(1-s)', label: 'Net sales ($)', customerInput: fmtCur(custNetSales), forterImprovement: fmtCur(deduplicationEnabled ? fortNetSalesDeduplicated - custNetSales : fortNetSales - custNetSales), forterOutcome: fmtCur(deduplicationEnabled ? fortNetSalesDeduplicated : fortNetSales), isCalculation: true },
+    ...(deduplicationEnabled ? [
+      { formula: 't\' = q\'×(1-s)', label: 'Net sales ($) (deduplicated)', customerInput: fmtCur(custNetSales), forterImprovement: fmtCur(fortNetSalesDeduplicated - custNetSales), forterOutcome: fmtCur(fortNetSalesDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
+    ] : []),
+    { formula: 'u', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: isMarketplace ? 'commissionRate' : 'amerGrossMarginPercent', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
+    // For marketplaces: add Revenue row (Net sales × Commission), then Gross Margin row, then Profitability (Revenue × Margin)
+    // For retailers: skip Revenue, just show Profitability (Net sales × Gross margin)
     ...(isMarketplace ? [
-      { formula: 't = q*s', label: 'Revenue ($)', customerInput: fmtCur(custRevenue), forterImprovement: fmtCur(displayRevenueRowImprovement), forterOutcome: fmtCur(displayFortRevenue), isCalculation: true } as CalculatorRow,
-      { formula: 'u', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' as const } as CalculatorRow,
+      { formula: 'v = t*u', label: 'Revenue ($)', customerInput: fmtCur(custRevenue), forterImprovement: fmtCur(displayRevenueRowImprovement), forterOutcome: fmtCur(displayFortRevenue), isCalculation: true } as CalculatorRow,
+      { formula: 'w', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' as const } as CalculatorRow,
       // Show both rows when deduplication is enabled
+      ...(deduplicationEnabled ? [
+        { formula: 'x = v*w', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUplift), forterOutcome: fmtCur(fortProfitability), isCalculation: true } as CalculatorRow,
+        { formula: 'x\' = x - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUpliftDeduplicated), forterOutcome: fmtCur(fortProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+      ] : [
+        { formula: 'x = v*w', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(displayProfitUplift), forterOutcome: fmtCur(displayFortProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+      ]),
+    ] : [
+      // For retailers: show profitability directly (Net sales × Gross margin)
       ...(deduplicationEnabled ? [
         { formula: 'v = t*u', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUplift), forterOutcome: fmtCur(fortProfitability), isCalculation: true } as CalculatorRow,
         { formula: 'v\' = v - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUpliftDeduplicated), forterOutcome: fmtCur(fortProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ] : [
         { formula: 'v = t*u', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(displayProfitUplift), forterOutcome: fmtCur(displayFortProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
-      ]),
-    ] : [
-      // For retailers: show profitability directly
-      ...(deduplicationEnabled ? [
-        { formula: 't = q*s', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUplift), forterOutcome: fmtCur(fortProfitability), isCalculation: true } as CalculatorRow,
-        { formula: 't\' = t - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUpliftDeduplicated), forterOutcome: fmtCur(fortProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
-      ] : [
-        { formula: 't = q*s', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(displayProfitUplift), forterOutcome: fmtCur(displayFortProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ]),
     ]),
   ];
@@ -1384,6 +1422,8 @@ export interface Challenge12_13Inputs {
   pctFraudulentLogins: number;
   churnLikelihoodFromATO: number;
   atoCatchRate: number;
+  /** GMV to Net sales deductions (%); default 20. Applied to GMV CLV churn before margin/EBITDA. */
+  gmvToNetSalesDeductionPct?: number;
 }
 
 export interface Challenge12_13Results {
@@ -1401,7 +1441,8 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
     monthlyLogins, customerLTV, avgAppeasementValue, avgSalaryPerCSMember,
     avgHandlingTimePerATOClaim, commissionRate, grossMarginPercent,
     pctFraudulentLogins, churnLikelihoodFromATO, atoCatchRate,
-    isMarketplace = false
+    isMarketplace = false,
+    gmvToNetSalesDeductionPct = 20,
   } = inputs;
 
   const commissionDecimal = commissionRate / 100;
@@ -1468,19 +1509,21 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
   const clvChurnImprovement = forterExpectedCLVChurn - custExpectedCLVChurn; // Positive (less negative = improvement)
   const clvChurnReduction = Math.abs(custExpectedCLVChurn) - Math.abs(forterExpectedCLVChurn);
   
-  // Profit CLV churn calculation
-  // For retailers: profit = GMV churn × gross margin (only gross margin, commission is 100% = 1.0)
-  // For marketplaces: profit = GMV churn × commission × gross margin (both applied)
+  // Net sales CLV churn = GMV CLV churn × (1 - GMV to Net sales deductions %)
+  const netSalesMultiplier = 1 - gmvToNetSalesDeductionPct / 100;
+  const custNetSalesCLVChurn = custExpectedCLVChurn * netSalesMultiplier;
+  const forterNetSalesCLVChurn = forterExpectedCLVChurn * netSalesMultiplier;
+  const netSalesCLVChurnImprovement = forterNetSalesCLVChurn - custNetSalesCLVChurn;
+  // Profit CLV churn = Net sales CLV churn × margin(s)
   const profitabilityMultiplier = isMarketplace 
     ? effectiveMarginDecimal * grossMarginDecimal 
-    : grossMarginDecimal; // For retailers, only gross margin (commission is effectively 100%)
-  
-  const custProfitCLVChurn = custExpectedCLVChurn * profitabilityMultiplier;
-  const forterProfitCLVChurn = forterExpectedCLVChurn * profitabilityMultiplier;
-  const profitImprovement = forterProfitCLVChurn - custProfitCLVChurn; // Positive (less negative = improvement)
+    : grossMarginDecimal;
+  const custProfitCLVChurn = custNetSalesCLVChurn * profitabilityMultiplier;
+  const forterProfitCLVChurn = forterNetSalesCLVChurn * profitabilityMultiplier;
+  const profitImprovement = forterProfitCLVChurn - custProfitCLVChurn;
   const profitUplift = Math.abs(custProfitCLVChurn) - Math.abs(forterProfitCLVChurn);
 
-  // Build calculator rows - conditionally show commission/gross margin based on business model
+  // Build calculator rows - GMV churn, deduction %, Net sales, then commission/gross margin, then profit
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of logins (#)', customerInput: fmt(Math.round(annualLogins)), forterImprovement: '', forterOutcome: fmt(Math.round(annualLogins)), editableCustomerField: 'monthlyLogins', rawCustomerValue: monthlyLogins, valueType: 'number' },
     { formula: 'b', label: 'Percent of fraudulent logins (%)', customerInput: fmtPct(pctFraudulentLogins), forterImprovement: '', forterOutcome: fmtPct(pctFraudulentLogins), editableForterField: 'pctFraudulentLogins', rawForterValue: pctFraudulentLogins, valueType: 'percent' },
@@ -1490,21 +1533,22 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
     { formula: 'f', label: 'Customer lifetime value (CLV) - GMV ($)', customerInput: fmtCur(customerLTV), forterImprovement: '', forterOutcome: fmtCur(customerLTV), editableCustomerField: 'customerLTV', rawCustomerValue: customerLTV, valueType: 'currency' },
     { formula: 'g', label: 'Churn likelihood from ATO (%)', customerInput: fmtPct(churnLikelihoodFromATO), forterImprovement: '', forterOutcome: fmtPct(churnLikelihoodFromATO), editableForterField: 'churnLikelihoodFromATO', rawForterValue: churnLikelihoodFromATO, valueType: 'percent' },
     { formula: 'h = -(e*f*g)', label: 'Expected GMV CLV churn from ATO ($)', customerInput: fmtCur(custExpectedCLVChurn), forterImprovement: fmtCur(clvChurnImprovement), forterOutcome: fmtCur(forterExpectedCLVChurn), isCalculation: true },
+    { formula: 'i', label: 'GMV to Net sales deductions (sales tax/cancellations) (%)', customerInput: fmtPct(gmvToNetSalesDeductionPct), forterImprovement: '', forterOutcome: fmtPct(gmvToNetSalesDeductionPct), editableCustomerField: 'gmvToNetSalesDeductionPct', rawCustomerValue: gmvToNetSalesDeductionPct, valueType: 'percent' },
+    { formula: 'j = h×(1-i)', label: 'Net sales ($)', customerInput: fmtCur(custNetSalesCLVChurn), forterImprovement: fmtCur(netSalesCLVChurnImprovement), forterOutcome: fmtCur(forterNetSalesCLVChurn), isCalculation: true },
   ];
 
-  // For marketplaces: show commission (row i) and gross margin (row j), formula k = h*i*j
-  // For retailers: show only gross margin (row i), formula k = h*i
+  // For marketplaces: show commission (row k) and gross margin (row l), formula m = j*k*l
+  // For retailers: show only gross margin (row k), formula m = j*k
   if (isMarketplace) {
     calculator2Rows.push(
-      { formula: 'i', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: 'commissionRate', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
-      { formula: 'j', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' },
-      { formula: 'k = h*i*j', label: 'Expected profit CLV churn from ATO ($)', customerInput: fmtCur(custProfitCLVChurn), forterImprovement: fmtCur(profitImprovement), forterOutcome: fmtCur(forterProfitCLVChurn), valueDriver: 'profit', isCalculation: true }
+      { formula: 'k', label: marginLabel, customerInput: fmtPct(effectiveMarginPercent), forterImprovement: '', forterOutcome: fmtPct(effectiveMarginPercent), editableCustomerField: 'commissionRate', rawCustomerValue: effectiveMarginPercent, valueType: 'percent' },
+      { formula: 'l', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' },
+      { formula: 'm = j*k*l', label: 'Expected profit CLV churn from ATO ($)', customerInput: fmtCur(custProfitCLVChurn), forterImprovement: fmtCur(profitImprovement), forterOutcome: fmtCur(forterProfitCLVChurn), valueDriver: 'profit', isCalculation: true }
     );
   } else {
-    // For retailers: only show gross margin once, formula k = h*i
     calculator2Rows.push(
-      { formula: 'i', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' },
-      { formula: 'k = h*i', label: 'Expected profit CLV churn from ATO ($)', customerInput: fmtCur(custProfitCLVChurn), forterImprovement: fmtCur(profitImprovement), forterOutcome: fmtCur(forterProfitCLVChurn), valueDriver: 'profit', isCalculation: true }
+      { formula: 'k', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' },
+      { formula: 'm = j*k', label: 'Expected profit CLV churn from ATO ($)', customerInput: fmtCur(custProfitCLVChurn), forterImprovement: fmtCur(profitImprovement), forterOutcome: fmtCur(forterProfitCLVChurn), valueDriver: 'profit', isCalculation: true }
     );
   }
 

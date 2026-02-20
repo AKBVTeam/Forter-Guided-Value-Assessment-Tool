@@ -27,6 +27,10 @@ export interface ForterKPIs {
   postAuthIncluded: boolean;
   threeDSReduction: number;
   threeDSReductionIsAbsolute: boolean;
+  /** Forter outcome override for 3DS Failure & Abandonment Rate (%) in payment funnel; when set, used as Forter rate (0-100). */
+  forter3DSAbandonmentRate?: number;
+  /** Forter outcome override for Issuing Bank Decline Rate (%) in payment funnel; when set, used as Forter rate (0-100). */
+  forterIssuingBankDeclineRate?: number;
   manualReviewReduction: number;
   manualReviewIsAbsolute: boolean;
   reviewTimeReduction: number;

@@ -28,6 +28,7 @@ import {
   defaultDeduplicationAssumptions,
 } from "./calculations";
 import { defaultAbuseBenchmarks } from "@/components/calculator/AbuseBenchmarksModal";
+import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
 
 export interface RunStandaloneOptions {
   deduplicationEnabled?: boolean;
@@ -368,6 +369,7 @@ export function runStandaloneCalculator(
         pctFraudulentLogins: forterKPIs.pctFraudulentLogins ?? 1,
         churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO ?? 50,
         atoCatchRate: forterKPIs.atoCatchRate ?? 90,
+        gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(data),
       };
       const result = calculateChallenge12_13(inputs);
       if (sourceCalculatorId === "c12-ato-opex") {

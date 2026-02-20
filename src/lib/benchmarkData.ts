@@ -411,33 +411,34 @@ export const threeDSCountryGroups: ThreeDSLookup[] = [
 ];
 
 // Get recommended 3DS rate based on country and AOV (in EUR)
-// Per spreadsheet Page 15 lookup logic with 4 AOV bands in EUR
-// The AOV bands are always in EUR: <€100, €100-€250, €250-€500, €500+
+// PSD2: AoV-based 3DS target from analytics (3DS LOGIC From Analytics PSD2)
+// Formula: 12.87 + (floor(AoV/50) * 5)%, capped at 100%. AoV < €50 → 12%.
+// Non-PSD2: 0% (3DS not mandated).
 export const get3DSRateByCountryAndAOV = (
   countryName: string,
   aovInBaseCurrency: number,
   baseCurrency: string = 'EUR'
 ): { rate: number; reason: string; aovInEUR: number } => {
-  // Convert AOV to EUR for band calculation
   const aovInEUR = convertToEUR(aovInBaseCurrency, baseCurrency);
-  
-  // Check if country is in PSD2 list
+
   const isPSD2Country = psd2Countries.some(
     c => c.toLowerCase() === countryName.toLowerCase()
   );
-  
+
   if (!isPSD2Country) {
     return { rate: 0, reason: 'Non-PSD2 region - 3DS not mandated', aovInEUR };
   }
-  
-  // PSD2 country - rate depends on AOV bands in EUR from Page 15
-  if (aovInEUR < 100) {
-    return { rate: 23, reason: 'PSD2 - AOV <€100', aovInEUR };
-  } else if (aovInEUR < 250) {
-    return { rate: 25, reason: 'PSD2 - AOV €100-€250', aovInEUR };
-  } else if (aovInEUR < 500) {
-    return { rate: 50, reason: 'PSD2 - AOV €250-€500', aovInEUR };
-  } else {
-    return { rate: 100, reason: 'PSD2 - AOV €500+', aovInEUR };
+
+  // PSD2: AoV-based rate (JB sheet - 5% per €50 AoV, base 12.87%; AoV < 50 → 12%)
+  if (aovInEUR < 50) {
+    return { rate: 12, reason: 'PSD2 - AOV <€50', aovInEUR };
   }
+  const bandIndex = Math.floor(aovInEUR / 50);
+  const rate = Math.min(100, Math.round((12.87 + bandIndex * 5) * 100) / 100);
+  const bandLow = bandIndex * 50;
+  const bandHigh = bandLow + 50;
+  const reason = bandHigh > 950
+    ? `PSD2 - AOV €${bandLow}+ (from analytics)`
+    : `PSD2 - AOV €${bandLow}-€${bandHigh} (from analytics)`;
+  return { rate, reason, aovInEUR };
 };

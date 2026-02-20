@@ -15,6 +15,7 @@ import {
   createCurrencyFormatter,
   DeduplicationBreakdown,
 } from "@/lib/calculations";
+import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
 import { Card } from "@/components/ui/card";
 import { Lock } from "lucide-react";
 
@@ -29,6 +30,8 @@ interface SegmentCalculatorTabsProps {
   includesFraudCBCoverage?: boolean;
   onSegmentInputChange?: (segmentId: string, field: keyof SegmentInputs, value: number) => void;
   onSegmentKPIChange?: (segmentId: string, field: keyof SegmentKPIs, value: number) => void;
+  /** Global form fields (e.g. gmvToNetSalesDeductionPct) - updates main formData so calculator maths and ROI stay in sync */
+  onFormDataChange?: (field: keyof CalculatorData, value: number) => void;
 }
 
 /**
@@ -100,6 +103,7 @@ function calculateSegmentResults(
       forterChargebackReduction: cbReduction,
       deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
       includesFraudCBCoverage,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     const results = calculateChallenge1(inputs);
@@ -172,6 +176,8 @@ function calculateSegmentResults(
       creditCard3DSPct: current3DSRate,
       threeDSFailureRate,
       issuingBankDeclineRate,
+      forter3DSAbandonmentRate: globalForterKPIs.forter3DSAbandonmentRate ?? threeDSFailureRate,
+      forterIssuingBankDeclineRate: globalForterKPIs.forterIssuingBankDeclineRate ?? issuingBankDeclineRate,
       fraudChargebackRate: currentCBRate,
       isMarketplace,
       commissionRate,
@@ -185,6 +191,7 @@ function calculateSegmentResults(
       forterTargetPostAuthRate: targetPostAuthRate,
       deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
       includesFraudCBCoverage,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     const results = calculateChallenge245(inputs);
@@ -544,6 +551,7 @@ export const SegmentCalculatorTabs = ({
   includesFraudCBCoverage = false,
   onSegmentInputChange,
   onSegmentKPIChange,
+  onFormDataChange,
 }: SegmentCalculatorTabsProps) => {
   const segments = formData.segments || [];
   const enabledSegments = segments.filter(s => s.enabled);
@@ -594,8 +602,15 @@ export const SegmentCalculatorTabs = ({
     return `${currencySymbol}${Math.round(value).toLocaleString()}`;
   };
 
+  // Global form fields: edit updates main formData so Net sales and downstream rows recalc everywhere
+  const GLOBAL_FORM_FIELDS = new Set<keyof CalculatorData>(['gmvToNetSalesDeductionPct']);
+
   // Handle segment-specific field changes (bi-directional editing)
   const handleSegmentFieldChange = (segmentId: string) => (field: keyof CalculatorData, value: number) => {
+    if (GLOBAL_FORM_FIELDS.has(field) && onFormDataChange) {
+      onFormDataChange(field, value);
+      return;
+    }
     // Map CalculatorData fields to SegmentInputs fields
     const fieldMapping: Record<string, keyof SegmentInputs> = {
       amerGrossAttempts: 'grossAttempts',

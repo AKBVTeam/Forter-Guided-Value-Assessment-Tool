@@ -38,6 +38,8 @@ export type CalculatorData = {
   baseCurrency?: string; // ISO 4217 currency code (e.g., "USD", "EUR")
   isMarketplace?: boolean;
   commissionRate?: number;
+  /** GMV to Net sales deductions: percentage deduction (e.g. sales tax/VAT, returns/cancellations). Default 20. Used in calculators and ROI. */
+  gmvToNetSalesDeductionPct?: number;
   /** Optional: selected buyer persona PDF filenames for "who is the buyer" */
   selectedBuyerPersonas?: string[];
   

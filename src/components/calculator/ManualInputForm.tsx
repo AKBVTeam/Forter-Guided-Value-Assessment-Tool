@@ -2467,6 +2467,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               costReductionBreakdown={valueTotals.costReductionBreakdown}
               riskMitigationBreakdown={valueTotals.riskMitigationBreakdown}
               isCustomMode={isCustomMode && !showGuidedTabs}
+              onFormDataChange={(updates) => Object.entries(updates).forEach(([k, v]) => updateField(k as keyof CalculatorData, v))}
               onOpenCalculator={(calculatorId) => {
                 // Open the full benefit modal (Benefit summary + Inputs + Calculator) without leaving ROI tab
                 setBenefitModalCalculatorId(calculatorId);
