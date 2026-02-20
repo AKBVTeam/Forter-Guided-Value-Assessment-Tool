@@ -1528,16 +1528,19 @@ export async function generateValueDeckPptx(
     x: 6.8, y: ebitdaY, w: 6.0, h: 0.95,
     fill: { color: '0D1B3E' },
   });
+  // Title and value: keep value right-aligned; title and description stay left so they don't overlap
+  const ebitdaValueX = 9.5;
+  const ebitdaLeftW = ebitdaValueX - 6.95 - 0.08; // width for left column (title + description) so value has clear space
   slide2.addText('Annual EBITDA Contribution', {
-    x: 6.95, y: ebitdaY + 0.06, w: 4.5, h: 0.26,
+    x: 6.95, y: ebitdaY + 0.06, w: ebitdaLeftW, h: 0.26,
     fontSize: 11, bold: true, color: 'FFFFFF', fontFace: FONT_HEAD,
   });
   slide2.addText('Total of above, applying commission & gross margin to GMV Uplift · Net of deduplication', {
-    x: 6.95, y: ebitdaY + 0.34, w: 5.2, h: 0.36,
-    fontSize: 8, color: '86EFAC', fontFace: FONT_BODY,
+    x: 6.95, y: ebitdaY + 0.32, w: ebitdaLeftW, h: 0.5,
+    fontSize: 8, color: '86EFAC', fontFace: FONT_BODY, wrap: true, valign: 'top',
   });
   slide2.addText(formatCurrency(valueTotals.ebitdaContribution, currency), {
-    x: 9.5, y: ebitdaY + 0.12, w: 3.1, h: 0.6,
+    x: ebitdaValueX, y: ebitdaY + 0.12, w: 12.8 - ebitdaValueX, h: 0.6,
     fontSize: 22, bold: true, color: '86EFAC', align: 'right', fontFace: FONT_HEAD,
   });
   const roiY = ebitdaY + 0.95 + 0.1;
