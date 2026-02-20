@@ -247,7 +247,7 @@ export function GenerateReportModal({
                   </Button>
                 </div>
                 
-                {showPreview && (
+                {showPreview && selectedType && (
                   <ReportPreview
                     type={selectedType}
                     formData={formData}
