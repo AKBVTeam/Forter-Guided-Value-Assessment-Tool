@@ -45,6 +45,8 @@ export interface SegmentKPIs {
   // Challenge 1 only (simple approval rate)
   approvalRateTarget?: number;
   chargebackRateTarget?: number;
+  /** Forter outcome override for Completed AOV ($); when set, used for Forter value of approved transactions in this segment. */
+  forterCompletedAOV?: number;
   
   // Challenge 2/4/5 specific
   preAuthApprovalTarget?: number;

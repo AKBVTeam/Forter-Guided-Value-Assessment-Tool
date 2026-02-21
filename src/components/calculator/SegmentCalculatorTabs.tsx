@@ -99,6 +99,7 @@ function calculateSegmentResults(
       commissionRate,
       currencyCode,
       completedAOV: segmentInputs.completedAOV ?? (grossAttempts > 0 ? annualGMV / grossAttempts : 0),
+      forterCompletedAOV: segmentKPIs.forterCompletedAOV ?? globalForterKPIs.forterCompletedAOV,
       forterApprovalRateImprovement: approvalImprovement,
       forterChargebackReduction: cbReduction,
       deduplication: { enabled: deduplicationEnabled, retryRate: deduplicationRetryRate, successRate: deduplicationSuccessRate },
@@ -183,6 +184,7 @@ function calculateSegmentResults(
       commissionRate,
       currencyCode,
       completedAOV: segmentInputs.completedAOV ?? (grossAttempts > 0 ? annualGMV / grossAttempts : 0),
+      forterCompletedAOV: segmentKPIs.forterCompletedAOV ?? globalForterKPIs.forterCompletedAOV,
       forterPreAuthImprovement: preAuthImprovement,
       forterPostAuthImprovement: postAuthImprovement,
       forter3DSReduction: threeDSReduction,
@@ -641,6 +643,7 @@ export const SegmentCalculatorTabs = ({
       preAuthApprovalImprovement: 'preAuthApprovalTarget',
       postAuthApprovalImprovement: 'postAuthApprovalTarget',
       threeDSReduction: 'threeDSRateTarget',
+      forterCompletedAOV: 'forterCompletedAOV',
     };
 
     const segmentKPIField = kpiMapping[field as string];

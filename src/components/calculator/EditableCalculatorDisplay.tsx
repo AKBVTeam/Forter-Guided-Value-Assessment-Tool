@@ -189,7 +189,9 @@ export const EditableCalculatorDisplay = ({
           const catchRate = Math.max(0, Math.min(100, numValue));
           onForterFieldChange(row.editableForterField as keyof ForterKPIs, catchRate);
         } else {
-          onForterFieldChange(row.editableForterField as keyof ForterKPIs, numValue);
+          // Clamp currency (e.g. forterCompletedAOV) to non-negative
+          const valueToCommit = row.valueType === 'currency' ? Math.max(0, numValue) : numValue;
+          onForterFieldChange(row.editableForterField as keyof ForterKPIs, valueToCommit);
         }
       }
     }

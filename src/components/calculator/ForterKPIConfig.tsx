@@ -31,6 +31,8 @@ export interface ForterKPIs {
   forter3DSAbandonmentRate?: number;
   /** Forter outcome override for Issuing Bank Decline Rate (%) in payment funnel; when set, used as Forter rate (0-100). */
   forterIssuingBankDeclineRate?: number;
+  /** Forter outcome override for Completed AOV ($) in calculators; when set, used for Forter value of approved transactions. */
+  forterCompletedAOV?: number;
   manualReviewReduction: number;
   manualReviewIsAbsolute: boolean;
   reviewTimeReduction: number;
@@ -595,7 +597,7 @@ export const ForterKPIConfig = ({
               </div>
               <div className="flex items-center gap-2">
                 <PercentageInput
-                  key={isSegmentMode ? 'agg-approval' : `approval-${kpis.approvalRateImprovement}`}
+                  key={isSegmentMode ? 'agg-approval' : 'approval-improvement'}
                   className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedApprovalRateTarget ?? 0) : kpis.approvalRateImprovement}
                   onChange={(v) => updateKPI("approvalRateImprovement", v)}
@@ -645,7 +647,7 @@ export const ForterKPIConfig = ({
               </div>
               <div className="flex items-center gap-2">
                 <PercentageInput
-                  key={isSegmentMode ? 'agg-cb' : `cb-${kpis.chargebackReduction}`}
+                  key={isSegmentMode ? 'agg-cb' : 'cb-reduction'}
                   className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
                   onChange={(v) => updateKPI("chargebackReduction", v)}
@@ -745,7 +747,7 @@ export const ForterKPIConfig = ({
               </div>
               <div className="flex items-center gap-2">
                 <PercentageInput
-                  key={isSegmentMode ? 'agg-preAuth' : `preAuth-${kpis.preAuthApprovalImprovement}`}
+                  key={isSegmentMode ? 'agg-preAuth' : 'preAuth-improvement'}
                   className={fieldInputClass}
                   value={isSegmentMode 
                     ? (aggregatedKPIs?.weightedPreAuthApprovalTarget ?? 0)
@@ -807,7 +809,7 @@ export const ForterKPIConfig = ({
               </div>
               <div className="flex items-center gap-2">
                 <PercentageInput
-                  key={isSegmentMode ? 'agg-postAuth' : `postAuth-${kpis.postAuthApprovalImprovement}`}
+                  key={isSegmentMode ? 'agg-postAuth' : 'postAuth-improvement'}
                   className={fieldInputClass}
                   value={isSegmentMode 
                     ? (aggregatedKPIs?.weightedPostAuthApprovalTarget ?? 0)
@@ -861,7 +863,7 @@ export const ForterKPIConfig = ({
               </div>
               <div className="flex items-center gap-2">
                 <PercentageInput
-                  key={isSegmentMode ? 'agg-3ds' : `3ds-${kpis.threeDSReduction}`}
+                  key={isSegmentMode ? 'agg-3ds' : '3ds-reduction'}
                   className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedThreeDSRateTarget ?? 0) : kpis.threeDSReduction}
                   onChange={(v) => updateKPI("threeDSReduction", v)}
@@ -912,7 +914,7 @@ export const ForterKPIConfig = ({
               </div>
               <div className="flex items-center gap-2">
                 <PercentageInput
-                  key={isSegmentMode ? 'agg-cb' : `cb-${kpis.chargebackReduction}`}
+                  key={isSegmentMode ? 'agg-cb' : 'cb-reduction'}
                   className={fieldInputClass}
                   value={isSegmentMode ? (aggregatedKPIs?.weightedChargebackRateTarget ?? 0) : kpis.chargebackReduction}
                   onChange={(v) => updateKPI("chargebackReduction", v)}

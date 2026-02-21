@@ -65,6 +65,8 @@ export function mapCalculatorDataToChallenge1Inputs(
     grossMarginPercent: data.grossMargin || 30,
     approvalRate: data.amerPreAuthApprovalRate || 95,
     fraudChargebackRate: data.fraudCBRate || 0.8,
+    completedAOV: data.completedAOV,
+    forterCompletedAOV: forterKPIs.forterCompletedAOV,
     forterApprovalRateImprovement: forterKPIs.approvalRateImprovement || 4,
     forterChargebackReduction: forterKPIs.chargebackReduction || 50,
   };

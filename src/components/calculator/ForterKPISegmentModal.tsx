@@ -221,7 +221,7 @@ export function ForterKPISegmentModal({
                       />
                     </div>
                     <PercentageInput
-                      key={`seg-approval-${editedSegment.kpis.approvalRateTarget}`}
+                      key="seg-approval"
                       value={editedSegment.kpis.approvalRateTarget}
                       onChange={(v) => updateKPI('approvalRateTarget', v)}
                       placeholder="99"
@@ -243,7 +243,7 @@ export function ForterKPISegmentModal({
                       />
                     </div>
                     <PercentageInput
-                      key={`seg-cb-${editedSegment.kpis.chargebackRateTarget}`}
+                      key="seg-cb"
                       value={editedSegment.kpis.chargebackRateTarget}
                       onChange={(v) => updateKPI('chargebackRateTarget', v)}
                       placeholder="0.25"
@@ -293,7 +293,7 @@ export function ForterKPISegmentModal({
                     />
                   </div>
                   <PercentageInput
-                    key={`seg-preAuth-${editedSegment.kpis.preAuthIncluded === false ? 100 : editedSegment.kpis.preAuthApprovalTarget}`}
+                    key="seg-preAuth"
                     value={editedSegment.kpis.preAuthIncluded === false ? 100 : editedSegment.kpis.preAuthApprovalTarget}
                     onChange={(v) => updateKPI('preAuthApprovalTarget', v)}
                     placeholder={globalKPIs.preAuthApprovalImprovement?.toString() || "99"}
@@ -337,7 +337,7 @@ export function ForterKPISegmentModal({
                     />
                   </div>
                   <PercentageInput
-                    key={`seg-postAuth-${editedSegment.kpis.postAuthIncluded === false ? 100 : editedSegment.kpis.postAuthApprovalTarget}`}
+                    key="seg-postAuth"
                     value={editedSegment.kpis.postAuthIncluded === false ? 100 : editedSegment.kpis.postAuthApprovalTarget}
                     onChange={(v) => updateKPI('postAuthApprovalTarget', v)}
                     placeholder={globalKPIs.postAuthApprovalImprovement?.toString() || "99"}
@@ -388,7 +388,7 @@ export function ForterKPISegmentModal({
                       />
                     </div>
                     <PercentageInput
-                      key={`seg-3ds-${editedSegment.kpis.threeDSRateTarget}`}
+                      key="seg-3ds"
                       value={editedSegment.kpis.threeDSRateTarget}
                       onChange={(v) => updateKPI('threeDSRateTarget', v)}
                       placeholder={globalKPIs.threeDSReduction?.toString() || "10"}
@@ -414,7 +414,7 @@ export function ForterKPISegmentModal({
                       />
                     </div>
                     <PercentageInput
-                      key={`seg-cb2-${editedSegment.kpis.chargebackRateTarget}`}
+                      key="seg-cb2"
                       value={editedSegment.kpis.chargebackRateTarget}
                       onChange={(v) => updateKPI('chargebackRateTarget', v)}
                       placeholder="0.25"

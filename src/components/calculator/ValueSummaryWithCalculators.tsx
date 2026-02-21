@@ -310,6 +310,8 @@ export const ValueSummaryWithCalculators = ({
       fraudChargebackRate: currentCBRate,
       isMarketplace: formData.isMarketplace ?? false,
       commissionRate: formData.commissionRate ?? 100,
+      completedAOV: formData.completedAOV,
+      forterCompletedAOV: forterKPIs.forterCompletedAOV,
       forterApprovalRateImprovement: approvalImprovement,
       forterChargebackReduction: cbReduction,
     };
@@ -399,6 +401,8 @@ export const ValueSummaryWithCalculators = ({
       fraudChargebackRate: currentCBRate,
       isMarketplace: formData.isMarketplace ?? false,
       commissionRate: formData.commissionRate ?? 100,
+      completedAOV: formData.completedAOV,
+      forterCompletedAOV: forterKPIs.forterCompletedAOV,
       forterPreAuthImprovement: preAuthImprovement,
       forterPostAuthImprovement: postAuthImprovement,
       forter3DSReduction: threeDSReduction,

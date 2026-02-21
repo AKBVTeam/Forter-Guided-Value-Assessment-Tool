@@ -61,6 +61,8 @@ export interface Challenge1Inputs {
   currencyCode?: string;
   // Completed AOV - used for value of approved transactions (can differ from calculated AOV)
   completedAOV?: number;
+  /** Forter outcome override for Completed AOV ($); when set, used for Forter value of approved transactions. */
+  forterCompletedAOV?: number;
   // Forter KPIs
   forterApprovalRateImprovement: number; // e.g., 4 for 4%
   forterChargebackReduction: number; // e.g., 50 for 50% reduction
@@ -133,6 +135,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     commissionRate = 100,
     currencyCode = 'USD',
     completedAOV,
+    forterCompletedAOV,
     forterApprovalRateImprovement,
     forterChargebackReduction,
     deduplication = defaultDeduplicationAssumptions,
@@ -149,6 +152,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
   const calculatedAOV = transactionAttempts > 0 ? transactionAttemptsValue / transactionAttempts : 0;
   // Completed AOV used for value of approved transactions (q = Completed AOV × p)
   const effectiveCompletedAOV = completedAOV ?? calculatedAOV;
+  const forterEffectiveAOV = forterCompletedAOV ?? effectiveCompletedAOV;
   
   const customerApprovalDecimal = approvalRate / 100;
   const forterApprovalRate = approvalRate + forterApprovalRateImprovement;
@@ -167,7 +171,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
 
   // Use Completed AOV for value of approved transactions (q = Completed AOV × p)
   const customerApprovedValue = customerApprovedTx * effectiveCompletedAOV;
-  const forterApprovedValue = forterApprovedTx * effectiveCompletedAOV;
+  const forterApprovedValue = forterApprovedTx * forterEffectiveAOV;
   const approvedValueImprovement = forterApprovedValue - customerApprovedValue;
 
   // Deduplication calculation for Challenge 1
@@ -241,7 +245,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     { formula: 'c = b/a', label: 'Average order value (calculated)', customerInput: fmtCur(calculatedAOV), forterImprovement: '', forterOutcome: fmtCur(calculatedAOV), isCalculation: true },
     { formula: 'd', label: 'Fraud approval rate (%)', customerInput: fmtPct(approvalRate), forterImprovement: formatPctImprovementRel(approvalRate, forterApprovalRate), forterOutcome: fmtPct(forterApprovalRate), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: approvalRate, editableForterField: 'approvalRateImprovement', rawForterValue: forterApprovalRate, valueType: 'percent' },
     { formula: 'e = a*d', label: 'Approved transactions (#)', customerInput: fmt(Math.round(customerApprovedTx)), forterImprovement: fmt(Math.round(approvedTxImprovement)), forterOutcome: fmt(Math.round(forterApprovedTx)), isCalculation: true },
-    { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: '', forterOutcome: fmtCur(effectiveCompletedAOV), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, valueType: 'currency' },
+    { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: '', forterOutcome: fmtCur(forterEffectiveAOV), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, editableForterField: 'forterCompletedAOV', rawForterValue: forterEffectiveAOV, valueType: 'currency' },
     // Always show the non-deduplicated value first
     { formula: 'f = c\'*e', label: 'Value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: fmtCur(approvedValueImprovement), forterOutcome: fmtCur(forterApprovedValue), valueDriver: deduplicationEnabled ? undefined : 'revenue', isCalculation: true },
     // When deduplication is enabled, show the deduplicated row as well (this becomes the value driver)
@@ -346,6 +350,8 @@ export interface Challenge245Inputs {
   currencyCode?: string;
   // Completed AOV - used for value of approved transactions (can differ from calculated AOV)
   completedAOV?: number;
+  /** Forter outcome override for Completed AOV ($); when set, used for Forter value of approved transactions. */
+  forterCompletedAOV?: number;
   // Forter KPIs
   forterPreAuthImprovement: number;
   forterPostAuthImprovement: number;
@@ -388,7 +394,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     preAuthApprovalRate, postAuthApprovalRate, creditCardPct, creditCard3DSPct,
     threeDSFailureRate, issuingBankDeclineRate, forter3DSAbandonmentRate, forterIssuingBankDeclineRate,
     fraudChargebackRate,
-    isMarketplace = false, commissionRate = 100, completedAOV,
+    isMarketplace = false, commissionRate = 100, completedAOV, forterCompletedAOV,
     forterPreAuthImprovement, forterPostAuthImprovement, forter3DSReduction, forterChargebackReduction,
     forterTargetCBRate, forterTargetPostAuthRate,
     gmvToNetSalesDeductionPct = 20,
@@ -398,6 +404,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const calculatedAOV = transactionAttempts > 0 ? transactionAttemptsValue / transactionAttempts : 0;
   // Completed AOV used for value of approved transactions (q = Completed AOV × p)
   const effectiveCompletedAOV = completedAOV ?? calculatedAOV;
+  const forterEffectiveAOV = forterCompletedAOV ?? effectiveCompletedAOV;
   
   // For marketplaces: profitability = GMV × Commission × Gross Margin (both applied)
   // For retailers: profitability = GMV × Gross Margin (only gross margin)
@@ -466,7 +473,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const fortPostBankTx = fortToBank - fortBankDeclines;
   const fortFinalApproved = fortPostBankTx * fortPostAuth;
   // Use Completed AOV for value of approved transactions (q = Completed AOV × p)
-  const fortFinalValue = fortFinalApproved * effectiveCompletedAOV;
+  const fortFinalValue = fortFinalApproved * forterEffectiveAOV;
   // Completion rate (%) = Value of approved transactions ($) / Transaction Attempts ($) — r = q/b (forter: q'/b when dedup)
   const fortCompletionRate = transactionAttemptsValue > 0 ? (fortFinalValue / transactionAttemptsValue) * 100 : 0;
   const fortNetSales = fortFinalValue * netSalesMultiplier;
@@ -558,7 +565,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     { formula: '', label: 'Post-auth fraud', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'o', label: 'Post-Auth Approval Rate (%)', customerInput: fmtPct(postAuthApprovalRate), forterImprovement: formatPctImprovementRel(postAuthApprovalRate, fortPostAuth * 100), forterOutcome: fmtPct(fortPostAuth * 100), editableCustomerField: 'amerPostAuthApprovalRate', rawCustomerValue: postAuthApprovalRate, editableForterField: 'postAuthApprovalImprovement', rawForterValue: fortPostAuth * 100, valueType: 'percent' },
     { formula: 'p = (l-n)*o', label: 'Approved transactions (#)', customerInput: fmt(Math.round(custFinalApproved)), forterImprovement: fmt(Math.round(fortFinalApproved - custFinalApproved)), forterOutcome: fmt(Math.round(fortFinalApproved)), isCalculation: true },
-    { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: '', forterOutcome: fmtCur(effectiveCompletedAOV), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, valueType: 'currency' },
+    { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: '', forterOutcome: fmtCur(forterEffectiveAOV), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, editableForterField: 'forterCompletedAOV', rawForterValue: forterEffectiveAOV, valueType: 'currency' },
     // Always show the non-deduplicated value first
     { formula: 'q = c\'*p', label: 'Value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUplift), forterOutcome: fmtCur(fortFinalValue), valueDriver: deduplicationEnabled ? undefined : 'revenue', isCalculation: true },
     // When deduplication is enabled, show the deduplicated row as well (this becomes the value driver)
