@@ -125,6 +125,7 @@ export const ChallengeInputs = ({
         fraudChargebackRate: actualFraudCBRate,
         completedAOV,
         forterCompletedAOV: formData.forterKPIs?.forterCompletedAOV,
+        recoveredAovMultiplier: formData.forterKPIs?.recoveredAovMultiplier ?? 1.15,
         forterApprovalRateImprovement: 0,
         forterChargebackReduction: 0,
       });
@@ -166,6 +167,7 @@ export const ChallengeInputs = ({
         fraudChargebackRate: actualFraudCBRate,
         completedAOV,
         forterCompletedAOV: formData.forterKPIs?.forterCompletedAOV,
+        recoveredAovMultiplier: formData.forterKPIs?.recoveredAovMultiplier ?? 1.15,
         forterPreAuthImprovement: 0,
         forterPostAuthImprovement: 0,
         forter3DSReduction: 0,

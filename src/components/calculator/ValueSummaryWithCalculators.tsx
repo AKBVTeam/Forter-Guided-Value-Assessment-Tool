@@ -312,6 +312,7 @@ export const ValueSummaryWithCalculators = ({
       commissionRate: formData.commissionRate ?? 100,
       completedAOV: formData.completedAOV,
       forterCompletedAOV: forterKPIs.forterCompletedAOV,
+      recoveredAovMultiplier: forterKPIs.recoveredAovMultiplier ?? 1.15,
       forterApprovalRateImprovement: approvalImprovement,
       forterChargebackReduction: cbReduction,
     };
@@ -403,6 +404,7 @@ export const ValueSummaryWithCalculators = ({
       commissionRate: formData.commissionRate ?? 100,
       completedAOV: formData.completedAOV,
       forterCompletedAOV: forterKPIs.forterCompletedAOV,
+      recoveredAovMultiplier: forterKPIs.recoveredAovMultiplier ?? 1.15,
       forterPreAuthImprovement: preAuthImprovement,
       forterPostAuthImprovement: postAuthImprovement,
       forter3DSReduction: threeDSReduction,

@@ -67,6 +67,7 @@ export function mapCalculatorDataToChallenge1Inputs(
     fraudChargebackRate: data.fraudCBRate || 0.8,
     completedAOV: data.completedAOV,
     forterCompletedAOV: forterKPIs.forterCompletedAOV,
+    recoveredAovMultiplier: forterKPIs.recoveredAovMultiplier ?? 1.15,
     forterApprovalRateImprovement: forterKPIs.approvalRateImprovement || 4,
     forterChargebackReduction: forterKPIs.chargebackReduction || 50,
   };

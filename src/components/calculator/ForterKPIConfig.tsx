@@ -13,6 +13,8 @@ import { getValidationWarning } from "@/lib/inputValidation";
 import { Segment, hasPaymentChallengesSelected, aggregateSegmentKPIs, getSegmentKPIStatus } from "@/lib/segments";
 import { Layers, Pencil, Info, RotateCcw } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 
 export interface ForterKPIs {
   approvalRateImprovement: number;
@@ -33,6 +35,8 @@ export interface ForterKPIs {
   forterIssuingBankDeclineRate?: number;
   /** Forter outcome override for Completed AOV ($) in calculators; when set, used for Forter value of approved transactions. */
   forterCompletedAOV?: number;
+  /** AOV uplift applied to recovered transactions only (default 1.15 = 15% higher AOV on recovered). */
+  recoveredAovMultiplier?: number;
   manualReviewReduction: number;
   manualReviewIsAbsolute: boolean;
   reviewTimeReduction: number;
@@ -88,6 +92,7 @@ export const defaultForterKPIs: ForterKPIs = {
   postAuthIncluded: false, // Default to excluded
   threeDSReduction: 10,
   threeDSReductionIsAbsolute: true,
+  recoveredAovMultiplier: 1.15,
   // Challenge 3: Manual Review (absolute by default - target values)
   manualReviewReduction: 0, // Target 0% manual review rate
   manualReviewIsAbsolute: true,
@@ -945,6 +950,60 @@ export const ForterKPIConfig = ({
                   </p>
                 );
               })()}
+            </div>
+            
+            {/* Recovered Order AOV Multiplier - full-width row */}
+            <div className={fieldRowClass + " col-span-full"}>
+              <div className={fieldLabelWrapClass}>
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <Label className={fieldLabelClass}>Recovered Order AOV Multiplier</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
+                        <Info className="h-4 w-4 shrink-0" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-sm">
+                      <p className="text-xs">
+                        Multiplier applied to the AOV of recovered transactions (those saved by reducing 3DS challenges and issuing bank declines). Set to 1.0× to be fully conservative. Default 1.15× reflects that higher-value transactions face disproportionate authentication friction.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 w-full mt-2">
+                <div className="flex-1 min-w-0">
+                  <Slider
+                    value={[kpis.recoveredAovMultiplier ?? 1.15]}
+                    onValueChange={(v) => updateKPI("recoveredAovMultiplier", v[0])}
+                    min={1}
+                    max={2}
+                    step={0.05}
+                    className="w-full"
+                  />
+                </div>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={((kpis.recoveredAovMultiplier ?? 1.15)).toFixed(2)}
+                  onChange={(e) => {
+                    const parsed = parseFloat(e.target.value.replace(/[^0-9.]/g, ""));
+                    if (!Number.isFinite(parsed)) return;
+                    const clamped = Math.max(1, Math.min(2, parsed));
+                    updateKPI("recoveredAovMultiplier", Number(clamped.toFixed(2)));
+                  }}
+                  className="w-20 text-right shrink-0"
+                />
+                <span className="text-sm text-muted-foreground shrink-0">×</span>
+              </div>
+              <p className={fieldHelperClass + " mt-1"}>
+                Baseline AOV × {(kpis.recoveredAovMultiplier ?? 1.15).toFixed(2)}× on recovered transactions
+                {(kpis.recoveredAovMultiplier ?? 1.15) !== 1 && (
+                  <span className="ml-1 font-medium text-primary">
+                    ({((kpis.recoveredAovMultiplier ?? 1.15) - 1) * 100 > 0 ? '+' : ''}{(((kpis.recoveredAovMultiplier ?? 1.15) - 1) * 100).toFixed(0)}%)
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </Card>
