@@ -284,7 +284,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   useEffect(() => {
     const newAnalysisId = initialData?._analysisId;
     const prevAnalysisId = loadedAnalysisIdRef.current;
-    
     // If there's no ID change, nothing to sync (same analysis; don't overwrite user edits)
     if (!newAnalysisId || newAnalysisId === prevAnalysisId) {
       return;
@@ -297,7 +296,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     const loadedChallengesJson = JSON.stringify(initialData?.selectedChallenges ?? {});
     const isSameData = currentChallengesJson === loadedChallengesJson && 
                        formData.customerName === initialData?.customerName;
-    
     if (isSameData) {
       // This is a Save As - just update the ref, don't reset state
       loadedAnalysisIdRef.current = newAnalysisId;
@@ -323,12 +321,16 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       // Spread ALL fields from initialData including isMarketplace, commissionRate, baseCurrency, investmentInputs, etc.
       ...initialData,
     };
-    // Ensure base currency is always restored so investment costs (stored in that currency) are not reconverted or reset
-    const restoredCurrency = (initialData?.baseCurrency != null && initialData.baseCurrency !== '')
+    // Ensure base currency is always restored so investment costs (stored in that currency) are not reconverted or reset.
+    // If stored blob has no baseCurrency (e.g. legacy save or race), derive from hqLocation so it doesn't revert to USD.
+    const explicitCurrency = (initialData?.baseCurrency != null && initialData.baseCurrency !== '')
       ? initialData.baseCurrency
-      : (newFormData.baseCurrency ?? 'USD');
+      : null;
+    const restoredCurrency = explicitCurrency
+      ?? (initialData?.hqLocation?.trim() ? getCurrencyForCountry(initialData.hqLocation.trim()) : null)
+      ?? newFormData.baseCurrency
+      ?? 'USD';
     newFormData.baseCurrency = restoredCurrency;
-
     setFormData(newFormData);
     setSelectedChallenges(initialData?.selectedChallenges ?? {});
     // Sync restored base currency to parent so Index state stays correct and auto-save persists it
