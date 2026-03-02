@@ -9,7 +9,7 @@ import { ROIResults } from '@/lib/roiCalculations';
 import { getCurrencySymbol } from '@/lib/benchmarkData';
 import { StrategicObjectiveId, STRATEGIC_OBJECTIVES, USE_CASES } from '@/lib/useCaseMapping';
 import { getChallengeBenefitContent } from '@/lib/challengeBenefitContent';
-import { getCaseStudySlideNumbersInOrder, hasCaseStudy, getCaseStudySlideNumber } from '@/lib/caseStudyMapping';
+import { getCaseStudySlideNumbersInOrder, hasCaseStudy, getCaseStudySlideNumber } from "@/lib/caseStudyMapping";
 import { 
   calculateChallenge1, 
   calculateChallenge245, 
@@ -57,6 +57,63 @@ export interface ReportOptions {
   selectedObjectives: StrategicObjectiveId[];
   hasInvestment: boolean;
   companyLogoBase64?: string; // Optional base64-encoded logo image
+  /** Optional: copy these slides from another presentation into the Case Studies section (order = display order). Same length as case study slots. */
+  caseStudySourceSlides?: Array<{ presentationId: string; pageObjectId: string }>;
+  /** Optional: use this presentation's first N slides as case studies (N = case study count). Overridden by caseStudySourceSlides if both set. */
+  caseStudySourcePresentationId?: string;
+}
+
+// Payloads for Google Slides/Docs (serializable, sent to Edge Function)
+export interface ExecutiveSummaryPayload {
+  analysisName: string;
+  customerName: string;
+  headline: string;
+  opportunityStatement: string;
+  strategicAlignment: { objectives: Array<{ name: string; description: string }>; useCases: Array<{ name: string }> } | null;
+  problemStatement: string[] | null;
+  recommendedApproach: { solutions: string[]; outcomesTable: Array<{ metric: string; current: string; target: string; improvement?: string }> };
+  investment: Array<{ label: string; val: string }> | null;
+  projectedValue: { rows: Array<{ label: string; val: string }>; nextSteps: string[] } | null;
+}
+
+export interface ValueDeckPayload {
+  currency: string;
+  customerName: string;
+  headline: string;
+  titleSlide: { customerName: string; headline: string; date: string };
+  executiveSlide: {
+    problems: string[];
+    solutions: string[];
+    valueCategories: Array<{ label: string; sub: string; val: string }>;
+    ebitda: string;
+    roiMetrics: Array<{ label: string; val: string }>;
+  };
+  valueSummarySlide: {
+    categories: Array<{ label: string; value: string; items: Array<{ label: string; value: number }> }>;
+    ebitda: string;
+    kpis: Array<{ metric: string; current: string; target: string; improvement?: string }>;
+  };
+  valueDriversSlide: { rows: Array<{ category: string; label: string; value: string }> };
+  targetOutcomesSlide: { rows: Array<{ metric: string; current: string; target: string; improvement: string }> };
+  roiSlide: {
+    metrics: Array<{ label: string; value: string }>;
+    yearTable: Array<{ year: number; grossEBITDA: string; forterCost: string; netEBITDA: string }>;
+    totalRow: { grossEBITDA: string; forterCost: string; netEBITDA: string };
+  } | null;
+  nextStepsSlide: { steps: Array<{ num: string; title: string; body: string }> };
+  appendixSlides: Array<{
+    title: string;
+    problem: string;
+    solution: string;
+    benefit: string;
+    badge: string | null;
+    isTBD: boolean;
+    tableRows: Array<{ cells: string[] }>;
+  }>;
+  caseStudySourceSlides?: Array<{ presentationId: string; pageObjectId: string }>;
+  caseStudySourcePresentationId?: string;
+  /** Case study slide numbers to include (for selected benefits only). Order = display order. When set, only these slides are used; otherwise API uses all. */
+  caseStudySlideNumbers?: number[];
 }
 
 // Format date as MMDDYY for filenames
@@ -256,33 +313,44 @@ function getActiveBenefitGroups(challenges: Record<string, boolean>): BenefitGro
   });
 }
 
-// Get ALL active value drivers sorted by value contribution (no limit)
+/** Case study slide numbers for selected benefits only (same logic as PPTX: only include slides for active calculators). Sorted by slide number. */
+export function getSelectedCaseStudySlideNumbers(challenges: Record<string, boolean>): number[] {
+  const groups = getActiveBenefitGroups(challenges);
+  const slideNums = new Set<number>();
+  for (const group of groups) {
+    for (const calcId of group.calculatorIds) {
+      if (hasCaseStudy(calcId)) {
+        const n = getCaseStudySlideNumber(calcId);
+        if (typeof n === "number" && n >= 1) slideNums.add(n);
+      }
+    }
+  }
+  return Array.from(slideNums).sort((a, b) => a - b);
+}
+
+// Get ALL active value drivers with category, sorted by category then value (no limit)
 function getAllValueDrivers(
   challenges: Record<string, boolean>,
   valueTotals: ValueTotals
-): Array<{ id: string; label: string; value: number }> {
-  const drivers: Array<{ id: string; label: string; value: number }> = [];
-  
-  // Combine all breakdowns
-  const allBreakdown = [
-    ...(valueTotals.gmvUpliftBreakdown || []),
-    ...(valueTotals.costReductionBreakdown || []),
-    ...(valueTotals.riskMitigationBreakdown || []),
-  ];
-  
-  // Only include drivers that have value
-  allBreakdown.forEach(b => {
-    if (b.value > 0) {
-      drivers.push({
-        id: b.label,
-        label: b.label,
-        value: b.value,
-      });
-    }
+): Array<{ id: string; label: string; value: number; category: string }> {
+  const drivers: Array<{ id: string; label: string; value: number; category: string }> = [];
+
+  const gmv = (valueTotals.gmvUpliftBreakdown || []).filter(b => b.value > 0).map(b => ({ ...b, category: "GMV Uplift" as const }));
+  const cost = (valueTotals.costReductionBreakdown || []).filter(b => b.value > 0).map(b => ({ ...b, category: "Cost Reduction" as const }));
+  const risk = (valueTotals.riskMitigationBreakdown || []).filter(b => b.value > 0).map(b => ({ ...b, category: "Risk Mitigation" as const }));
+
+  [...gmv, ...cost, ...risk].forEach(b => {
+    drivers.push({
+      id: b.label,
+      label: b.label,
+      value: b.value,
+      category: b.category,
+    });
   });
-  
-  // Sort by value descending - return ALL drivers
-  return drivers.sort((a, b) => b.value - a.value);
+
+  // Sort by category order (GMV, Cost, Risk) then by value descending within category
+  const catOrder: Record<string, number> = { "GMV Uplift": 0, "Cost Reduction": 1, "Risk Mitigation": 2 };
+  return drivers.sort((a, b) => catOrder[a.category] - catOrder[b.category] || b.value - a.value);
 }
 
 // Map calculatorIds to their breakdown label keywords for matching
@@ -929,6 +997,79 @@ export async function generateCalculatorSlide(
 }
 
 /**
+ * Build serializable payload for Google Docs (Executive Summary). Same data as DOCX export.
+ */
+export function getExecutiveSummaryPayload(
+  formData: CalculatorData,
+  valueTotals: ValueTotals,
+  challenges: Record<string, boolean>,
+  roiResults: ROIResults,
+  options: ReportOptions
+): ExecutiveSummaryPayload {
+  const analysisName = (formData as any)._analysisName || formData.customerName || 'Value Assessment';
+  const customerName = formData.customerName || 'Customer';
+  const currency = formData.baseCurrency || 'USD';
+  const headline = generateHeadline(formData, valueTotals);
+  const solutions = getSolutionApproaches(challenges);
+  const performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  const topDrivers = getAllValueDrivers(challenges, valueTotals);
+  const useStrategicAlignment = options.selectedObjectives.length > 0;
+  const strategicObjectives = getStrategicObjectiveDetails(options.selectedObjectives);
+  const useCases = getUseCasesForChallenges(challenges);
+  const problems = getSelectedChallengeProblems(challenges);
+  const opportunityStatement = `Because of rising fraud sophistication and payment friction, ${customerName} should implement an automated fraud decisioning solution by [TIMELINE]. After, ${customerName} will avoid ${formatCurrency(valueTotals.riskMitigation, currency, true)} in fraud losses while unlocking ${formatCurrency(valueTotals.gmvUplift, currency, true)} in recovered GMV.`;
+
+  const recommendedApproach = {
+    solutions,
+    outcomesTable: performanceHighlights.map(m => ({ metric: m.metric, current: m.current, target: m.target, improvement: m.improvement })),
+  };
+
+  let investment: Array<{ label: string; val: string }> | null = null;
+  let projectedValue: { rows: Array<{ label: string; val: string }>; nextSteps: string[] } | null = null;
+
+  if (options.hasInvestment) {
+    investment = [
+      { label: 'Annual Investment', val: formatCurrency(roiResults.yearProjections?.[0]?.forterSaaSCost || 0, currency) },
+      { label: 'EBITDA Contribution', val: formatCurrency(valueTotals.ebitdaContribution, currency) },
+      { label: 'Return on Investment', val: `${roiResults.roi.toFixed(1)}×` },
+      { label: 'Payback Period', val: roiResults.paybackPeriodMonths > 0 ? `${roiResults.paybackPeriodMonths} months` : 'Immediate' },
+    ];
+  } else {
+    const rows = [
+      valueTotals.gmvUplift > 0 && { label: 'GMV Uplift', val: formatCurrency(valueTotals.gmvUplift, currency) },
+      valueTotals.costReduction > 0 && { label: 'Cost Reduction', val: formatCurrency(valueTotals.costReduction, currency) },
+      valueTotals.riskMitigation > 0 && { label: 'Risk Mitigation', val: formatCurrency(valueTotals.riskMitigation, currency) },
+      { label: 'Annual EBITDA Contribution', val: formatCurrency(valueTotals.ebitdaContribution, currency) },
+    ].filter(Boolean) as Array<{ label: string; val: string }>;
+    projectedValue = {
+      rows,
+      nextSteps: [
+        'Finalize investment and pricing discussion to complete ROI analysis',
+        '[EDIT: Define additional next steps, timeline, and key stakeholders]',
+      ],
+    };
+  }
+
+  return {
+    analysisName,
+    customerName,
+    headline,
+    opportunityStatement,
+    strategicAlignment: useStrategicAlignment
+      ? { objectives: strategicObjectives, useCases: useCases.map(uc => ({ name: uc.name })) }
+      : null,
+    problemStatement: useStrategicAlignment ? null : problems.map((p, i) => {
+      const driver = topDrivers[i];
+      const cost = driver ? formatCurrency(driver.value, currency, true) : '[calculated cost]';
+      return `${p}, costing approximately ${cost} annually`;
+    }),
+    recommendedApproach,
+    investment,
+    projectedValue,
+  };
+}
+
+/**
  * Generate Executive Summary DOCX
  * Follows the Forter template format with focus on strategic alignment when objectives are selected
  */
@@ -1322,6 +1463,283 @@ export async function generateExecutiveSummaryDocx(
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `${sanitizedName}_Executive_Summary (${dateStr}).docx`;
   saveAs(blob, filename);
+}
+
+/** Payload for Google Slides calculator subset (title + calculator appendix + success story). Same shapes as full deck. */
+export interface CalculatorSubsetPayload {
+  titleSlide: { customerName: string; headline: string; date: string };
+  appendixSlides: ValueDeckPayload['appendixSlides'];
+  caseStudySlideNumbers: number[];
+  caseStudySourcePresentationId?: string;
+  currency: string;
+}
+
+/**
+ * Build payload for a single-calculator Google Slides deck: title, calculator slide(s), and success story (if any).
+ * Used from the calculator modal "Generate Slides" to create a subset deck using the same slide templates as the full report.
+ */
+export function getCalculatorSubsetPayload(
+  calculatorId: string,
+  calculatorTitle: string,
+  calculatorRows: CalculatorRow[],
+  formData: CalculatorData,
+  segmentData?: Array<{ name: string; rows: CalculatorRow[] }>,
+  totalRows?: CalculatorRow[],
+  options?: { caseStudySourcePresentationId?: string }
+): CalculatorSubsetPayload {
+  const customerName = formData.customerName || 'Customer';
+  const currency = formData.baseCurrency || 'USD';
+  const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const group = BENEFIT_GROUPS.find((g) => g.calculatorIds.includes(calculatorId));
+  const getCategoryBadge = (g: BenefitGroup): string | null => {
+    if (!g) return null;
+    if (['payment-fraud-c1', 'payment-optimization-c245'].includes(g.id)) return 'GMV Uplift';
+    if (['manual-review-c3', 'chargeback-recovery-c7', 'instant-refunds-c9', 'ato-protection-c12-13', 'signup-protection-c14-15'].includes(g.id)) return 'Cost Reduction';
+    if (['returns-abuse-c8', 'promotion-abuse-c10'].includes(g.id)) return 'Risk Mitigation';
+    return null;
+  };
+  const benefitContent = getChallengeBenefitContent(calculatorId);
+  const challengeDescription = benefitContent?.challengeDescription || group?.problem || '';
+  const benefitDescription = benefitContent?.benefitDescription || group?.solution || '';
+  const badge = group ? getCategoryBadge(group) : null;
+
+  const rowsToTableRows = (rows: CalculatorRow[]): Array<{ cells: string[] }> => {
+    const dataRows: Array<{ isSection: boolean; row: CalculatorRow }> = [];
+    rows.forEach((row) => {
+      dataRows.push({
+        isSection: !row.formula && !!row.label && !row.customerInput && !row.forterOutcome,
+        row,
+      });
+    });
+    const out: Array<{ cells: string[] }> = [];
+    for (const { isSection, row: r } of dataRows) {
+      if (isSection) out.push({ cells: [(r.label || '').toUpperCase(), '', '', '', ''] });
+      else out.push({ cells: [r.formula || '', r.label || '', r.customerInput || '', r.forterImprovement || '', r.forterOutcome || ''] });
+    }
+    return out;
+  };
+
+  const appendixSlides: ValueDeckPayload['appendixSlides'] = [];
+  const isSegmented = !!segmentData && segmentData.length > 0 && totalRows && totalRows.length > 0;
+
+  if (isSegmented && segmentData && totalRows) {
+    for (const seg of segmentData) {
+      const isTBD = isCalculatorTBD(seg.rows);
+      appendixSlides.push({
+        title: `${calculatorTitle} - ${seg.name}`,
+        problem: challengeDescription,
+        solution: benefitDescription,
+        benefit: group?.benefit ?? '',
+        badge,
+        isTBD,
+        tableRows: isTBD ? [] : rowsToTableRows(seg.rows),
+      });
+    }
+    const totalTBD = isCalculatorTBD(totalRows);
+    appendixSlides.push({
+      title: `${calculatorTitle} - Total`,
+      problem: challengeDescription,
+      solution: benefitDescription,
+      benefit: group?.benefit ?? '',
+      badge,
+      isTBD: totalTBD,
+      tableRows: totalTBD ? [] : rowsToTableRows(totalRows),
+    });
+  } else {
+    const isTBD = isCalculatorTBD(calculatorRows);
+    appendixSlides.push({
+      title: calculatorTitle,
+      problem: challengeDescription,
+      solution: benefitDescription,
+      benefit: group?.benefit ?? '',
+      badge,
+      isTBD,
+      tableRows: isTBD ? [] : rowsToTableRows(calculatorRows),
+    });
+  }
+
+  const caseStudySlideNumbers = hasCaseStudy(calculatorId)
+    ? [getCaseStudySlideNumber(calculatorId)!]
+    : [];
+
+  return {
+    titleSlide: { customerName, headline: '', date: dateStr },
+    appendixSlides,
+    caseStudySlideNumbers,
+    ...(options?.caseStudySourcePresentationId && { caseStudySourcePresentationId: options.caseStudySourcePresentationId }),
+    currency,
+  };
+}
+
+/**
+ * Build serializable payload for Google Slides (Value Deck). Same data as PPTX export.
+ */
+export function getValueDeckPayload(
+  formData: CalculatorData,
+  valueTotals: ValueTotals,
+  challenges: Record<string, boolean>,
+  roiResults: ROIResults,
+  options: ReportOptions
+): ValueDeckPayload {
+  const analysisName = (formData as any)._analysisName || formData.customerName || 'Value Assessment';
+  const customerName = formData.customerName || 'Customer';
+  const currency = formData.baseCurrency || 'USD';
+  const headline = generateHeadline(formData, valueTotals);
+  const allDrivers = getAllValueDrivers(challenges, valueTotals);
+  const performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  const problems = getSelectedChallengeProblems(challenges);
+  const solutions = getSolutionApproaches(challenges);
+  const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const valueCategories = [
+    valueTotals.gmvUplift > 0 && { label: 'GMV Uplift', sub: 'Revenue recovered from false declines & funnel', val: formatCurrency(valueTotals.gmvUplift, currency) },
+    valueTotals.costReduction > 0 && { label: 'Cost Reduction', sub: 'Operational & chargeback savings', val: formatCurrency(valueTotals.costReduction, currency) },
+    valueTotals.riskMitigation > 0 && { label: 'Risk Mitigation', sub: 'Fraud & abuse losses prevented', val: formatCurrency(valueTotals.riskMitigation, currency) },
+  ].filter(Boolean) as Array<{ label: string; sub: string; val: string }>;
+
+  const roiMetrics: Array<{ label: string; val: string }> = [];
+  if (options.hasInvestment) roiMetrics.push({ label: 'Return on Investment', val: `${roiResults.roi.toFixed(1)}×` });
+  roiMetrics.push({ label: 'Expected 3yr EBITDA (incl. ramp time)', val: formatCurrency(roiResults.totalProjection?.netEBITDAContribution ?? 0, currency) });
+
+  const activeCategories = [
+    valueTotals.gmvUplift > 0 && { label: 'GMV Uplift', value: formatCurrency(valueTotals.gmvUplift, currency), items: (valueTotals.gmvUpliftBreakdown || []).filter(b => b.value > 0) },
+    valueTotals.costReduction > 0 && { label: 'Cost Reduction', value: formatCurrency(valueTotals.costReduction, currency), items: (valueTotals.costReductionBreakdown || []).filter(b => b.value > 0) },
+    valueTotals.riskMitigation > 0 && { label: 'Risk Mitigation', value: formatCurrency(valueTotals.riskMitigation, currency), items: (valueTotals.riskMitigationBreakdown || []).filter(b => b.value > 0) },
+  ].filter(Boolean) as Array<{ label: string; value: string; items: Array<{ label: string; value: number }> }>;
+
+  const valueSummaryKPIs = (performanceHighlights || []).slice(0, 20);
+
+  const nextSteps = options.hasInvestment
+    ? [
+        { num: '1', title: 'Investment & Pricing Discussion', body: 'Align on final investment structure with [Champion Name] to complete the full ROI model.' },
+        { num: '2', title: 'Technical Integration Review', body: 'Schedule integration scoping session with [Technical Stakeholder] — target go-live [Target Date].' },
+        { num: '3', title: 'Proof of Concept', body: 'Define POC success metrics and scope with [Stakeholder]. Timeline: [X weeks].' },
+        { num: '4', title: 'Executive Alignment & Sign-off', body: 'Present business case to [Executive Sponsor] by [Date] and initiate contract review.' },
+      ]
+    : [
+        { num: '1', title: 'Finalise Investment Discussion', body: 'Complete pricing and investment structure with [Champion Name] to finish ROI analysis.' },
+        { num: '2', title: 'Technical Integration Review', body: 'Schedule scoping session with [Technical Stakeholder] — target go-live [Target Date].' },
+        { num: '3', title: 'Proof of Concept', body: 'Define POC success metrics with [Stakeholder]. Timeline: [X weeks].' },
+        { num: '4', title: 'Executive Alignment & Sign-off', body: 'Present to [Executive Sponsor] by [Date] and initiate contract review.' },
+      ];
+
+  const getCategoryBadge = (group: BenefitGroup): string | null => {
+    if (['payment-fraud-c1', 'payment-optimization-c245'].includes(group.id)) return 'GMV Uplift';
+    if (['manual-review-c3', 'chargeback-recovery-c7', 'instant-refunds-c9', 'ato-protection-c12-13', 'signup-protection-c14-15'].includes(group.id)) return 'Cost Reduction';
+    if (['returns-abuse-c8', 'promotion-abuse-c10'].includes(group.id)) return 'Risk Mitigation';
+    return null;
+  };
+
+  const appendixSlides: ValueDeckPayload['appendixSlides'] = [];
+  const activeBenefitGroups = getActiveBenefitGroups(challenges);
+  const driverLabels = new Set(allDrivers.map((d) => d.label.trim().toLowerCase()));
+  const appendixGroupIds = new Set(activeBenefitGroups.map((g) => g.id));
+  for (const group of BENEFIT_GROUPS) {
+    if (appendixGroupIds.has(group.id)) continue;
+    const tables = getCalculatorRowsForBenefitGroup(group, formData);
+    const hasMatchingDriver = tables.some((calc) =>
+      driverLabels.has(calc.title.trim().toLowerCase())
+    );
+    if (hasMatchingDriver) appendixGroupIds.add(group.id);
+  }
+  const appendixGroups = BENEFIT_GROUPS.filter((g) => appendixGroupIds.has(g.id));
+  for (const group of appendixGroups) {
+    const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
+    const badge = getCategoryBadge(group);
+    for (const calc of calculatorTables) {
+      const calcId = group.calculatorIds.find((id) => {
+        const content = getChallengeBenefitContent(id);
+        return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
+      }) || group.calculatorIds[0];
+      const benefitContent = getChallengeBenefitContent(calcId);
+      const slideTitle = calc.title || group.title;
+      const benefitDescription = benefitContent?.benefitDescription || group.solution;
+      const challengeDescription = benefitContent?.challengeDescription || group.problem;
+      const isTBD = isCalculatorTBD(calc.rows);
+      const tableRows: Array<{ cells: string[] }> = [];
+      if (!isTBD) {
+        const dataRows: Array<{ isSection: boolean; row: CalculatorRow }> = [];
+        calc.rows.forEach(row => {
+          dataRows.push({ isSection: !row.formula && !!row.label && !row.customerInput && !row.forterOutcome, row });
+        });
+        for (const { isSection, row: r } of dataRows) {
+          if (isSection) tableRows.push({ cells: [(r.label || '').toUpperCase(), '', '', '', ''] });
+          else tableRows.push({ cells: [r.formula || '', r.label || '', r.customerInput || '', r.forterImprovement || '', r.forterOutcome || ''] });
+        }
+      }
+      appendixSlides.push({
+        title: slideTitle,
+        problem: challengeDescription,
+        solution: benefitDescription,
+        benefit: group.benefit,
+        badge,
+        isTBD,
+        tableRows,
+      });
+    }
+  }
+
+  let roiSlide: ValueDeckPayload['roiSlide'] = null;
+  if (options.hasInvestment && roiResults.yearProjections?.length) {
+    const y = roiResults.yearProjections;
+    const tot = roiResults.totalProjection;
+    roiSlide = {
+      metrics: [
+        { label: 'ROI', value: `${roiResults.roi.toFixed(1)}×` },
+        { label: 'Payback Period', value: roiResults.paybackPeriodMonths > 0 ? `${roiResults.paybackPeriodMonths} mo` : 'Immediate' },
+        { label: 'Contract Tenure', value: `${y.length} years` },
+        { label: 'Expected 3yr EBITDA (incl. ramp time)', value: formatCurrency(tot?.netEBITDAContribution ?? 0, currency) },
+      ],
+      yearTable: y.map(yr => ({
+        year: yr.year,
+        grossEBITDA: formatCurrency(yr.runRateGrossEBITDA, currency),
+        forterCost: formatCurrency(yr.forterSaaSCost + yr.integrationCost, currency),
+        netEBITDA: formatCurrency(yr.netEBITDAContribution, currency),
+      })),
+      totalRow: {
+        grossEBITDA: formatCurrency(tot?.runRateGrossEBITDA ?? 0, currency),
+        forterCost: formatCurrency((tot?.forterSaaSCost ?? 0) + (tot?.integrationCost ?? 0), currency),
+        netEBITDA: formatCurrency(tot?.netEBITDAContribution ?? 0, currency),
+      },
+    };
+  }
+
+  return {
+    currency,
+    customerName,
+    headline,
+    titleSlide: { customerName, headline, date: dateStr },
+    executiveSlide: {
+      problems: problems.slice(0, 5),
+      solutions: solutions.slice(0, 5),
+      valueCategories,
+      ebitda: formatCurrency(valueTotals.ebitdaContribution, currency),
+      roiMetrics,
+    },
+    valueSummarySlide: {
+      categories: activeCategories,
+      ebitda: formatCurrency(valueTotals.ebitdaContribution, currency),
+      kpis: valueSummaryKPIs,
+    },
+    valueDriversSlide: {
+      rows: allDrivers.map(d => ({ category: d.category, label: d.label, value: formatCurrency(d.value, currency) })),
+    },
+    targetOutcomesSlide: {
+      rows: performanceHighlights.map(m => ({
+        metric: m.metric,
+        current: m.current,
+        target: m.target,
+        improvement: m.improvement ?? '—',
+      })),
+    },
+    roiSlide,
+    nextStepsSlide: { steps: nextSteps },
+    appendixSlides,
+    ...(options.caseStudySourceSlides && { caseStudySourceSlides: options.caseStudySourceSlides }),
+    ...(options.caseStudySourcePresentationId && { caseStudySourcePresentationId: options.caseStudySourcePresentationId }),
+    caseStudySlideNumbers: getSelectedCaseStudySlideNumbers(challenges),
+  };
 }
 
 /**
@@ -1756,8 +2174,8 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     slideNext.addText(step.body, { x: xPos + 0.18, y: yPos + 0.66, w: 5.65, h: 1.3, fontSize: 11, color: '374151', fontFace: FONT_BODY, valign: 'top' });
   });
 
-  // ===== CASE STUDIES: One slide per benefit with a case study (before Appendix) =====
-  const caseStudySlideNumbers = getCaseStudySlideNumbersInOrder();
+  // ===== CASE STUDIES: One slide per selected benefit with a case study (before Appendix) =====
+  const caseStudySlideNumbers = getSelectedCaseStudySlideNumbers(challenges);
   let caseStudiesPageNum = options.hasInvestment ? 8 : 7;
   if (caseStudySlideNumbers.length > 0) {
     const slideCaseStudiesTitle = pptx.addSlide();
@@ -1836,7 +2254,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
           return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
         }) || group.calculatorIds[0];
         const benefitContent = getChallengeBenefitContent(calcId);
-        const slideTitle = benefitContent?.benefitTitle || calc.title;
+        const slideTitle = calc.title || group.title;
         const benefitDescription = benefitContent?.benefitDescription || group.solution;
         const challengeDescription = benefitContent?.challengeDescription || group.problem;
         const isTBD = isCalculatorTBD(calc.rows);

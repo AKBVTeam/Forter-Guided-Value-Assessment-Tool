@@ -29,6 +29,7 @@ const FIELD_LABELS: Record<string, string> = {
   amerGrossAttempts: "Transaction attempts",
   amerAnnualGMV: "Annual GMV",
   amerGrossMarginPercent: "Gross margin %",
+  commissionRate: "Commission / Take rate %",
   amerPreAuthApprovalRate: "Pre-auth fraud approval rate %",
   amerPostAuthApprovalRate: "Post-auth fraud approval rate %",
   completedAOV: "Completed AOV",

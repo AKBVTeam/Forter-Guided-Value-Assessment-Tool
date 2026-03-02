@@ -60,6 +60,13 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Value Agent (in-app chat)
+
+The Value Agent is the in-app chat that helps complete the value assessment.
+
+- **Not a developer?** Use the short guide: **[VALUE_AGENT_SETUP_SIMPLE.md](./VALUE_AGENT_SETUP_SIMPLE.md)** — what to do in Lovable and Supabase, and what to ask a dev.
+- **Setting it up in code?** Use **[VALUE_AGENT_SETUP.md](./VALUE_AGENT_SETUP.md)** — env vars, deploying the Edge Function, and the `LOVABLE_API_KEY` secret.
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/18c9baba-c135-4536-881d-f420a443eb06) and click on Share -> Publish.

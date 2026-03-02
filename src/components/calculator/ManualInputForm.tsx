@@ -48,7 +48,7 @@ import { verticalBenchmarks, countryBenchmarksSortedForHQ, getWeightedApprovalRa
 import { NumericInput } from "@/components/calculator/NumericInput";
 import { toast } from "sonner";
 import { ValueAgentChat } from "./ValueAgentChat";
-import { GenerateReportModal } from "./GenerateReportModal";
+import { GenerateReportModal, type CalculatorSubsetForReport } from "./GenerateReportModal";
 import { GuidedValueWelcome } from "./GuidedValueWelcome";
 import { BUYER_PERSONA_PDFS } from "./WhatIsBusinessValueModal";
 import { cn } from "@/lib/utils";
@@ -421,7 +421,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   }, [onInvestmentPersist]);
 
   // Track tab completion for checkmark badges
-  const { completion: tabCompletion, markTabViewed, canGenerateReports, showReportAnimation } = useTabCompletion({
+  const { completion: tabCompletion, markTabViewed, canGenerateReports, showReportAnimation, dismissReportAnimation } = useTabCompletion({
     formData,
     selectedChallenges,
     valueTotals,
@@ -477,6 +477,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   
   // State for generate report modal
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [calculatorSubsetForReport, setCalculatorSubsetForReport] = useState<CalculatorSubsetForReport | null>(null);
+  const [lastExecutiveSummaryUrl, setLastExecutiveSummaryUrl] = useState<string | null>(null);
+  const [lastValueDeckUrl, setLastValueDeckUrl] = useState<string | null>(null);
   
   // Track when a report was last generated and what data was used
   const [lastReportDataHash, setLastReportDataHash] = useState<string | null>(null);
@@ -1530,8 +1533,11 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                     variant={canGenerateReports ? "default" : "outline"}
                     size="sm"
                     disabled={!canGenerateReports}
-                    onClick={() => setReportModalOpen(true)}
-                    className={`gap-2 ${showReportAnimation ? 'animate-pulse ring-2 ring-primary ring-offset-2' : ''}`}
+                    onClick={() => {
+                      setReportModalOpen(true);
+                      dismissReportAnimation();
+                    }}
+                    className={`gap-2 ${!reportModalOpen && (showReportAnimation || (reportNeedsUpdate && canGenerateReports)) ? 'animate-pulse ring-2 ring-primary ring-offset-2' : ''}`}
                   >
                     <FileText className="w-4 h-4" />
                     Generate Reports
@@ -2438,6 +2444,10 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               onInvestmentInputsChange={handleInvestmentInputsChange}
               openBenefitCalculatorId={benefitModalCalculatorId}
               onBenefitModalClose={() => setBenefitModalCalculatorId(null)}
+              onGenerateCalculatorSlides={(subset) => {
+                setCalculatorSubsetForReport(subset);
+                setReportModalOpen(true);
+              }}
             />
             {/* Navigation Buttons */}
             <div className="flex justify-between pt-6 border-t mt-6">
@@ -2522,6 +2532,10 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               onInvestmentInputsChange={handleInvestmentInputsChange}
               openBenefitCalculatorId={benefitModalCalculatorId}
               onBenefitModalClose={() => setBenefitModalCalculatorId(null)}
+              onGenerateCalculatorSlides={(subset) => {
+                setCalculatorSubsetForReport(subset);
+                setReportModalOpen(true);
+              }}
             />
           </div>
         )}
@@ -2781,7 +2795,10 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       {/* Generate Report Modal */}
       <GenerateReportModal
         open={reportModalOpen}
-        onOpenChange={setReportModalOpen}
+        onOpenChange={(open) => {
+          setReportModalOpen(open);
+          if (!open) setCalculatorSubsetForReport(null);
+        }}
         formData={formData}
         valueTotals={valueTotals}
         selectedChallenges={selectedChallenges}
@@ -2789,6 +2806,11 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         selectedObjectives={selectedObjectives}
         customerLogoUrl={customerLogoUrl}
         onReportGenerated={handleReportGenerated}
+        calculatorSubset={calculatorSubsetForReport}
+        lastExecutiveSummaryUrl={lastExecutiveSummaryUrl}
+        lastValueDeckUrl={lastValueDeckUrl}
+        onExecutiveSummaryGenerated={setLastExecutiveSummaryUrl}
+        onValueDeckGenerated={setLastValueDeckUrl}
       />
       
     </div>

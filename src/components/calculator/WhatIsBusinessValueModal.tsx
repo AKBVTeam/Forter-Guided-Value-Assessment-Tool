@@ -271,7 +271,7 @@ export function WhatIsBusinessValueModal({
                     { step: 1, title: "Discovery & alignment", body: "Select use cases and strategic objectives; align on which challenges Forter will address." },
                     { step: 2, title: "Qualify & quantify", body: "Enter customer metrics and Forter KPIs; the tool calculates benefit drivers and EBITDA impact." },
                     { step: 3, title: "Value summary & ROI", body: "Review value by driver, add investment assumptions, and see ROI and payback." },
-                    { step: 4, title: "Defendable reports", body: "Generate Word or PowerPoint outputs to share and defend the business case." },
+                    { step: 4, title: "Defendable reports", body: "Generate Google Slides or Google Docs to share and defend the business case." },
                   ].map(({ step, title, body }, i) => (
                     <li
                       key={step}

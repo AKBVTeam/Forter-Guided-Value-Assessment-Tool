@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,35 +6,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { FileText, Presentation, Download, CheckCircle2, Loader2, Eye, EyeOff, AlertTriangle } from "lucide-react";
+import { ExternalLink, Presentation, FileText, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { useGoogleLogin } from "@react-oauth/google";
 import { CalculatorData } from "@/pages/Index";
 import { ValueTotals } from "@/components/calculator/ValueSummaryOptionA";
-import { InvestmentInputs, calculateROI } from "@/lib/roiCalculations";
-import { generateExecutiveSummaryDocx, generateValueDeckPptx, ReportOptions } from "@/lib/reportGeneration";
+import { InvestmentInputs, calculateROI, calculateInvestmentCosts } from "@/lib/roiCalculations";
 import { StrategicObjectiveId } from "@/lib/useCaseMapping";
-import { ReportPreview } from "./ReportPreview";
+import type { CalculatorRow } from "@/lib/calculations";
+import { getValueDeckPayload, getExecutiveSummaryPayload, getCalculatorSubsetPayload } from "@/lib/reportGeneration";
+import {
+  googleReportFileName,
+  googleReportExecutiveSummaryFileName,
+  googleReportCalculatorSubsetFileName,
+  driveCreateFile,
+  buildGoogleDoc,
+  buildGoogleSlides,
+} from "@/lib/googleReportApi";
 
-// Format date as MMDDYY for filenames
-function formatDateMMDDYY(): string {
-  const now = new Date();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const yy = String(now.getFullYear()).slice(-2);
-  return `${mm}${dd}${yy}`;
+/** When set, modal generates a calculator-subset deck (title + calculator slide(s) + success story) instead of full report. */
+export interface CalculatorSubsetForReport {
+  calculatorId: string;
+  calculatorTitle: string;
+  rows: CalculatorRow[];
+  segmentData?: Array<{ name: string; rows: CalculatorRow[] }>;
+  totalRows?: CalculatorRow[];
 }
 
 interface GenerateReportModalProps {
@@ -47,12 +44,26 @@ interface GenerateReportModalProps {
   selectedObjectives: StrategicObjectiveId[];
   customerLogoUrl?: string;
   onReportGenerated?: () => void;
+  /** When set, show "Generate Slides" for this calculator only (subset deck). */
+  calculatorSubset?: CalculatorSubsetForReport | null;
+  /** Last generated Executive 1-Page Summary URL (so user can open it from the modal without regenerating). */
+  lastExecutiveSummaryUrl?: string | null;
+  /** Last generated Value Assessment Deck URL. */
+  lastValueDeckUrl?: string | null;
+  /** Called when a new Executive Summary is generated; parent should save the URL. */
+  onExecutiveSummaryGenerated?: (url: string) => void;
+  /** Called when a new Value Assessment Deck is generated; parent should save the URL. */
+  onValueDeckGenerated?: (url: string) => void;
 }
 
-type ReportType = 'executive' | 'deck' | null;
-type GenerationState = 'idle' | 'generating' | 'success' | 'error';
+const GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/presentations",
+  "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/drive.file",
+].join(" ");
 
-export function GenerateReportModal({
+/** Only rendered when GoogleOAuthProvider is present (clientId set). Uses useGoogleLogin. */
+function GenerateReportModalWithGoogle({
   open,
   onOpenChange,
   formData,
@@ -60,304 +71,306 @@ export function GenerateReportModal({
   selectedChallenges,
   investmentInputs,
   selectedObjectives,
-  customerLogoUrl,
   onReportGenerated,
+  calculatorSubset,
+  lastExecutiveSummaryUrl = null,
+  lastValueDeckUrl = null,
+  onExecutiveSummaryGenerated,
+  onValueDeckGenerated,
 }: GenerateReportModalProps) {
-  const [selectedType, setSelectedType] = useState<ReportType>(null);
-  const [generationState, setGenerationState] = useState<GenerationState>('idle');
-  const [generatedFilename, setGeneratedFilename] = useState<string>('');
-  const [showPreview, setShowPreview] = useState(true);
-  const [showWarningDialog, setShowWarningDialog] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [reportUrl, setReportUrl] = useState<string | null>(null);
+  const pendingDocTypeRef = useRef<"slides" | "docs" | null>(null);
+  const pendingSubsetRef = useRef<CalculatorSubsetForReport | null>(null);
 
-  const roiResults = calculateROI(formData, valueTotals, investmentInputs);
-  
-  // Determine if investment has been entered
-  const hasInvestment = roiResults.hasInvestment;
+  const merchantName = formData.customerName || "Customer";
 
-  const handleGenerateClick = () => {
-    if (!selectedType) return;
-    setShowWarningDialog(true);
-  };
+  const createAndGetUrl = async (accessToken: string, docType: "slides" | "docs"): Promise<string> => {
+    const subset = pendingSubsetRef.current;
+    pendingSubsetRef.current = null;
 
-  const handleConfirmGenerate = async () => {
-    setShowWarningDialog(false);
-    if (!selectedType) return;
-
-    setGenerationState('generating');
-
-    try {
-      const analysisName = (formData as any)._analysisName || formData.customerName || 'Customer';
-      const sanitized = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
-      
-      const reportOptions: ReportOptions = {
-        selectedObjectives,
-        hasInvestment,
-        companyLogoBase64: customerLogoUrl || undefined,
-      };
-      
-      if (selectedType === 'executive') {
-        await generateExecutiveSummaryDocx(formData, valueTotals, selectedChallenges, roiResults, reportOptions);
-        const dateStr = formatDateMMDDYY();
-        setGeneratedFilename(`${sanitized}_Executive_Summary (${dateStr}).docx`);
-      } else {
-        await generateValueDeckPptx(formData, valueTotals, selectedChallenges, roiResults, reportOptions);
-        const dateStr = formatDateMMDDYY();
-        setGeneratedFilename(`Forter_x_${sanitized}_Value_Assessment (${dateStr}).pptx`);
-      }
-
-      setGenerationState('success');
-      toast.success('Report generated successfully!');
-      
-      // Notify parent that report was generated (to update the "needs update" indicator)
+    if (docType === "slides" && subset) {
+      const caseStudySourcePresentationId = import.meta.env.VITE_CASE_STUDY_SOURCE_PRESENTATION_ID as string | undefined;
+      const reportData = getCalculatorSubsetPayload(
+        subset.calculatorId,
+        subset.calculatorTitle,
+        subset.rows,
+        formData,
+        subset.segmentData,
+        subset.totalRows,
+        typeof caseStudySourcePresentationId === "string" && caseStudySourcePresentationId.trim()
+          ? { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }
+          : undefined
+      );
+      const fileName = googleReportCalculatorSubsetFileName(merchantName, subset.calculatorTitle);
+      const file = await driveCreateFile(accessToken, fileName, "application/vnd.google-apps.presentation");
+      await buildGoogleSlides(accessToken, file.id, reportData);
       onReportGenerated?.();
-    } catch (error) {
-      console.error('Report generation error:', error);
-      setGenerationState('error');
-      toast.error('Failed to generate report. Please try again.');
+      return `https://docs.google.com/presentation/d/${file.id}/edit`;
+    }
+
+    const roiResults = calculateROI(formData, valueTotals, investmentInputs);
+    const costs = calculateInvestmentCosts(investmentInputs, formData);
+    const hasInvestment = costs.totalACV > 0 || costs.integrationCost > 0;
+    const caseStudySourcePresentationId = import.meta.env.VITE_CASE_STUDY_SOURCE_PRESENTATION_ID as string | undefined;
+    const options = {
+      hasInvestment,
+      selectedObjectives,
+      ...(typeof caseStudySourcePresentationId === "string" &&
+        caseStudySourcePresentationId.trim() && { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }),
+    };
+
+    let reportData: Record<string, unknown>;
+    if (docType === "slides") {
+      reportData = getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, options);
+    } else {
+      const docPayload = getExecutiveSummaryPayload(formData, valueTotals, selectedChallenges, roiResults, options);
+      const deckPayload = getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, options);
+      reportData = {
+        ...docPayload,
+        valueDrivers: deckPayload.valueDriversSlide?.rows ?? [],
+      };
+    }
+
+    const fileName =
+      docType === "docs"
+        ? googleReportExecutiveSummaryFileName(merchantName)
+        : googleReportFileName(merchantName);
+    const mimeType =
+      docType === "slides"
+        ? "application/vnd.google-apps.presentation"
+        : "application/vnd.google-apps.document";
+
+    const file = await driveCreateFile(accessToken, fileName, mimeType);
+
+    if (docType === "slides") {
+      await buildGoogleSlides(accessToken, file.id, reportData);
+      onReportGenerated?.();
+      return `https://docs.google.com/presentation/d/${file.id}/edit`;
+    } else {
+      await buildGoogleDoc(accessToken, file.id, reportData);
+      onReportGenerated?.();
+      return `https://docs.google.com/document/d/${file.id}/edit`;
     }
   };
 
-  const handleClose = () => {
-    setSelectedType(null);
-    setGenerationState('idle');
-    setGeneratedFilename('');
-    onOpenChange(false);
+  const login = useGoogleLogin({
+    flow: "implicit",
+    ux_mode: "popup",
+    scope: GOOGLE_SCOPES,
+    onSuccess: async (tokenResponse) => {
+      const docType = pendingDocTypeRef.current;
+      pendingDocTypeRef.current = null;
+      const token = tokenResponse.access_token ?? "";
+      console.log("OAUTH SUCCESS", token ? `${token.substring(0, 10)}...` : "(empty)");
+      console.log("Step 2: OAuth token received: " + (token ? "***" : "MISSING"));
+
+      if (!docType || !token) {
+        setGenerating(false);
+        console.log("ERROR: Missing docType or token after OAuth");
+        return;
+      }
+
+      setGenerating(true);
+      try {
+        const url = await createAndGetUrl(token, docType);
+        setReportUrl(url);
+        if (docType === "docs") onExecutiveSummaryGenerated?.(url);
+        else onValueDeckGenerated?.(url);
+        toast.success("Report created! Click the link below to open it.");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("Report generation failed:", msg);
+        toast.error(msg.length > 400 ? `Failed: ${msg.slice(0, 397)}…` : msg);
+      } finally {
+        setGenerating(false);
+      }
+    },
+    onError: (err) => {
+      pendingDocTypeRef.current = null;
+      pendingSubsetRef.current = null;
+      setGenerating(false);
+      console.log("ERROR: OAuth failed or cancelled - " + (err?.message ?? String(err)));
+      toast.error("Google sign-in was cancelled or failed. Please try again.");
+    },
+  });
+
+  const handleOpenSlides = () => {
+    setReportUrl(null);
+    pendingDocTypeRef.current = "slides";
+    if (calculatorSubset) pendingSubsetRef.current = calculatorSubset;
+    login();
   };
 
-  const handleReset = () => {
-    setSelectedType(null);
-    setGenerationState('idle');
-    setGeneratedFilename('');
+  const handleOpenDocs = () => {
+    setReportUrl(null);
+    pendingDocTypeRef.current = "docs";
+    login();
   };
+
+  const isSubsetMode = !!calculatorSubset;
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-primary" />
-            Generate Value Reports
+            <Presentation className="w-5 h-5 text-primary" />
+            {isSubsetMode ? "Generate Slides" : "Generate Value Reports"}
           </DialogTitle>
           <DialogDescription>
-            Download editable reports based on the value assessment data
+            {isSubsetMode
+              ? "Create a Google Slides deck with this calculator and its success story, using the same templates as the full value report."
+              : "Download editable reports based on the value assessment data."}
           </DialogDescription>
         </DialogHeader>
 
-        {generationState === 'idle' && (
-          <div className="space-y-4 py-4">
-            {/* Report Type Selection */}
-            <div className="grid grid-cols-2 gap-4">
-              {/* Executive Summary Card */}
-              <Card
-                className={`p-4 cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] hover:shadow-md ${
-                  selectedType === 'executive'
-                    ? 'ring-2 ring-primary bg-primary/5'
-                    : 'hover:bg-muted/50'
-                }`}
-                onClick={() => setSelectedType('executive')}
+        <div className="space-y-4 py-4">
+          {isSubsetMode ? (
+            <Button
+              disabled={generating}
+              onClick={handleOpenSlides}
+              className="w-full gap-2"
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <Presentation className="w-4 h-4" />
+                  Generate Slides
+                </>
+              )}
+            </Button>
+          ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
+              <button
+                type="button"
+                disabled={generating}
+                onClick={handleOpenDocs}
+                className="flex flex-col items-start text-left w-full"
               >
-                <div className="flex flex-col items-center text-center gap-3">
-                  <div className={`p-3 rounded-full ${
-                    selectedType === 'executive' ? 'bg-primary/20' : 'bg-muted'
-                  }`}>
-                    <FileText className={`w-8 h-8 ${
-                      selectedType === 'executive' ? 'text-primary' : 'text-muted-foreground'
-                    }`} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">Executive 1-Page Summary</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Word document with top value drivers, target outcomes, and ROI
-                    </p>
-                  </div>
-                  <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                    .docx
-                  </span>
-                </div>
-              </Card>
-
-              {/* Value Assessment Deck Card */}
-              <Card
-                className={`p-4 cursor-pointer transition-all duration-150 ease-out hover:scale-[1.01] active:scale-[0.98] hover:shadow-md ${
-                  selectedType === 'deck'
-                    ? 'ring-2 ring-primary bg-primary/5'
-                    : 'hover:bg-muted/50'
-                }`}
-                onClick={() => setSelectedType('deck')}
-              >
-                <div className="flex flex-col items-center text-center gap-3">
-                  <div className={`p-3 rounded-full ${
-                    selectedType === 'deck' ? 'bg-primary/20' : 'bg-muted'
-                  }`}>
-                    <Presentation className={`w-8 h-8 ${
-                      selectedType === 'deck' ? 'text-primary' : 'text-muted-foreground'
-                    }`} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">Value Assessment Deck</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      PowerPoint with value summary, use cases, and ROI projections
-                    </p>
-                  </div>
-                  <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                    .pptx
-                  </span>
-                </div>
-              </Card>
+                <FileText className="w-8 h-8 mb-2" style={{ color: "#4285F4" }} />
+                <span className="font-semibold text-foreground">Executive 1-Page Summary</span>
+                <span className="text-sm text-muted-foreground mt-1 block">Google document with top value drivers, target outcomes, and ROI.</span>
+                <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">docs</span>
+              </button>
+              {lastExecutiveSummaryUrl && (
+                <a
+                  href={lastExecutiveSummaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Open last generated
+                </a>
+              )}
             </div>
+            <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-amber-400/50 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
+              <button
+                type="button"
+                disabled={generating}
+                onClick={handleOpenSlides}
+                className="flex flex-col items-start text-left w-full"
+              >
+                <Presentation className="w-8 h-8 mb-2" style={{ color: "#F9AB00" }} />
+                <span className="font-semibold text-foreground">Value Assessment Deck</span>
+                <span className="text-sm text-muted-foreground mt-1 block">Slides with value summary, use cases, and ROI projections.</span>
+                <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">slides</span>
+              </button>
+              {lastValueDeckUrl && (
+                <a
+                  href={lastValueDeckUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Open last generated
+                </a>
+              )}
+            </div>
+          </div>
+          )}
 
-            {/* Logo indicator for PowerPoint */}
-            {selectedType === 'deck' && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
-                {customerLogoUrl ? (
-                  <>
-                    <img src={customerLogoUrl} alt="Logo" className="h-6 w-auto object-contain" />
-                    <span>Company logo will appear on title slide</span>
-                  </>
-                ) : (
-                  <span className="text-xs italic">
-                    Tip: Upload a company logo in the Profile tab to include it on the title slide
-                  </span>
-                )}
-              </div>
-            )}
+          {generating && (
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              Generating your report...
+            </p>
+          )}
 
-            {/* Preview Toggle & Preview Panel */}
-            {selectedType && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Report Preview</Label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowPreview(!showPreview)}
-                    className="gap-1 h-7 text-xs"
-                  >
-                    {showPreview ? (
-                      <>
-                        <EyeOff className="w-3 h-3" />
-                        Hide Preview
-                      </>
-                    ) : (
-                      <>
-                        <Eye className="w-3 h-3" />
-                        Show Preview
-                      </>
-                    )}
-                  </Button>
-                </div>
-                
-                {showPreview && selectedType && (
-                  <ReportPreview
-                    type={selectedType}
-                    formData={formData}
-                    valueTotals={valueTotals}
-                    selectedChallenges={selectedChallenges}
-                    roiResults={roiResults}
-                    selectedObjectives={selectedObjectives}
-                    hasInvestment={hasInvestment}
-                    companyLogo={customerLogoUrl}
-                  />
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button variant="outline" onClick={handleClose}>
-                Cancel
-              </Button>
+          {reportUrl && !generating && (
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <p className="text-sm font-medium flex items-center gap-2 text-green-600 dark:text-green-500">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                Report created successfully
+              </p>
               <Button
-                onClick={handleGenerateClick}
-                disabled={!selectedType}
-                className="gap-2"
+                asChild
+                className="w-full gap-2"
               >
-                <Download className="w-4 h-4" />
-                Generate & Download
+                <a
+                  href={reportUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Click here to open your report
+                </a>
               </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Warning Dialog */}
-        <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-500" />
-                Important Notice
-              </AlertDialogTitle>
-              <AlertDialogDescription className="text-base">
-                These documents are directional and used to generate an initial view from which you are required to contextualize, sanity check and amend for your purposes.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleConfirmGenerate}>
-                I Understand, Download
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {generationState === 'generating' && (
-          <div className="py-12 flex flex-col items-center gap-4">
-            <Loader2 className="w-12 h-12 text-primary animate-spin" />
-            <div className="text-center">
-              <p className="font-medium">Generating report...</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                This may take a few seconds
+              <p className="text-xs text-muted-foreground break-all font-mono">
+                {reportUrl}
               </p>
             </div>
-          </div>
-        )}
+          )}
 
-        {generationState === 'success' && (
-          <div className="py-8 flex flex-col items-center gap-4">
-            <div className="p-4 rounded-full bg-green-100">
-              <CheckCircle2 className="w-12 h-12 text-green-600" />
-            </div>
-            <div className="text-center">
-              <p className="font-medium text-lg">Report Generated!</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                <span className="font-mono bg-muted px-2 py-1 rounded">{generatedFilename}</span>
-              </p>
-              <p className="text-sm text-muted-foreground mt-3">
-                The file has been downloaded. Check the downloads folder.
-              </p>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <Button variant="outline" onClick={handleReset}>
-                Generate Another
-              </Button>
-              <Button onClick={handleClose}>
-                Done
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {generationState === 'error' && (
-          <div className="py-8 flex flex-col items-center gap-4">
-            <div className="p-4 rounded-full bg-red-100">
-              <FileText className="w-12 h-12 text-red-600" />
-            </div>
-            <div className="text-center">
-              <p className="font-medium text-lg">Generation Failed</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                There was an error generating your report. Please try again.
-              </p>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <Button variant="outline" onClick={handleClose}>
-                Cancel
-              </Button>
-              <Button onClick={handleConfirmGenerate}>
-                Retry
-              </Button>
-            </div>
-          </div>
-        )}
+          <p className="text-xs text-muted-foreground border-t pt-3">
+            You&apos;ll be asked to sign in with Google. Your report will be created in your Google Drive.
+          </p>
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Shown when Google OAuth is not configured (no client ID). No hook used. */
+function GenerateReportModalNotConfigured({
+  open,
+  onOpenChange,
+}: Pick<GenerateReportModalProps, "open" | "onOpenChange">) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Presentation className="w-5 h-5 text-primary" />
+            Generate Value Reports
+          </DialogTitle>
+          <DialogDescription>
+            Google export is not configured. Set <code className="text-xs bg-muted px-1 rounded">VITE_GOOGLE_CLIENT_ID</code> in your environment to enable Google Slides and Google Docs export.
+          </DialogDescription>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const hasGoogleClientId = () =>
+  Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim());
+
+export function GenerateReportModal(props: GenerateReportModalProps) {
+  if (hasGoogleClientId()) {
+    return <GenerateReportModalWithGoogle {...props} />;
+  }
+  return (
+    <GenerateReportModalNotConfigured
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+    />
   );
 }

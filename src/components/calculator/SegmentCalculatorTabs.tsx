@@ -606,8 +606,8 @@ export const SegmentCalculatorTabs = ({
     return `${currencySymbol}${Math.round(value).toLocaleString()}`;
   };
 
-  // Global form fields: edit updates main formData so Net sales and downstream rows recalc everywhere
-  const GLOBAL_FORM_FIELDS = new Set<keyof CalculatorData>(['gmvToNetSalesDeductionPct']);
+  // Global form fields: edit updates main formData so calculator maths, ROI, and other inputs stay in sync
+  const GLOBAL_FORM_FIELDS = new Set<keyof CalculatorData>(['gmvToNetSalesDeductionPct', 'amerGrossMarginPercent', 'commissionRate']);
 
   // Handle segment-specific field changes (bi-directional editing)
   const handleSegmentFieldChange = (segmentId: string) => (field: keyof CalculatorData, value: number) => {

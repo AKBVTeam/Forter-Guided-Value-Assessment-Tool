@@ -12,12 +12,16 @@ serve(async (req) => {
 
   try {
     const { messages, collectedData, contextSummary, isAssistantMode } = await req.json();
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    if (!LOVABLE_API_KEY) {
+    const provider = GEMINI_API_KEY ? "gemini" : ANTHROPIC_API_KEY ? "claude" : OPENAI_API_KEY ? "openai" : LOVABLE_API_KEY ? "lovable" : null;
+    if (!provider) {
       return new Response(
         JSON.stringify({
-          message: "Value Agent is not configured. Please add LOVABLE_API_KEY to your Supabase Edge Function secrets (Dashboard → Project Settings → Edge Functions).",
+          message: "Value Agent is not configured. Add one of these in Supabase Edge Function secrets: GEMINI_API_KEY (Google AI Studio), ANTHROPIC_API_KEY (Claude), OPENAI_API_KEY, or LOVABLE_API_KEY. See VALUE_AGENT_SETUP_SIMPLE.md.",
           updatedData: {},
           isComplete: false,
         }),
@@ -27,21 +31,66 @@ serve(async (req) => {
 
     const systemPrompt = isAssistantMode ? getAssistantSystemPrompt(contextSummary) : getDataCollectionSystemPrompt();
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
-        temperature: 0.7,
-      }),
-    });
+    let response: Response;
+    if (provider === "gemini") {
+      const contents = messages.map((m: { role: string; content: string }) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+      response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": GEMINI_API_KEY!,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents,
+          generationConfig: { temperature: 0.7 },
+        }),
+      });
+    } else if (provider === "claude") {
+      response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY!,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages: messages.map((m: { role: string; content: string }) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
+        }),
+      });
+    } else if (provider === "openai") {
+      response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "system", content: systemPrompt }, ...messages],
+          temperature: 0.7,
+        }),
+      });
+    } else {
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: [{ role: "system", content: systemPrompt }, ...messages],
+          temperature: 0.7,
+        }),
+      });
+    }
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -62,7 +111,15 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    let assistantMessage = data.choices[0].message.content;
+    let assistantMessage: string;
+    if (provider === "gemini") {
+      assistantMessage = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    } else if (provider === "claude") {
+      const textBlock = data.content?.find((b: { type: string }) => b.type === "text");
+      assistantMessage = textBlock?.text ?? "";
+    } else {
+      assistantMessage = data.choices?.[0]?.message?.content ?? "";
+    }
 
     assistantMessage = assistantMessage.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
@@ -91,11 +148,11 @@ serve(async (req) => {
   } catch (error) {
     const errMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("Error:", error);
-    const isConfigError = errMessage.includes("LOVABLE_API_KEY") || errMessage.includes("configured");
+    const isConfigError = errMessage.includes("LOVABLE_API_KEY") || errMessage.includes("OPENAI_API_KEY") || errMessage.includes("configured");
     return new Response(
       JSON.stringify({
         message: isConfigError
-          ? "Value Agent is not configured. Please add LOVABLE_API_KEY to your Supabase Edge Function secrets."
+          ? "Value Agent is not configured. Add LOVABLE_API_KEY or OPENAI_API_KEY in Supabase Edge Function secrets. See VALUE_AGENT_SETUP_SIMPLE.md."
           : "I'm sorry, I encountered an error. Could you please try again?",
         updatedData: {},
         isComplete: false,

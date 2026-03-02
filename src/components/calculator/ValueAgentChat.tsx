@@ -113,6 +113,11 @@ export const ValueAgentChat = ({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const handleTryAgain = useCallback(() => {
+    if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(VALUE_AGENT_UNAVAILABLE_KEY);
+    setIsUnavailable(false);
+  }, []);
+
   // Load persisted chat history (per analysis)
   useEffect(() => {
     if (!storageKey) return;
@@ -586,8 +591,11 @@ export const ValueAgentChat = ({
             {renderChatContent()}
           </div>
           {isUnavailable && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-muted/90 rounded-b-lg">
-              <p className="text-sm font-medium text-muted-foreground">Currently unavailable</p>
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-muted/90 rounded-b-lg p-4">
+              <p className="text-sm font-medium text-muted-foreground text-center">Currently unavailable</p>
+              <Button variant="secondary" size="sm" onClick={handleTryAgain}>
+                Try again
+              </Button>
             </div>
           )}
         </div>

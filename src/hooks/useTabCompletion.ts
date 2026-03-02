@@ -160,5 +160,9 @@ export function useTabCompletion({ formData, selectedChallenges, valueTotals, ha
     }
   }, [canGenerateReports]);
 
-  return { completion, markTabViewed, canGenerateReports, showReportAnimation };
+  const dismissReportAnimation = useCallback(() => {
+    setShowReportAnimation(false);
+  }, []);
+
+  return { completion, markTabViewed, canGenerateReports, showReportAnimation, dismissReportAnimation };
 }

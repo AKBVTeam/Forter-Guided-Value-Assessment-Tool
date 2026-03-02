@@ -19,6 +19,7 @@ import {
   Expand,
   FileText,
   Info,
+  Presentation,
   Pencil,
   Plus,
   RefreshCcw,
@@ -213,6 +214,8 @@ interface ValueSummaryOptionAProps {
   /** When set, open the benefit modal for this calculator id (e.g. from ROI tab); clear on modal close */
   openBenefitCalculatorId?: string | null;
   onBenefitModalClose?: () => void;
+  /** When user clicks "Generate Slides" in calculator modal, open report modal with this subset to create a calculator-only deck */
+  onGenerateCalculatorSlides?: (subset: import("./GenerateReportModal").CalculatorSubsetForReport) => void;
 }
 
 export const ValueSummaryOptionA = ({
@@ -234,6 +237,7 @@ export const ValueSummaryOptionA = ({
   onNavigateToForterKPI,
   openBenefitCalculatorId,
   onBenefitModalClose,
+  onGenerateCalculatorSlides,
 }: ValueSummaryOptionAProps) => {
   const forterKPIs = formData.forterKPIs || defaultForterKPIs;
   const [businessGrowthOpen, setBusinessGrowthOpen] = useState(true);
@@ -2321,7 +2325,7 @@ export const ValueSummaryOptionA = ({
       return value;
     };
     // Global fields: always update main formData so calculator maths, ROI tab, and exports stay in sync
-    const GLOBAL_FORM_FIELDS = new Set<keyof CalculatorData>(['gmvToNetSalesDeductionPct']);
+    const GLOBAL_FORM_FIELDS = new Set<keyof CalculatorData>(['gmvToNetSalesDeductionPct', 'amerGrossMarginPercent', 'commissionRate']);
     const modalOnFormDataChange = isDuplicateSelected
       ? (field: keyof CalculatorData, value: number) => {
           const v = clampPaymentFunnelPercent(field, value) as number;
@@ -4282,18 +4286,16 @@ export const ValueSummaryOptionA = ({
                   </Tooltip>
                 );
               })()}
-              {/* Download Slide Button */}
+              {/* Generate Slides Button: opens report modal to create Google Slides subset (calculator + success story) or falls back to PPTX download */}
               {(() => {
-                // Determine if we should show download button and with what data
-                const isSegmentableCalculator = selectedCalculatorId === "c1-revenue" || 
-                  selectedCalculatorId === "c1-chargeback" || 
-                  selectedCalculatorId === "c245-revenue" || 
+                const isSegmentableCalculator = selectedCalculatorId === "c1-revenue" ||
+                  selectedCalculatorId === "c1-chargeback" ||
+                  selectedCalculatorId === "c245-revenue" ||
                   selectedCalculatorId === "c245-chargeback";
                 const isSegmentationEnabledForDownload = formData.segmentationEnabled && (formData.segments?.filter(s => s.enabled).length ?? 0) > 0;
                 const showSegmentedDownload = isSegmentableCalculator && isSegmentationEnabledForDownload;
-                
-                // For segmented calculators, we need to compute segment data at download time
-                const handleDownload = () => {
+
+                const handleGenerateOrDownload = () => {
                   if (!selectedCalculatorId || !selectedCalculator?.title) return;
                   
                   if (showSegmentedDownload) {
@@ -4555,15 +4557,25 @@ export const ValueSummaryOptionA = ({
                       });
                     }
                     
-                    generateCalculatorSlide(
-                      selectedCalculatorId,
-                      selectedCalculator.title,
-                      selectedCalculator.rows || [],
-                      formData,
-                      true,
-                      segmentData,
-                      totalRows
-                    );
+                    if (onGenerateCalculatorSlides) {
+                      onGenerateCalculatorSlides({
+                        calculatorId: selectedCalculatorId,
+                        calculatorTitle: selectedCalculator.title,
+                        rows: selectedCalculator.rows || [],
+                        segmentData,
+                        totalRows,
+                      });
+                    } else {
+                      generateCalculatorSlide(
+                        selectedCalculatorId,
+                        selectedCalculator.title,
+                        selectedCalculator.rows || [],
+                        formData,
+                        true,
+                        segmentData,
+                        totalRows
+                      );
+                    }
                   } else {
                     // Non-segmented: use the rows directly from the driver
                     // But we need to recalculate to ensure we have current data
@@ -4580,12 +4592,20 @@ export const ValueSummaryOptionA = ({
                       calculatedRows = challenge245Results.calculator2.rows;
                     }
                     
-                    generateCalculatorSlide(
-                      selectedCalculatorId,
-                      selectedCalculator.title,
-                      calculatedRows,
-                      formData
-                    );
+                    if (onGenerateCalculatorSlides) {
+                      onGenerateCalculatorSlides({
+                        calculatorId: selectedCalculatorId,
+                        calculatorTitle: selectedCalculator.title,
+                        rows: calculatedRows,
+                      });
+                    } else {
+                      generateCalculatorSlide(
+                        selectedCalculatorId,
+                        selectedCalculator.title,
+                        calculatedRows,
+                        formData
+                      );
+                    }
                   }
                 };
                 
@@ -4601,10 +4621,10 @@ export const ValueSummaryOptionA = ({
                     variant="outline"
                     size="sm"
                     className="gap-2"
-                    onClick={handleDownload}
+                    onClick={handleGenerateOrDownload}
                   >
-                    <Download className="w-4 h-4" />
-                    Download Slide{showSegmentedDownload ? 's' : ''}
+                    <Presentation className="w-4 h-4" />
+                    Generate Slide{showSegmentedDownload ? 's' : ''}
                   </Button>
                 );
               })()}
