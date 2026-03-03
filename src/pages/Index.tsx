@@ -223,6 +223,10 @@ export type CalculatorData = {
   standaloneCalculators?: Record<string, StandaloneCalculator>;
   /** Investment inputs (Enter Investment modal) – persisted so re-opening an analysis restores investment cost */
   investmentInputs?: InvestmentInputs;
+  /** Last generated Executive Summary (Google Doc) URL – persisted so re-opening an analysis shows "Open Doc" link */
+  _executiveSummaryUrl?: string;
+  /** Last generated Value Assessment Deck (Google Slides) URL – persisted so re-opening an analysis shows "Open Slides" link */
+  _valueDeckUrl?: string;
 };
 
 /** A duplicated standard calculator with its own inputs (custom pathway duplication) */

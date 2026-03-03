@@ -502,7 +502,7 @@ export function ROITab({
                 <TableRow className="bg-muted/20">
                   <TableCell className="text-muted-foreground pl-6 text-xs">
                     <span className="flex items-center gap-1.5 flex-wrap">
-                      GMV to Net sales deductions (sales tax/cancellations)
+                      GMV to Net sales (sales tax/cancellations)
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help shrink-0" />
@@ -554,7 +554,9 @@ export function ROITab({
                       {formData.isMarketplace ? `${formData.commissionRate || 25}%` : '100%'}
                     </TableCell>
                   ))}
-                  <TableCell className="text-right text-muted-foreground text-xs">-</TableCell>
+                  <TableCell className="text-right text-muted-foreground text-xs">
+                    {formData.isMarketplace ? `${formData.commissionRate || 25}%` : '100%'}
+                  </TableCell>
                 </TableRow>
 
                 <TableRow className="bg-muted/20">
@@ -564,7 +566,9 @@ export function ROITab({
                       {formData.amerGrossMarginPercent || 50}%
                     </TableCell>
                   ))}
-                  <TableCell className="text-right text-muted-foreground text-xs">-</TableCell>
+                  <TableCell className="text-right text-muted-foreground text-xs">
+                    {formData.amerGrossMarginPercent || 50}%
+                  </TableCell>
                 </TableRow>
               </>
             )}

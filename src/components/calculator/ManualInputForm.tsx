@@ -2807,10 +2807,16 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         customerLogoUrl={customerLogoUrl}
         onReportGenerated={handleReportGenerated}
         calculatorSubset={calculatorSubsetForReport}
-        lastExecutiveSummaryUrl={lastExecutiveSummaryUrl}
-        lastValueDeckUrl={lastValueDeckUrl}
-        onExecutiveSummaryGenerated={setLastExecutiveSummaryUrl}
-        onValueDeckGenerated={setLastValueDeckUrl}
+        lastExecutiveSummaryUrl={formData._executiveSummaryUrl ?? lastExecutiveSummaryUrl}
+        lastValueDeckUrl={formData._valueDeckUrl ?? lastValueDeckUrl}
+        onExecutiveSummaryGenerated={(url) => {
+          setLastExecutiveSummaryUrl(url);
+          onBulkUpdate?.({ _executiveSummaryUrl: url });
+        }}
+        onValueDeckGenerated={(url) => {
+          setLastValueDeckUrl(url);
+          onBulkUpdate?.({ _valueDeckUrl: url });
+        }}
       />
       
     </div>

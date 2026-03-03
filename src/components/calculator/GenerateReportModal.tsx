@@ -71,6 +71,7 @@ function GenerateReportModalWithGoogle({
   selectedChallenges,
   investmentInputs,
   selectedObjectives,
+  customerLogoUrl,
   onReportGenerated,
   calculatorSubset,
   lastExecutiveSummaryUrl = null,
@@ -91,17 +92,20 @@ function GenerateReportModalWithGoogle({
 
     if (docType === "slides" && subset) {
       const caseStudySourcePresentationId = import.meta.env.VITE_CASE_STUDY_SOURCE_PRESENTATION_ID as string | undefined;
-      const reportData = getCalculatorSubsetPayload(
-        subset.calculatorId,
-        subset.calculatorTitle,
-        subset.rows,
-        formData,
-        subset.segmentData,
-        subset.totalRows,
-        typeof caseStudySourcePresentationId === "string" && caseStudySourcePresentationId.trim()
-          ? { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }
-          : undefined
-      );
+      const reportData = {
+        ...getCalculatorSubsetPayload(
+          subset.calculatorId,
+          subset.calculatorTitle,
+          subset.rows,
+          formData,
+          subset.segmentData,
+          subset.totalRows,
+          typeof caseStudySourcePresentationId === "string" && caseStudySourcePresentationId.trim()
+            ? { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }
+            : undefined
+        ),
+        ...(customerLogoUrl ? { customerLogoUrl } : {}),
+      };
       const fileName = googleReportCalculatorSubsetFileName(merchantName, subset.calculatorTitle);
       const file = await driveCreateFile(accessToken, fileName, "application/vnd.google-apps.presentation");
       await buildGoogleSlides(accessToken, file.id, reportData);
@@ -122,13 +126,17 @@ function GenerateReportModalWithGoogle({
 
     let reportData: Record<string, unknown>;
     if (docType === "slides") {
-      reportData = getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, options);
+      reportData = {
+        ...getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, options),
+        ...(customerLogoUrl ? { customerLogoUrl } : {}),
+      };
     } else {
       const docPayload = getExecutiveSummaryPayload(formData, valueTotals, selectedChallenges, roiResults, options);
       const deckPayload = getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, options);
       reportData = {
         ...docPayload,
         valueDrivers: deckPayload.valueDriversSlide?.rows ?? [],
+        ...(customerLogoUrl ? { customerLogoUrl } : {}),
       };
     }
 

@@ -93,6 +93,44 @@ function createTextBoxRequest(
   };
 }
 
+/** True if URL is http/https. Google Slides/Docs APIs do not accept data: or blob: URLs. */
+function isPublicImageUrl(url: string): boolean {
+  const u = url.trim();
+  return u.startsWith("https://") || u.startsWith("http://");
+}
+
+/** Create an IMAGE request (x,y,w,h in PPT inches; scaled to Google Slides canvas). URL must be publicly accessible. */
+function createImageRequest(
+  objectId: string,
+  pageId: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  url: string
+): Record<string, unknown> {
+  return {
+    createImage: {
+      objectId,
+      url,
+      elementProperties: {
+        pageObjectId: pageId,
+        size: {
+          width: { magnitude: inchToPt(w * SX), unit: "PT" },
+          height: { magnitude: inchToPt(h * SY), unit: "PT" },
+        },
+        transform: {
+          scaleX: 1,
+          scaleY: 1,
+          translateX: inchToPt(x * SX),
+          translateY: inchToPt(y * SY),
+          unit: "PT",
+        },
+      },
+    },
+  };
+}
+
 function formatDateDDMMYYYY(): string {
   const d = new Date();
   const dd = String(d.getDate()).padStart(2, "0");
@@ -162,8 +200,29 @@ export async function buildGoogleDoc(
     investment?: Array<{ label: string; val: string }> | null;
     projectedValue?: { rows: Array<{ label: string; val: string }>; nextSteps: string[] } | null;
     valueDrivers?: Array<{ label: string; value: string }>;
+    customerLogoUrl?: string;
   };
   const requests: Record<string, unknown>[] = [];
+
+  // Customer logo in header (top right). Requires public https/http URL; data/blob URLs are invalid.
+  let defaultHeaderId: string | undefined;
+  const customerLogoUrlForDoc =
+    p.customerLogoUrl?.trim() && p.customerLogoUrl.length < 2000 && isPublicImageUrl(p.customerLogoUrl.trim())
+      ? p.customerLogoUrl.trim()
+      : undefined;
+  if (customerLogoUrlForDoc) {
+    try {
+      const docRes = await fetch(`https://docs.googleapis.com/v1/documents/${docId}?fields=documentStyle`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (docRes.ok) {
+        const docData = (await docRes.json()) as { documentStyle?: { defaultHeaderId?: string } };
+        defaultHeaderId = docData.documentStyle?.defaultHeaderId;
+      }
+    } catch {
+      // ignore; we will skip header logo
+    }
+  }
 
   // Page setup: top and bottom margin 0.5 inches (36 PT)
   const marginPt = 0.5 * 72; // 36 PT
@@ -422,6 +481,27 @@ export async function buildGoogleDoc(
     }
   }
 
+  // Customer logo in header (top right)
+  if (customerLogoUrlForDoc && defaultHeaderId) {
+    requests.push({
+      insertInlineImage: {
+        uri: customerLogoUrlForDoc,
+        location: { segmentId: defaultHeaderId, index: 1 },
+        objectSize: {
+          height: { magnitude: 40, unit: "PT" as const },
+          width: { magnitude: 120, unit: "PT" as const },
+        },
+      },
+    });
+    requests.push({
+      updateParagraphStyle: {
+        range: { segmentId: defaultHeaderId, startIndex: 1, endIndex: 2 },
+        paragraphStyle: { alignment: "END" as const },
+        fields: "alignment",
+      },
+    });
+  }
+
   const batchRes = await fetch(
     `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`,
     {
@@ -449,6 +529,8 @@ type SlidesPayload = {
   roiSlide: { metrics: Array<{ label: string; value: string }>; yearTable: Array<{ year: number; grossEBITDA: string; forterCost: string; netEBITDA: string }>; totalRow: { grossEBITDA: string; forterCost: string; netEBITDA: string } } | null;
   nextStepsSlide: { steps: Array<{ num: string; title: string; body: string }> };
   appendixSlides: Array<{ title: string; problem: string; solution: string; benefit: string; isTBD: boolean; badge?: string; tableRows: Array<{ cells: string[] }> }>;
+  /** Optional: customer logo URL (publicly accessible). Shown on title slide next to content area and as small logo on content slides. */
+  customerLogoUrl?: string;
   /** Optional: copy these slides from another presentation into the Case Studies section (order = display order). Same length as case study slots. */
   caseStudySourceSlides?: Array<{ presentationId: string; pageObjectId: string }>;
   /** Optional: if set and caseStudySourceSlides is not provided, fetch this presentation and use its first N slides (N = case study count) in order. */
@@ -626,6 +708,9 @@ export async function buildGoogleSlides(
   const valueDrivers = p.valueDriversSlide ?? { rows: [] };
   const targetOutcomes = p.targetOutcomesSlide ?? { rows: [] };
   const nextSteps = p.nextStepsSlide ?? { steps: [] };
+  /** Only use logo when URL is public (https/http). Data/blob URLs cause Slides API to return 400. */
+  const customerLogoUrlForSlides =
+    p.customerLogoUrl?.trim() && isPublicImageUrl(p.customerLogoUrl.trim()) ? p.customerLogoUrl.trim() : undefined;
 
   // Use PPT values in code; scale helpers apply when passing to API (via createTextBoxRequest/createRectRequest/tables).
   const CONTENT_W = 12.33;
@@ -666,10 +751,11 @@ export async function buildGoogleSlides(
 
   // Content slide background (instruction + all content slides except title/dividers). Subset has no title or dividers.
   const titleSlideIndex = isSubset ? -1 : 1;
+  const s0 = !isSubset && titleSlideIndex >= 0 ? slides[titleSlideIndex]?.objectId : undefined;
   for (let i = 0; i < slides.length; i++) {
     if (isSubset) {
       // Subset: all slides are content (light bg)
-    } else if (i === 1) continue; // full deck: title slide keeps navy
+    } else if (i === 1) continue; // full deck: title slide keeps navy (or uses GVA last-slide image)
     const sid = slides[i]?.objectId;
     if (sid) {
       requests.push({
@@ -683,6 +769,34 @@ export async function buildGoogleSlides(
           fields: "pageBackgroundFill",
         },
       });
+    }
+  }
+
+  // Fetch last slide of GVA Case Study Deck to use as title slide background (image).
+  let titleSlideBgUrl: string | undefined;
+  if (s0 && caseStudySourcePresentationId) {
+    try {
+      const srcPresRes = await fetch(
+        `https://slides.googleapis.com/v1/presentations/${caseStudySourcePresentationId}?fields=slides.objectId`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (srcPresRes.ok) {
+        const srcData = (await srcPresRes.json()) as { slides?: Array<{ objectId: string }> };
+        const srcSlides = srcData.slides ?? [];
+        const lastSlide = srcSlides.length > 0 ? srcSlides[srcSlides.length - 1] : undefined;
+        if (lastSlide?.objectId) {
+          const thumbRes = await fetch(
+            `https://slides.googleapis.com/v1/presentations/${caseStudySourcePresentationId}/pages/${lastSlide.objectId}/thumbnail?thumbnailProperties.mimeType=PNG&thumbnailProperties.thumbnailSize=LARGE`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          if (thumbRes.ok) {
+            const thumbData = (await thumbRes.json()) as { contentUrl?: string };
+            if (thumbData.contentUrl) titleSlideBgUrl = thumbData.contentUrl;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[Title slide background] Failed to fetch GVA Case Study last slide thumbnail:", e);
     }
   }
 
@@ -705,10 +819,10 @@ export async function buildGoogleSlides(
       bold: true, fontSize: 16, colorRgb: redRgbHowTo, fontFamily: FONT_BODY,
     });
     addTextBox(requests, "howto_title", sHowTo, 0.5, 0.5, 12.33, 0.5, "General template guidelines", {
-      bold: true, fontSize: 20, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 24, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "howto_sub", sHowTo, 0.5, 0.92, 12.33, 0.3, "Slides will pre-populate based on the Guided Value Calculator Inputs", {
-      fontSize: 10, colorRgb: grayRgb, fontFamily: FONT_BODY,
+      fontSize: 14, colorRgb: grayRgb, fontFamily: FONT_BODY,
     });
     const bodyGrayRgb = hexToRgb(BODY_GRAY);
     const bulletTexts = [
@@ -721,7 +835,7 @@ export async function buildGoogleSlides(
     const bulletYs = [1.32, 1.68, 2.04, 2.4, 2.76];
     bulletTexts.forEach((txt, i) => {
       addTextBox(requests, `howto_bullet_${i}`, sHowTo, 0.5, bulletYs[i], 12.33, 0.22, txt, {
-        fontSize: 10.5, colorRgb: bodyGrayRgb, fontFamily: FONT_BODY,
+        fontSize: 14.5, colorRgb: bodyGrayRgb, fontFamily: FONT_BODY,
       });
     });
     // Slide map table (PPT inches; scale for Slides canvas)
@@ -828,7 +942,7 @@ export async function buildGoogleSlides(
           objectId: "table_howto",
           cellLocation: { rowIndex: 0, columnIndex: c },
           textRange: { type: "ALL" },
-          style: { bold: true, fontSize: { magnitude: scaledFontSize(9), unit: "PT" }, foregroundColor: { opaqueColor: { rgbColor: whiteRgb } }, fontFamily: FONT_BODY },
+          style: { bold: true, fontSize: { magnitude: scaledFontSize(10), unit: "PT" }, foregroundColor: { opaqueColor: { rgbColor: whiteRgb } }, fontFamily: FONT_BODY },
           fields: "bold,fontSize,foregroundColor,fontFamily",
         },
       });
@@ -858,7 +972,7 @@ export async function buildGoogleSlides(
             cellLocation: { rowIndex: r, columnIndex: c },
             textRange: { type: "ALL" },
             style: {
-              fontSize: { magnitude: scaledFontSize(9), unit: "PT" },
+              fontSize: { magnitude: scaledFontSize(10), unit: "PT" },
               fontFamily: FONT_BODY,
               ...(isNotesCol ? { foregroundColor: { opaqueColor: { rgbColor: isRedNotes ? howtoRedRgb : howtoGreenRgb } } } : {}),
               ...(isRedNotes ? { bold: true } : {}),
@@ -870,47 +984,77 @@ export async function buildGoogleSlides(
     }
   }
 
-  // ----- Title slide (navy background, white text). Index 1 for full; skip for subset. -----
-  const s0 = !isSubset && titleSlideIndex >= 0 ? slides[titleSlideIndex]?.objectId : undefined;
+  // ----- Title slide: GVA Case Study last-slide image as background (if available), else navy. White text on top. -----
   if (s0) {
-    requests.push({
-      updatePageProperties: {
-        objectId: s0,
-        pageProperties: {
-          pageBackgroundFill: {
-            solidFill: { color: { rgbColor: navyRgb }, alpha: 1 },
+    if (titleSlideBgUrl) {
+      requests.push({
+        createImage: {
+          objectId: "s0_bg_image",
+          url: titleSlideBgUrl,
+          elementProperties: {
+            pageObjectId: s0,
+            size: {
+              width: { magnitude: 720, unit: "PT" },
+              height: { magnitude: 405.36, unit: "PT" },
+            },
+            transform: {
+              scaleX: 1,
+              scaleY: 1,
+              translateX: 0,
+              translateY: 0,
+              unit: "PT",
+            },
           },
         },
-        fields: "pageBackgroundFill",
-      },
-    });
-    addTextBox(requests, "s0_customer", s0, 0.44, 1.28, 7.5, 1.2, titleSlide.customerName, {
+      });
+    } else {
+      requests.push({
+        updatePageProperties: {
+          objectId: s0,
+          pageProperties: {
+            pageBackgroundFill: {
+              solidFill: { color: { rgbColor: navyRgb }, alpha: 1 },
+            },
+          },
+          fields: "pageBackgroundFill",
+        },
+      });
+    }
+    // Title slide content: left-aligned with Forter logo, positioned lower
+    const s0ContentX = 1.0;
+    const s0ContentYStart = 2.2;
+    addTextBox(requests, "s0_customer", s0, s0ContentX, s0ContentYStart, 7.5, 1.2, titleSlide.customerName, {
       bold: true, fontSize: 52, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "s0_sub", s0, 0.44, 2.48, 7.5, 0.7, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 60), {
+    addTextBox(requests, "s0_sub", s0, s0ContentX, s0ContentYStart + 1.2, 7.5, 0.7, "Forter Business Value Assessment", {
       bold: true, fontSize: 28, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
     });
     if (titleSlide.headline) {
-      addTextBox(requests, "s0_headline", s0, 0.44, 3.58, 7.5, 0.7, truncateForSlide(titleSlide.headline, 80), {
-        fontSize: 11, colorRgb: lightBlueRgb, fontFamily: FONT_BODY,
+      addTextBox(requests, "s0_headline", s0, s0ContentX, s0ContentYStart + 2.3, 7.5, 0.8, truncateForSlide(titleSlide.headline, 80), {
+        fontSize: 15, colorRgb: lightBlueRgb, fontFamily: FONT_BODY,
       });
     }
-    // Horizontal line under headline (match PPT)
-    requests.push(createRectRequest("s0_line", s0, 0.44, 4.45, 7.0, 0.005));
+    // Horizontal line under headline — solid white fill (no outline)
+    const s0LineY = s0ContentYStart + 3.17;
+    requests.push(createRectRequest("s0_line", s0, s0ContentX, s0LineY, 7.0, 0.012));
     requests.push({
       updateShapeProperties: {
         objectId: "s0_line",
         shapeProperties: {
           shapeBackgroundFill: {
-            solidFill: { color: { rgbColor: whiteRgb }, alpha: 0.25 },
+            solidFill: { color: { rgbColor: hexToRgb(WHITE) }, alpha: 1 },
           },
         },
         fields: "shapeBackgroundFill.solidFill.color,shapeBackgroundFill.solidFill.alpha",
       },
     });
-    addTextBox(requests, "s0_date", s0, 0.44, 4.65, 4.0, 0.35, titleSlide.date, {
-      bold: true, fontSize: 11, colorRgb: whiteRgb, fontFamily: FONT_BODY,
+    addTextBox(requests, "s0_date", s0, s0ContentX, s0LineY + 0.2, 4.0, 0.4, titleSlide.date, {
+      bold: true, fontSize: 15, colorRgb: whiteRgb, fontFamily: FONT_BODY,
     });
+    // Customer logo top right, above main title content (next to where Forter logo would sit)
+    if (customerLogoUrlForSlides) {
+      requests.push(createImageRequest("s0_customer_logo", s0, 10.8, 0.22, 1.2, 0.5, customerLogoUrlForSlides));
+    }
   }
 
   // ----- Full deck only: Slide 2 Executive Summary through Next Steps -----
@@ -919,8 +1063,11 @@ export async function buildGoogleSlides(
   // ----- Slide 2: Executive Summary -----
   const s1 = slides[2]?.objectId;
   if (s1) {
+    if (customerLogoUrlForSlides) {
+      requests.push(createImageRequest("s1_customer_logo", s1, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
+    }
     addTextBox(requests, "s1_section", s1, 0.5, 0.18, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
-      bold: true, fontSize: 7.5, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 6, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s1_page", s1, 0.28, FOOTER_Y, 1.0, 0.2, "3", {
       fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
@@ -937,26 +1084,27 @@ export async function buildGoogleSlides(
       });
     }
     const s1LeftW = 5.8;
-    addTextBox(requests, "s1_challenges_h", s1, 0.5, 1.32, s1LeftW, 0.24, "Key Challenges Identified", {
+    const s1BulletStep = 0.42;
+    addTextBox(requests, "s1_challenges_h", s1, 0.5, 1.32, s1LeftW, 0.28, "Key Challenges Identified", {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     (execSlide.problems || []).slice(0, 5).forEach((prob, i) => {
-      addTextBox(requests, `s1_p${i}`, s1, 0.5, 1.58 + i * 0.42, s1LeftW, 0.38, `→  ${truncateForSlide(prob, 72)}`, {
+      addTextBox(requests, `s1_p${i}`, s1, 0.5, 1.6 + i * s1BulletStep, s1LeftW, 0.42, `→  ${truncateForSlide(prob, 72)}`, {
         fontSize: 11, colorRgb: hexToRgb("374151"), fontFamily: FONT_BODY,
       });
     });
-    const s1ApproachY = 1.58 + 5 * 0.42 + 0.12;
-    addTextBox(requests, "s1_approach_h", s1, 0.5, s1ApproachY, s1LeftW, 0.24, "Recommended Approach", {
+    const s1ApproachY = 1.6 + 5 * s1BulletStep + 0.14;
+    addTextBox(requests, "s1_approach_h", s1, 0.5, s1ApproachY, s1LeftW, 0.28, "Recommended Approach", {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     (execSlide.solutions || []).slice(0, 5).forEach((sol, i) => {
-      addTextBox(requests, `s1_s${i}`, s1, 0.5, s1ApproachY + 0.26 + i * 0.42, s1LeftW, 0.38, `→  ${truncateForSlide(sol, 72)}`, {
+      addTextBox(requests, `s1_s${i}`, s1, 0.5, s1ApproachY + 0.28 + i * s1BulletStep, s1LeftW, 0.42, `→  ${truncateForSlide(sol, 72)}`, {
         fontSize: 11, colorRgb: hexToRgb("374151"), fontFamily: FONT_BODY,
       });
     });
     const s1RightX = 6.8;
     const s1RightW = 6.0;
-    addTextBox(requests, "s1_value_h", s1, s1RightX, 0.82, s1RightW, 0.24, "Value at Stake", {
+    addTextBox(requests, "s1_value_h", s1, s1RightX, 0.82, s1RightW, 0.28, "Value at Stake", {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     const cardH = 0.78;
@@ -979,13 +1127,13 @@ export async function buildGoogleSlides(
           fields: "shapeBackgroundFill.solidFill.color,outline.outlineFill.solidFill.color,outline.weight",
         },
       });
-      addTextBox(requests, `s1_card_l${i}`, s1, s1RightX + 0.1, yPos + 0.06, s1RightW - 0.15, 0.22, truncateForSlide(card.label, 22), {
+      addTextBox(requests, `s1_card_l${i}`, s1, s1RightX + 0.1, yPos + 0.06, s1RightW - 0.15, 0.26, truncateForSlide(card.label, 22), {
         fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY,
       });
-      addTextBox(requests, `s1_card_s${i}`, s1, s1RightX + 0.1, yPos + 0.3, s1RightW - 0.15, 0.2, truncateForSlide(card.sub, 55), {
+      addTextBox(requests, `s1_card_s${i}`, s1, s1RightX + 0.1, yPos + 0.32, s1RightW - 0.15, 0.24, truncateForSlide(card.sub, 55), {
         fontSize: 8, colorRgb: hexToRgb("9CA3AF"), fontFamily: FONT_BODY,
       });
-      addTextBox(requests, `s1_card_v${i}`, s1, s1RightX + 2.0, yPos + 0.08, s1RightW - 2.0, 0.5, truncateForSlide(card.val, 14), {
+      addTextBox(requests, `s1_card_v${i}`, s1, s1RightX + 2.0, yPos + 0.08, s1RightW - 2.0, 0.55, truncateForSlide(card.val, 14), {
         bold: true, fontSize: 20, colorRgb: greenRgb, fontFamily: FONT_HEAD,
         alignment: "END",
       });
@@ -1003,13 +1151,13 @@ export async function buildGoogleSlides(
         fields: "shapeBackgroundFill.solidFill.color",
       },
     });
-    addTextBox(requests, "s1_ebitda_h", s1, s1RightX + 0.1, ebitdaY + 0.06, s1RightW - 2.0, 0.22, "Annual EBITDA Contribution", {
+    addTextBox(requests, "s1_ebitda_h", s1, s1RightX + 0.1, ebitdaY + 0.06, s1RightW - 2.0, 0.26, "Annual EBITDA Contribution", {
       bold: true, fontSize: 12, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "s1_ebitda_desc", s1, s1RightX + 0.1, ebitdaY + 0.32, s1RightW - 2.0, 0.44, truncateForSlide("Total of above, applying commission & gross margin to GMV Uplift · Net of deduplication", 100), {
+    addTextBox(requests, "s1_ebitda_desc", s1, s1RightX + 0.1, ebitdaY + 0.34, s1RightW - 2.0, 0.48, truncateForSlide("Total of above, applying commission & gross margin to GMV Uplift · Net of deduplication", 100), {
       fontSize: 9, colorRgb: hexToRgb("86EFAC"), fontFamily: FONT_BODY,
     });
-    addTextBox(requests, "s1_ebitda_val", s1, s1RightX + 2.2, ebitdaY + 0.1, s1RightW - 2.2, 0.7, truncateForSlide(execSlide.ebitda || "", 14), {
+    addTextBox(requests, "s1_ebitda_val", s1, s1RightX + 2.2, ebitdaY + 0.1, s1RightW - 2.2, 0.75, truncateForSlide(execSlide.ebitda || "", 14), {
       bold: true, fontSize: 20, colorRgb: hexToRgb("86EFAC"), fontFamily: FONT_HEAD,
       alignment: "END",
     });
@@ -1033,10 +1181,10 @@ export async function buildGoogleSlides(
           fields: "shapeBackgroundFill.solidFill.color,outline.outlineFill.solidFill.color,outline.weight",
         },
       });
-      addTextBox(requests, `s1_roi_l${i}`, s1, xPos + 0.12, roiY + 0.06, miniW - 0.2, 0.24, truncateForSlide(mc.label, 40), {
+      addTextBox(requests, `s1_roi_l${i}`, s1, xPos + 0.12, roiY + 0.06, miniW - 0.2, 0.28, truncateForSlide(mc.label, 40), {
         fontSize: 9, colorRgb: grayRgb, fontFamily: FONT_BODY,
       });
-      addTextBox(requests, `s1_roi_v${i}`, s1, xPos + 0.12, roiY + 0.38, miniW - 0.2, 0.4, truncateForSlide(mc.val, 16), {
+      addTextBox(requests, `s1_roi_v${i}`, s1, xPos + 0.12, roiY + 0.38, miniW - 0.2, 0.44, truncateForSlide(mc.val, 16), {
         bold: true, fontSize: 17, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
     });
@@ -1045,8 +1193,11 @@ export async function buildGoogleSlides(
   // ----- Slide 3: Value Summary -----
   const s2 = slides[3]?.objectId;
   if (s2) {
+    if (customerLogoUrlForSlides) {
+      requests.push(createImageRequest("s2_customer_logo", s2, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
+    }
     addTextBox(requests, "s2_section", s2, 0.5, 0.18, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
-      bold: true, fontSize: 7.5, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 6, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s2_page", s2, 0.28, FOOTER_Y, 1.0, 0.2, "4", { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
     addTextBox(requests, "s2_footer", s2, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
@@ -1083,10 +1234,10 @@ export async function buildGoogleSlides(
           fields: "shapeBackgroundFill.solidFill.color,outline.outlineFill.solidFill.color,outline.weight",
         },
       });
-      addTextBox(requests, `s2_cat_l${i}`, s2, xPos + 0.12, s2CardsY + 0.08, cardW - 0.24, 0.18, truncateForSlide(cat.label.toUpperCase(), 18), {
+      addTextBox(requests, `s2_cat_l${i}`, s2, xPos + 0.12, s2CardsY + 0.08, cardW - 0.24, 0.22, truncateForSlide(cat.label.toUpperCase(), 18), {
         bold: true, fontSize: 8, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
-      addTextBox(requests, `s2_cat_v${i}`, s2, xPos + 0.12, s2CardsY + 0.32, cardW - 0.24, 0.5, truncateForSlide(cat.value, 12), {
+      addTextBox(requests, `s2_cat_v${i}`, s2, xPos + 0.12, s2CardsY + 0.32, cardW - 0.24, 0.55, truncateForSlide(cat.value, 12), {
         bold: true, fontSize: cats.length >= 3 ? 18 : 22, colorRgb: greenRgb, fontFamily: FONT_HEAD,
       });
       requests.push(createRectRequest(`s2_sep_${i}`, s2, xPos + 0.18, s2CardsY + 1.05, cardW - 0.36, 0.01));
@@ -1101,16 +1252,16 @@ export async function buildGoogleSlides(
       });
       const labelW = cardW - 0.95;
       const top3Items = [...(cat.items || [])].sort((a, b) => Number(b.value) - Number(a.value)).slice(0, 3);
-      addTextBox(requests, `s2_cat_top3_${i}`, s2, xPos + 0.12, s2CardsY + 1.06, labelW + 0.95, 0.18, "Top 3 value drivers", {
+      addTextBox(requests, `s2_cat_top3_${i}`, s2, xPos + 0.12, s2CardsY + 1.06, labelW + 0.95, 0.22, "Top 3 value drivers", {
         fontSize: 7, colorRgb: hexToRgb("9CA3AF"), fontFamily: FONT_BODY,
       });
       top3Items.forEach((item, j) => {
         const itemY = s2CardsY + 1.28 + j * 0.38;
-        addTextBox(requests, `s2_cat_i${i}_${j}`, s2, xPos + 0.12, itemY, labelW, 0.28, truncateForSlide(item.label, 38), {
+        addTextBox(requests, `s2_cat_i${i}_${j}`, s2, xPos + 0.12, itemY, labelW, 0.32, truncateForSlide(item.label, 38), {
           fontSize: 9, colorRgb: grayRgb, fontFamily: FONT_BODY,
         });
         const itemValFormatted = formatCurrencyForSlide(Number(item.value), currency);
-        addTextBox(requests, `s2_cat_iv${i}_${j}`, s2, xPos + cardW - 0.95, itemY, 0.95, 0.28, truncateForSlide(itemValFormatted, 14), {
+        addTextBox(requests, `s2_cat_iv${i}_${j}`, s2, xPos + cardW - 0.95, itemY, 0.95, 0.32, truncateForSlide(itemValFormatted, 14), {
           bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_BODY,
           alignment: "END",
         });
@@ -1132,18 +1283,18 @@ export async function buildGoogleSlides(
         fields: "shapeBackgroundFill.solidFill.color",
       },
     });
-    addTextBox(requests, "s2_ebitda_h", s2, 0.55, s2EbitdaY + 0.1, 7.0, 0.26, "Annual EBITDA Contribution", {
+    addTextBox(requests, "s2_ebitda_h", s2, 0.55, s2EbitdaY + 0.1, 7.0, 0.3, "Annual EBITDA Contribution", {
       bold: true, fontSize: 14, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "s2_ebitda_sub", s2, 0.65, s2EbitdaY + 0.38, 7.0, 0.2, "Net of deduplication assumptions", {
+    addTextBox(requests, "s2_ebitda_sub", s2, 0.65, s2EbitdaY + 0.4, 7.0, 0.24, "Net of deduplication assumptions", {
       fontSize: 8, colorRgb: hexToRgb("9CA3AF"), fontFamily: FONT_BODY,
     });
-    addTextBox(requests, "s2_ebitda_val", s2, Math.max(5.5, 0.5 + s2EbitdaW - 5.95), s2EbitdaY + 0.08, 5.63, 0.5, truncateForSlide(valueSummary.ebitda || "", 14), {
+    addTextBox(requests, "s2_ebitda_val", s2, Math.max(5.5, 0.5 + s2EbitdaW - 5.95), s2EbitdaY + 0.08, 5.63, 0.55, truncateForSlide(valueSummary.ebitda || "", 14), {
       bold: true, fontSize: 24, colorRgb: hexToRgb("86EFAC"), fontFamily: FONT_HEAD,
       alignment: "END",
     });
     const s2KpiY = s2EbitdaY + s2EbitdaH + 0.22;
-    addTextBox(requests, "s2_kpi_h", s2, 0.5, s2KpiY, CONTENT_W, 0.22, "KEY PERFORMANCE IMPROVEMENTS", {
+    addTextBox(requests, "s2_kpi_h", s2, 0.5, s2KpiY, CONTENT_W, 0.26, "KEY PERFORMANCE IMPROVEMENTS", {
       bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
     const kpis = (valueSummary.kpis || []).slice(0, 20);
@@ -1173,13 +1324,13 @@ export async function buildGoogleSlides(
       const headlineResult = (kpi.improvement ?? kpi.target ?? `${kpi.current} → ${kpi.target}`).replace(/^\+/, "");
       const showCurrentTargetLine = !!(kpi.improvement && (kpi.current || kpi.target));
       const kpiTextW = kpiPillW - 0.24;
-      addTextBox(requests, `s2_kpi_m${i}`, s2, pillX + 0.12, pillY + 0.06, kpiTextW, 0.22, truncateForSlide(kpi.metric, 28), {
+      addTextBox(requests, `s2_kpi_m${i}`, s2, pillX + 0.12, pillY + 0.06, kpiTextW, 0.26, truncateForSlide(kpi.metric, 28), {
         fontSize: 8, colorRgb: grayRgb, fontFamily: FONT_BODY,
       });
-      addTextBox(requests, `s2_kpi_imp${i}`, s2, pillX + 0.12, pillY + 0.3, kpiTextW, 0.34, truncateForSlide(headlineResult, 12), {
+      addTextBox(requests, `s2_kpi_imp${i}`, s2, pillX + 0.12, pillY + 0.3, kpiTextW, 0.38, truncateForSlide(headlineResult, 12), {
         bold: true, fontSize: 16, colorRgb: greenRgb, fontFamily: FONT_HEAD,
       });
-      addTextBox(requests, `s2_kpi_cur${i}`, s2, pillX + 0.12, pillY + 0.66, kpiTextW, 0.2, showCurrentTargetLine ? truncateForSlide(`${kpi.current} → ${kpi.target}`, 22) : "", {
+      addTextBox(requests, `s2_kpi_cur${i}`, s2, pillX + 0.12, pillY + 0.66, kpiTextW, 0.24, showCurrentTargetLine ? truncateForSlide(`${kpi.current} → ${kpi.target}`, 22) : "", {
         fontSize: 7, colorRgb: hexToRgb("9CA3AF"), fontFamily: FONT_BODY,
       });
     });
@@ -1198,17 +1349,20 @@ export async function buildGoogleSlides(
   driverPages.forEach((page, pageIndex) => {
     const pageSlide = slides[4 + pageIndex]?.objectId;
     if (!pageSlide) return;
+    if (customerLogoUrlForSlides) {
+      requests.push(createImageRequest(`s3_customer_logo_${pageIndex}`, pageSlide, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
+    }
     const pageLabel = driverPages.length > 1 ? ` (Page ${pageIndex + 1} of ${driverPages.length})` : "";
     const pageNum = String(5 + pageIndex);
     addTextBox(requests, `s3_section_${pageIndex}`, pageSlide, 0.5, 0.18, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
-      bold: true, fontSize: 7.5, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 6, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, `s3_page_${pageIndex}`, pageSlide, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
+    addTextBox(requests, `s3_page_${pageIndex}`, pageSlide, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
     addTextBox(requests, `s3_footer_${pageIndex}`, pageSlide, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
-      fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
+      fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, `s3_title_${pageIndex}`, pageSlide, 0.5, 0.38, CONTENT_W, 0.65, `Value Drivers${pageLabel}`, {
-      bold: true, fontSize: 26, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 30, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
     const tableRowCount = 1 + page.rows.length + (page.isLastPage ? 1 : 0);
     const tableId = `table_drivers_${pageIndex}`;
@@ -1390,15 +1544,18 @@ export async function buildGoogleSlides(
   // ----- Slide 5: Target Outcomes (table) -----
   const s4 = slides[baseAfterDrivers]?.objectId;
   if (s4) {
+    if (customerLogoUrlForSlides) {
+      requests.push(createImageRequest("s4_customer_logo", s4, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
+    }
     addTextBox(requests, "s4_section", s4, 0.5, 0.18, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
-      bold: true, fontSize: 7.5, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 6, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "s4_page", s4, 0.28, FOOTER_Y, 1.0, 0.2, String(baseAfterDrivers + 1), { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
+    addTextBox(requests, "s4_page", s4, 0.28, FOOTER_Y, 1.0, 0.2, String(baseAfterDrivers + 1), { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
     addTextBox(requests, "s4_footer", s4, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
-      fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
+      fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "s4_title", s4, 0.5, 0.38, CONTENT_W, 0.65, "Target Outcomes", {
-      bold: true, fontSize: 26, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 30, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
     const kpiRows = targetOutcomes.rows || [];
     const kpiTableRows = 1 + kpiRows.length;
@@ -1609,15 +1766,18 @@ export async function buildGoogleSlides(
     const s5 = slides[baseAfterDrivers + 1].objectId;
     const roi = p.roiSlide;
     const pageNum = String(baseAfterDrivers + 2);
+    if (customerLogoUrlForSlides) {
+      requests.push(createImageRequest("s5_customer_logo", s5, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
+    }
     addTextBox(requests, "s5_section", s5, 0.5, 0.18, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
-      bold: true, fontSize: 7.5, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 6, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "s5_page", s5, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
+    addTextBox(requests, "s5_page", s5, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
     addTextBox(requests, "s5_footer", s5, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
-      fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
+      fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "s5_title", s5, 0.5, 0.38, CONTENT_W, 0.65, "ROI Summary", {
-      bold: true, fontSize: 26, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 30, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
     const s5CardW = 6.0;
     const s5CardGap = 0.4;
@@ -1643,11 +1803,11 @@ export async function buildGoogleSlides(
           fields: "shapeBackgroundFill.solidFill.color,outline.outlineFill.solidFill.color,outline.weight",
         },
       });
-      addTextBox(requests, `s5_metric_l${idx}`, s5, xPos + 0.15, yPos + 0.08, s5CardW - 0.3, 0.22, metric.label, {
-        fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY,
+      addTextBox(requests, `s5_metric_l${idx}`, s5, xPos + 0.15, yPos + 0.08, s5CardW - 0.3, 0.26, metric.label, {
+        fontSize: 15, colorRgb: grayRgb, fontFamily: FONT_BODY,
       });
-      addTextBox(requests, `s5_metric_v${idx}`, s5, xPos + 0.15, yPos + 0.3, s5CardW - 0.3, 0.58, metric.value, {
-        bold: true, fontSize: 24, colorRgb: idx === 3 ? greenRgb : blueRgb, fontFamily: FONT_HEAD,
+      addTextBox(requests, `s5_metric_v${idx}`, s5, xPos + 0.15, yPos + 0.3, s5CardW - 0.3, 0.62, metric.value, {
+        bold: true, fontSize: 28, colorRgb: idx === 3 ? greenRgb : blueRgb, fontFamily: FONT_HEAD,
       });
     });
     const roiTableRows = 1 + (roi.yearTable?.length ?? 0) + 1;
@@ -1870,15 +2030,18 @@ export async function buildGoogleSlides(
   const sNext = slides[slideIdx]?.objectId;
   if (sNext) {
     const pageNum = String(baseAfterDrivers + (p.roiSlide ? 3 : 2));
+    if (customerLogoUrlForSlides) {
+      requests.push(createImageRequest("snext_customer_logo", sNext, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
+    }
     addTextBox(requests, "snext_section", sNext, 0.5, 0.18, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
-      bold: true, fontSize: 7.5, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 6, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "snext_page", sNext, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
+    addTextBox(requests, "snext_page", sNext, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
     addTextBox(requests, "snext_footer", sNext, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
-      fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
+      fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "snext_title", sNext, 0.5, 0.38, CONTENT_W, 0.65, "Next Steps", {
-      bold: true, fontSize: 26, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+      bold: true, fontSize: 30, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
     // Amber banner background (match PPT)
     requests.push(createRectRequest("rect_snext_banner", sNext, 0.5, 1.28, 12.33, 0.62));
@@ -1897,8 +2060,8 @@ export async function buildGoogleSlides(
         fields: "shapeBackgroundFill.solidFill.color,outline.outlineFill.solidFill.color,outline.weight",
       },
     });
-    addTextBox(requests, "snext_banner", sNext, 0.7, 1.35, CONTENT_W - 0.2, 0.38, truncateForSlide("✏️   Action required — Account Executive: All highlighted fields must be completed manually before sharing with the customer.", 130), {
-      bold: true, fontSize: 10, colorRgb: hexToRgb("92400E"), fontFamily: FONT_BODY,
+    addTextBox(requests, "snext_banner", sNext, 0.7, 1.35, CONTENT_W - 0.2, 0.42, truncateForSlide("✏️   Action required — Account Executive: All highlighted fields must be completed manually before sharing with the customer.", 130), {
+      bold: true, fontSize: 14, colorRgb: hexToRgb("92400E"), fontFamily: FONT_BODY,
     });
     const steps = nextSteps.steps || [];
     const borderGrayRgbNext = hexToRgb("E5E7EB");
@@ -1938,7 +2101,7 @@ export async function buildGoogleSlides(
         },
       });
       addTextBox(requests, `snext_num${i}`, sNext, xPos + 0.18, yPos + 0.18, 0.44, 0.44, step.num, {
-        bold: true, fontSize: 14, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
+        bold: true, fontSize: 18, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
       });
       requests.push({
         updateParagraphStyle: {
@@ -1949,8 +2112,8 @@ export async function buildGoogleSlides(
         },
       });
       const stepTitleText = truncateForSlide(step.title, 42);
-      addTextBox(requests, `snext_t${i}`, sNext, xPos + 0.72, yPos + 0.2, stepCardW - 0.54, 0.36, stepTitleText, {
-        bold: true, fontSize: 13, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+      addTextBox(requests, `snext_t${i}`, sNext, xPos + 0.72, yPos + 0.2, stepCardW - 0.54, 0.4, stepTitleText, {
+        bold: true, fontSize: 17, colorRgb: navyRgb, fontFamily: FONT_HEAD,
       });
       // Yellow highlight for [placeholder] in Next Steps titles (AE attention)
       const bracketRegexTitle = /\[[^\]]*\]/g;
@@ -1976,7 +2139,7 @@ export async function buildGoogleSlides(
       }
       const stepBodyText = truncateForSlide(step.body, 140);
       addTextBox(requests, `snext_b${i}`, sNext, xPos + 0.18, yPos + 0.66, stepCardW - 0.36, stepCardH - 0.66, stepBodyText, {
-        fontSize: 11, colorRgb: hexToRgb("374151"), fontFamily: FONT_BODY,
+        fontSize: 15, colorRgb: hexToRgb("374151"), fontFamily: FONT_BODY,
       });
       const bracketRegex = /\[[^\]]*\]/g;
       let match: RegExpExecArray | null;
@@ -2148,7 +2311,7 @@ export async function buildGoogleSlides(
       const pageLabel = pageCount > 1 ? ` (Page ${pageIdx + 1} of ${pageCount})` : "";
       const pageNum = isSubset ? String(appendixContentStartIndex + appendixContentSlideIndex) : String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
       addTextBox(requests, `sapp_sec_${a}_${pageIdx}`, slide.objectId, 0.5, 0.18, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
-        bold: true, fontSize: 7.5, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+        bold: true, fontSize: 6, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
       addTextBox(requests, `sapp_page_${a}_${pageIdx}`, slide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
         fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
