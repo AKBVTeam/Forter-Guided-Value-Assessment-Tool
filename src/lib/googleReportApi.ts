@@ -200,8 +200,7 @@ export async function buildGoogleDoc(
   const headline = p.headline ?? "";
   const opportunityStatement = p.opportunityStatement ?? "";
 
-  // Match DOCX order: title line, headline, developed by, then Headline section (no blank lines between sections)
-  insert(`VALUE ASSESSMENT  ·  ${customerName}`, "title");
+  // Doc starts with title "Unlocking $X in Annual EBITDA..." (11pt), then developed by, then HEADLINE section
   insert(headline, "headline");
   insert("Developed by:  [Champion Name], [Key Deal Players]", "subtitle");
   insert("HEADLINE", "section");
@@ -268,6 +267,7 @@ export async function buildGoogleDoc(
     color: { rgbColor: rgb },
   });
   const FONT_PT = 8;
+  const TITLE_FONT_PT = 11; // Main doc title (Unlocking $X in Annual EBITDA...)
   const docStyle = (style: DocStyle): { textStyle: Record<string, unknown>; fields: string } => {
     switch (style) {
       case "section":
@@ -294,7 +294,7 @@ export async function buildGoogleDoc(
         return {
           textStyle: {
             bold: true,
-            fontSize: { magnitude: FONT_PT, unit: "PT" },
+            fontSize: { magnitude: TITLE_FONT_PT, unit: "PT" },
             foregroundColor: docColor(navyRgb),
             weightedFontFamily: { fontFamily: FONT_HEAD, weight: 700 },
           },
@@ -398,6 +398,27 @@ export async function buildGoogleDoc(
           },
         });
       }
+    }
+  }
+
+  // Yellow highlight for AE-attention placeholders [like this] in the Doc
+  const yellowRgbDoc = hexToRgb("FEF08A");
+  const bracketRegexDoc = /\[[^\]]*\]/g;
+  for (const seg of segments) {
+    let match: RegExpExecArray | null;
+    bracketRegexDoc.lastIndex = 0;
+    while ((match = bracketRegexDoc.exec(seg.text)) !== null) {
+      const start = seg.startIndex + match.index;
+      const end = seg.startIndex + match.index + match[0].length;
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: start, endIndex: end },
+          textStyle: {
+            backgroundColor: { color: { rgbColor: yellowRgbDoc } },
+          },
+          fields: "backgroundColor",
+        },
+      });
     }
   }
 
@@ -1927,9 +1948,32 @@ export async function buildGoogleSlides(
           fields: "alignment",
         },
       });
-      addTextBox(requests, `snext_t${i}`, sNext, xPos + 0.72, yPos + 0.2, stepCardW - 0.54, 0.36, truncateForSlide(step.title, 42), {
+      const stepTitleText = truncateForSlide(step.title, 42);
+      addTextBox(requests, `snext_t${i}`, sNext, xPos + 0.72, yPos + 0.2, stepCardW - 0.54, 0.36, stepTitleText, {
         bold: true, fontSize: 13, colorRgb: navyRgb, fontFamily: FONT_HEAD,
       });
+      // Yellow highlight for [placeholder] in Next Steps titles (AE attention)
+      const bracketRegexTitle = /\[[^\]]*\]/g;
+      let titleMatch: RegExpExecArray | null;
+      bracketRegexTitle.lastIndex = 0;
+      while ((titleMatch = bracketRegexTitle.exec(stepTitleText)) !== null) {
+        requests.push({
+          updateTextStyle: {
+            objectId: `snext_t${i}`,
+            textRange: {
+              type: "FIXED_RANGE" as const,
+              startIndex: titleMatch.index,
+              endIndex: titleMatch.index + titleMatch[0].length,
+            },
+            style: {
+              backgroundColor: {
+                opaqueColor: { rgbColor: hexToRgb("FEF08A") },
+              },
+            },
+            fields: "backgroundColor.opaqueColor.rgbColor",
+          },
+        });
+      }
       const stepBodyText = truncateForSlide(step.body, 140);
       addTextBox(requests, `snext_b${i}`, sNext, xPos + 0.18, yPos + 0.66, stepCardW - 0.36, stepCardH - 0.66, stepBodyText, {
         fontSize: 11, colorRgb: hexToRgb("374151"), fontFamily: FONT_BODY,

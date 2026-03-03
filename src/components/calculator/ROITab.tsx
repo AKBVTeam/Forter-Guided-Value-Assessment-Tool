@@ -332,7 +332,7 @@ export function ROITab({
                   <Info className="w-3.5 h-3.5 cursor-help text-muted-foreground/70 hover:text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
-                  <p className="text-xs">Growth rate applied to <strong>benefits only</strong> (GMV uplift, cost reduction, risk mitigation). SaaS cost remains flat across contract period.</p>
+                  <p className="text-xs">Growth rate applied to <strong>benefits only</strong> (GMV uplift, cost reduction, risk mitigation).</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -463,7 +463,7 @@ export function ROITab({
           {investmentInputs.contractTenure} Year Projection
           {investmentInputs.annualSalesGrowthPct > 0 && (
             <span className="text-xs font-normal text-muted-foreground ml-2">
-              (Benefits apply {investmentInputs.annualSalesGrowthPct}% annual growth; SaaS cost is flat)
+              (Benefits apply {investmentInputs.annualSalesGrowthPct}% annual growth)
             </span>
           )}
         </h4>
