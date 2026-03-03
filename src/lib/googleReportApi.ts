@@ -1235,7 +1235,7 @@ export async function buildGoogleSlides(
         },
       });
       addTextBox(requests, `s2_cat_l${i}`, s2, xPos + 0.12, s2CardsY + 0.08, cardW - 0.24, 0.22, truncateForSlide(cat.label.toUpperCase(), 18), {
-        bold: true, fontSize: 8, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+        bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
       addTextBox(requests, `s2_cat_v${i}`, s2, xPos + 0.12, s2CardsY + 0.32, cardW - 0.24, 0.55, truncateForSlide(cat.value, 12), {
         bold: true, fontSize: cats.length >= 3 ? 18 : 22, colorRgb: greenRgb, fontFamily: FONT_HEAD,
@@ -1325,13 +1325,13 @@ export async function buildGoogleSlides(
       const showCurrentTargetLine = !!(kpi.improvement && (kpi.current || kpi.target));
       const kpiTextW = kpiPillW - 0.24;
       addTextBox(requests, `s2_kpi_m${i}`, s2, pillX + 0.12, pillY + 0.06, kpiTextW, 0.26, truncateForSlide(kpi.metric, 28), {
-        fontSize: 8, colorRgb: grayRgb, fontFamily: FONT_BODY,
+        fontSize: 9, colorRgb: grayRgb, fontFamily: FONT_BODY,
       });
       addTextBox(requests, `s2_kpi_imp${i}`, s2, pillX + 0.12, pillY + 0.3, kpiTextW, 0.38, truncateForSlide(headlineResult, 12), {
         bold: true, fontSize: 16, colorRgb: greenRgb, fontFamily: FONT_HEAD,
       });
       addTextBox(requests, `s2_kpi_cur${i}`, s2, pillX + 0.12, pillY + 0.66, kpiTextW, 0.24, showCurrentTargetLine ? truncateForSlide(`${kpi.current} → ${kpi.target}`, 22) : "", {
-        fontSize: 7, colorRgb: hexToRgb("9CA3AF"), fontFamily: FONT_BODY,
+        fontSize: 9, colorRgb: hexToRgb("9CA3AF"), fontFamily: FONT_BODY,
       });
     });
   }
