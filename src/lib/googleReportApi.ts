@@ -785,10 +785,10 @@ export async function buildGoogleSlides(
       if (srcPresRes.ok) {
         const srcData = (await srcPresRes.json()) as { slides?: Array<{ objectId: string }> };
         const srcSlides = srcData.slides ?? [];
-        const lastSlide = srcSlides.length > 0 ? srcSlides[srcSlides.length - 1] : undefined;
-        if (lastSlide?.objectId) {
+        const titleBgSlide = srcSlides.length >= 2 ? srcSlides[srcSlides.length - 2] : srcSlides[srcSlides.length - 1];
+        if (titleBgSlide?.objectId) {
           const thumbRes = await fetch(
-            `https://slides.googleapis.com/v1/presentations/${caseStudySourcePresentationId}/pages/${lastSlide.objectId}/thumbnail?thumbnailProperties.mimeType=PNG&thumbnailProperties.thumbnailSize=LARGE`,
+            `https://slides.googleapis.com/v1/presentations/${caseStudySourcePresentationId}/pages/${titleBgSlide.objectId}/thumbnail?thumbnailProperties.mimeType=PNG&thumbnailProperties.thumbnailSize=LARGE`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           );
           if (thumbRes.ok) {
@@ -2338,7 +2338,8 @@ export async function buildGoogleSlides(
         const bc = appBadge ? badgeColors[appBadge] : undefined;
         if (bc) {
           const lightBorderRgb = hexToRgb("E8EAED");
-          requests.push(createRectRequest(`sapp_badge_bg_${a}`, slide.objectId, 10.8, 0.08, 1.9, 0.28));
+          const badgeH = 0.56;
+          requests.push(createRectRequest(`sapp_badge_bg_${a}`, slide.objectId, 10.8, 0.08, 1.9, badgeH));
           requests.push({
             updateShapeProperties: {
               objectId: `sapp_badge_bg_${a}`,
@@ -2352,7 +2353,7 @@ export async function buildGoogleSlides(
               fields: "shapeBackgroundFill.solidFill.color,outline.outlineFill.solidFill.color,outline.weight",
             },
           });
-          addTextBox(requests, `sapp_badge_txt_${a}`, slide.objectId, 10.8, 0.12, 1.9, 0.2, appBadge, {
+          addTextBox(requests, `sapp_badge_txt_${a}`, slide.objectId, 10.8, 0.08 + (badgeH - 0.2) / 2, 1.9, 0.2, appBadge, {
             bold: true, fontSize: 9, colorRgb: hexToRgb(bc.text), fontFamily: FONT_HEAD, alignment: "CENTER",
           });
           requests.push({
