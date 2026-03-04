@@ -123,13 +123,13 @@ export function runStandaloneCalculator(
       let preAuthImprovement = forterKPIs.preAuthIncluded !== false ? (forterKPIs.preAuthApprovalImprovement ?? 4) : 0;
       if (forterKPIs.preAuthApprovalIsAbsolute && forterKPIs.preAuthIncluded !== false) {
         const target = Math.min(100, Math.max(0, forterKPIs.preAuthApprovalImprovement ?? 4));
-        preAuthImprovement = Math.max(0, target - currentPreAuthRate);
+        preAuthImprovement = target - currentPreAuthRate; // allow negative (Forter outcome below customer)
       }
       preAuthImprovement = Math.min(preAuthImprovement, 100 - currentPreAuthRate);
       let postAuthImprovement = forterKPIs.postAuthIncluded !== false ? (forterKPIs.postAuthApprovalImprovement ?? 2) : 0;
       if (forterKPIs.postAuthApprovalIsAbsolute && forterKPIs.postAuthIncluded !== false) {
         const target = Math.min(100, Math.max(0, forterKPIs.postAuthApprovalImprovement ?? 2));
-        postAuthImprovement = Math.max(0, target - currentPostAuthRate);
+        postAuthImprovement = target - currentPostAuthRate; // allow negative (Forter outcome below customer)
       }
       postAuthImprovement = Math.min(postAuthImprovement, 100 - currentPostAuthRate);
       let threeDSReduction = forterKPIs.threeDSReduction ?? 20;

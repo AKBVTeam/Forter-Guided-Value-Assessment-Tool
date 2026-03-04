@@ -778,11 +778,11 @@ function buildPerformanceHighlights(
   // Challenge 1/5: Fraud Chargeback Rate
   if ((challenges['1'] || challenges['5']) && formData.fraudCBRate) {
     const targetRate = formData.forterKPIs?.chargebackReduction || 0.25;
-    const reductionPct = ((formData.fraudCBRate - targetRate) / formData.fraudCBRate * 100).toFixed(0);
+    const reductionPct = ((formData.fraudCBRate - targetRate) / formData.fraudCBRate * 100).toFixed(2);
     highlights.push({
       metric: 'Fraud Chargeback Rate',
-      current: `${formData.fraudCBRate}%`,
-      target: `${targetRate}%`,
+      current: `${Number(formData.fraudCBRate).toFixed(2)}%`,
+      target: `${Number(targetRate).toFixed(2)}%`,
       improvement: `-${reductionPct}%`,
     });
   }

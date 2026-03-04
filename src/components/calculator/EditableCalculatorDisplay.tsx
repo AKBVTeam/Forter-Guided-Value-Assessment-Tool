@@ -221,8 +221,11 @@ export const EditableCalculatorDisplay = ({
     }
   }, [rows]);
 
-  const formatOptimisticValue = (value: number, valueType?: string) => {
-    if (valueType === 'percent') return `${value.toFixed(1)}%`;
+  const formatOptimisticValue = (value: number, valueType?: string, row?: CalculatorRow) => {
+    if (valueType === 'percent') {
+      const decimals = (row?.editableCustomerField === 'fraudCBRate' || row?.editableForterField === 'chargebackReduction') ? 2 : 1;
+      return `${value.toFixed(decimals)}%`;
+    }
     if (valueType === 'currency') return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
     return value.toLocaleString();
   };
@@ -375,7 +378,7 @@ export const EditableCalculatorDisplay = ({
                               {(() => {
                                 const ref = lastCommittedCustomerRef.current;
                                 const showOptimistic = ref && ref.rowIndex === index && ref.field === row.editableCustomerField && (row.rawCustomerValue === undefined || Math.abs((row.rawCustomerValue as number) - ref.value) >= 0.01);
-                                return showOptimistic ? formatOptimisticValue(ref!.value, ref!.valueType) : row.customerInput;
+                                return showOptimistic ? formatOptimisticValue(ref!.value, ref!.valueType, row) : row.customerInput;
                               })()}
                               <span className="text-xs opacity-60">✎</span>
                             </button>

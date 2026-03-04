@@ -213,7 +213,11 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       setActiveTab(externalActiveTab);
     }
   }, [externalActiveTab]);
-  const [showInMillions, setShowInMillions] = useState(false);
+  const showInMillions = formData._showInMillions ?? false;
+  const setShowInMillions = useCallback((value: boolean) => {
+    setFormData((prev) => ({ ...prev, _showInMillions: value }));
+    onFieldChange?.('_showInMillions', value);
+  }, [onFieldChange]);
   const [forterKPIFocusTarget, setForterKPIFocusTarget] = useState<ForterKPIFocusSection | null>(null);
   const [forterKPIModalOpen, setForterKPIModalOpen] = useState(false);
   /** Shared list/grid layout for both Customer Inputs and Forter KPI tabs */
@@ -241,7 +245,11 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   /** When set (e.g. from ROI tab benefit click), open the benefit modal without switching tab */
   const [benefitModalCalculatorId, setBenefitModalCalculatorId] = useState<string | null>(null);
   const [investmentInputs, setInvestmentInputs] = useState<InvestmentInputs>(() => initialData?.investmentInputs ?? defaultInvestmentInputs);
-  const [showInvestmentRowsToggle, setShowInvestmentRowsToggle] = useState(true);
+  const showInvestmentRowsToggle = formData._showInvestmentRowsOn ?? true;
+  const setShowInvestmentRowsToggle = useCallback((value: boolean) => {
+    setFormData((prev) => ({ ...prev, _showInvestmentRowsOn: value }));
+    onFieldChange?.('_showInvestmentRowsOn', value);
+  }, [onFieldChange]);
   const [templateDownloaded, setTemplateDownloaded] = useState(false);
   const [showCSVDownloadAnimation, setShowCSVDownloadAnimation] = useState(false);
   const [csvTemplateNeedsUpdate, setCsvTemplateNeedsUpdate] = useState(false);
@@ -687,11 +695,12 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
 
   // Update Forter KPI defaults when industry or HQ location changes
   useEffect(() => {
+    const currentKpis = formData.forterKPIs || defaultForterKPIs;
+    if (currentKpis.preAuthApprovalUserOverride === true || currentKpis.postAuthApprovalUserOverride === true || currentKpis.approvalRateUserOverride === true) return;
     const weightedRate = getWeightedApprovalRate(formData.industry, formData.hqLocation);
     if (weightedRate !== undefined) {
-      const currentKpis = formData.forterKPIs || defaultForterKPIs;
       // Only update if different from current value to avoid infinite loops
-      if (currentKpis.preAuthApprovalImprovement !== weightedRate || 
+      if (currentKpis.preAuthApprovalImprovement !== weightedRate ||
           currentKpis.postAuthApprovalImprovement !== weightedRate ||
           currentKpis.approvalRateImprovement !== weightedRate) {
         setFormData(prev => ({
@@ -709,7 +718,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         }));
       }
     }
-  }, [formData.industry, formData.hqLocation]);
+  }, [formData.industry, formData.hqLocation, formData.forterKPIs?.preAuthApprovalUserOverride, formData.forterKPIs?.postAuthApprovalUserOverride, formData.forterKPIs?.approvalRateUserOverride]);
 
   // Auto-update currency when HQ location changes - with user confirmation (refs declared above so they can be synced on load)
   const [pendingCurrencyChange, setPendingCurrencyChange] = useState<{
@@ -745,12 +754,16 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   
   const handleAcceptCurrencyChange = () => {
     if (pendingCurrencyChange) {
+      const newCurrency = pendingCurrencyChange.newCurrency;
       setFormData(prev => ({
         ...prev,
-        baseCurrency: pendingCurrencyChange.newCurrency
+        baseCurrency: newCurrency
       }));
-      const symbol = getCurrencySymbol(pendingCurrencyChange.newCurrency);
-      toast.success(`Currency updated to ${pendingCurrencyChange.newCurrency} (${symbol})`, {
+      // Persist to parent so auto-save and reopen restore this currency (even when set via country, not manual dropdown)
+      onFieldChange?.('baseCurrency' as keyof CalculatorData, newCurrency);
+      prevBaseCurrencyRef.current = newCurrency;
+      const symbol = getCurrencySymbol(newCurrency);
+      toast.success(`Currency updated to ${newCurrency} (${symbol})`, {
         description: "Investment pricing will be updated to reflect the new currency.",
         duration: 4000,
       });
@@ -782,12 +795,13 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
 
   // Update Target Fraud CB Rate based on fraudCBRate and existing vendor
   useEffect(() => {
+    const currentKpis = formData.forterKPIs || defaultForterKPIs;
+    if (currentKpis.chargebackReductionUserOverride === true) return;
     if (formData.fraudCBRate !== undefined && formData.fraudCBRate > 0) {
       // Get the vendor reduction factor (defaults to 1.0 if no vendor selected)
       const vendorFactor = getVendorCBReductionFactor(formData.existingFraudVendor || '');
       // Apply vendor factor to the current CB rate to get target
       const targetCBRate = parseFloat((formData.fraudCBRate * vendorFactor).toFixed(3));
-      const currentKpis = formData.forterKPIs || defaultForterKPIs;
       if (currentKpis.chargebackReduction !== targetCBRate) {
         setFormData(prev => ({
           ...prev,
@@ -798,7 +812,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         }));
       }
     }
-  }, [formData.fraudCBRate, formData.existingFraudVendor]);
+  }, [formData.fraudCBRate, formData.existingFraudVendor, formData.forterKPIs?.chargebackReductionUserOverride]);
 
   // Update Target 3DS Rate based on country and AOV
   useEffect(() => {
@@ -807,11 +821,12 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     const attempts = formData.amerGrossAttempts || 0;
     const aov = attempts > 0 ? gmv / attempts : 0;
     const baseCurrency = formData.baseCurrency || 'USD';
-    
+    const currentKpis = formData.forterKPIs || defaultForterKPIs;
+    // Do not overwrite 3DS rate when user has overridden it (e.g. from calculator modal or KPI config)
+    if (currentKpis.threeDSRateUserOverride === true) return;
+
     if (hqLocation && aov > 0) {
       const { rate: recommended3DSRate } = get3DSRateByCountryAndAOV(hqLocation, aov, baseCurrency);
-      const currentKpis = formData.forterKPIs || defaultForterKPIs;
-      
       // Only update if the customer has 3DS implemented and rate differs
       if (formData.amer3DSImplemented !== false && currentKpis.threeDSReduction !== recommended3DSRate) {
         setFormData(prev => ({
@@ -824,7 +839,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         }));
       }
     }
-  }, [formData.hqLocation, formData.amerAnnualGMV, formData.amerGrossAttempts, formData.amer3DSImplemented, formData.baseCurrency]);
+  }, [formData.hqLocation, formData.amerAnnualGMV, formData.amerGrossAttempts, formData.amer3DSImplemented, formData.baseCurrency, formData.forterKPIs?.threeDSRateUserOverride]);
 
   // Which Forter KPI values currently match auto-applied benchmarks (for "Forter Benchmark" pill + tooltip)
   const forterBenchmarkSources = useMemo((): Partial<Record<keyof ForterKPIs, string>> => {
@@ -941,15 +956,28 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     (field: keyof ForterKPIs, value: number) => {
       setFormData((prev) => {
         const base = prev.forterKPIs || defaultForterKPIs;
+        // When editing from calculator table, treat as target (absolute) so reload persists correctly
+        const absoluteFlags: Partial<ForterKPIs> = {};
+        if (field === 'preAuthApprovalImprovement') {
+          absoluteFlags.preAuthApprovalIsAbsolute = true;
+          absoluteFlags.preAuthApprovalUserOverride = true;
+        } else if (field === 'postAuthApprovalImprovement') {
+          absoluteFlags.postAuthApprovalIsAbsolute = true;
+          absoluteFlags.postAuthApprovalUserOverride = true;
+        } else if (field === 'threeDSReduction') {
+          absoluteFlags.threeDSReductionIsAbsolute = true;
+          absoluteFlags.threeDSRateUserOverride = true;
+        } else if (field === 'chargebackReduction') {
+          absoluteFlags.chargebackReductionIsAbsolute = true;
+          absoluteFlags.chargebackReductionUserOverride = true;
+        } else if (field === 'manualReviewReduction') absoluteFlags.manualReviewIsAbsolute = true;
         const updatedKPIs = {
           ...base,
           [field]: value,
-          // When editing target rate from calculator table, treat value as target (absolute), not improvement
-          ...(field === 'preAuthApprovalImprovement' ? { preAuthApprovalIsAbsolute: true as const } : {}),
-          ...(field === 'postAuthApprovalImprovement' ? { postAuthApprovalIsAbsolute: true as const } : {}),
+          ...absoluteFlags,
         };
 
-        // Keep parent in sync (single field update)
+        // Persist to parent so auto-save and reopen restore calculator-edited values
         onFieldChange?.("forterKPIs", updatedKPIs);
 
         return {
@@ -965,7 +993,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   useEffect(() => {
     const annualImpact = valueTotals?.ebitdaContribution ?? 0;
     if (annualImpact > 10_000_000 && !formData._showInMillionsDefaultApplied) {
-      setShowInMillions(true);
+      updateField('_showInMillions', true);
       updateField('_showInMillionsDefaultApplied', true);
     }
   }, [valueTotals?.ebitdaContribution, formData._showInMillionsDefaultApplied, updateField]);

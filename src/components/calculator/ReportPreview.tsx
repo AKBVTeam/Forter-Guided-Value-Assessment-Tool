@@ -366,7 +366,7 @@ export function ReportPreview({
             {safeFormData.fraudCBRate != null && (
               <div className="grid grid-cols-4 text-[7px] py-0.5">
                 <span>Fraud CB Rate</span>
-                <span className="text-center">{safeFormData.fraudCBRate}%</span>
+                <span className="text-center">{Number(safeFormData.fraudCBRate).toFixed(2)}%</span>
                 <span className="text-center font-semibold" style={{ color: FORTER_GREEN }}>0.25%</span>
                 <span className="text-center font-semibold" style={{ color: FORTER_GREEN }}>—</span>
               </div>

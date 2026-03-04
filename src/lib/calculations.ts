@@ -23,6 +23,20 @@ export const createCurrencyFormatter = (currencyCode: string = 'USD') => {
   };
 };
 
+/** Currency formatter with fixed decimal places (e.g. 2 for fraud chargebacks). Uses brackets for negative numbers. */
+export const createCurrencyFormatterWithDecimals = (currencyCode: string = 'USD', fractionDigits: number = 2) => {
+  return (n: number) => {
+    const absValue = Math.abs(n);
+    const formatted = new Intl.NumberFormat('en-US', { 
+      style: 'currency', 
+      currency: currencyCode, 
+      minimumFractionDigits: fractionDigits, 
+      maximumFractionDigits: fractionDigits 
+    }).format(absValue);
+    return n < 0 ? `(${formatted})` : formatted;
+  };
+};
+
 /** Relative % improvement for display: (forter - customer) / customer * 100. Use for % improvements (not %pts). */
 export const formatPctImprovementRel = (customerVal: number, forterVal: number, decimals = 1): string => {
   if (typeof customerVal !== 'number' || typeof forterVal !== 'number' || customerVal === 0) return '—';
@@ -77,6 +91,8 @@ export interface Challenge1Inputs {
 }
 
 export interface DeduplicationBreakdown {
+  /** For C245 simplified: Forter improvement in Approved transactions (#). When set, Total delta = -this. */
+  approvedTxImprovement?: number;
   fraudTxDropOff: number;
   threeDSDropOff?: number;
   bankDeclineDelta?: number;
@@ -150,7 +166,9 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
 
   const fmt = (n: number) => n.toLocaleString('en-US');
   const fmtCur = createCurrencyFormatter(currencyCode);
+  const fmtCur2 = createCurrencyFormatterWithDecimals(currencyCode, 2);
   const fmtPct = (n: number) => `${n.toFixed(1)}%`;
+  const fmtPct2 = (n: number) => `${n.toFixed(2)}%`; // Fraud chargeback rate: 2 decimals
 
   // Calculator 1: Reduce false declines
   // AOV used for display/reference
@@ -183,20 +201,19 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
   const approvedValueImprovement = forterApprovedValue - customerApprovedValue;
 
   // Deduplication calculation for Challenge 1
-  // Fraud transaction drop-off = improvement in approved transactions
-  // Duplicate transactions = drop-off * retry rate * success rate
-  // Deduplication GMV reduction = duplicate transactions * AOV
-  const deduplicationEnabled = deduplication.enabled;
-  const retryRate = deduplication.retryRate / 100;
-  const successRate = deduplication.successRate / 100;
+  // Apply defaults so deduplication always applies when switch is on (treat missing .enabled as true)
+  const dedup = { ...defaultDeduplicationAssumptions, ...deduplication };
+  const deduplicationEnabled = dedup.enabled !== false;
+  const retryRate = dedup.retryRate / 100;
+  const successRate = dedup.successRate / 100;
   
   const fraudTxDropOff = approvedTxImprovement; // New approved transactions
   const duplicateSuccessfulTx = fraudTxDropOff * retryRate * successRate;
   const deduplicationGMVReduction = duplicateSuccessfulTx * effectiveCompletedAOV;
   
-  // Apply deduplication to Forter outcome if enabled
+  // Deduplicated value = Value of approved transactions (Forter outcome) + Deduplication GMV reduction
   const forterApprovedValueDeduplicated = deduplicationEnabled 
-    ? forterApprovedValue - deduplicationGMVReduction 
+    ? forterApprovedValue + deduplicationGMVReduction 
     : forterApprovedValue;
   const approvedValueImprovementDeduplicated = forterApprovedValueDeduplicated - customerApprovedValue;
 
@@ -303,16 +320,16 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: '', forterOutcome: fmtCur(displayForterApprovedValue), isCalculation: true },
-    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, forterCBDecimal * 100), forterOutcome: includesFraudCBCoverage ? '0.0%*' : fmtPct(forterCBDecimal * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: forterCBDecimal * 100, valueType: 'percent' },
-    { formula: 'c = a*b', label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', customerInput: fmtCur(-customerChargebacks), forterImprovement: fmtCur(chargebackSavings), forterOutcome: includesFraudCBCoverage ? '$0*' : fmtCur(-forterChargebacks), valueDriver: 'cost', isCalculation: true, footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined },
+    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct2(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, forterCBDecimal * 100, 2), forterOutcome: includesFraudCBCoverage ? '0.00%*' : fmtPct2(forterCBDecimal * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: forterCBDecimal * 100, valueType: 'percent' },
+    { formula: 'c = a*b', label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', customerInput: fmtCur2(-customerChargebacks), forterImprovement: fmtCur2(chargebackSavings), forterOutcome: includesFraudCBCoverage ? '$0.00*' : fmtCur2(-forterChargebacks), valueDriver: 'cost', isCalculation: true, footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined },
   ];
 
   // Build deduplication breakdown for info popover
   const deduplicationBreakdown: DeduplicationBreakdown = {
     fraudTxDropOff: -approvedTxImprovement, // Negative (fewer declines = negative drop-off)
     nonFraudDelta: -approvedTxImprovement,
-    retryRate: deduplication.retryRate,
-    successRate: deduplication.successRate,
+    retryRate: dedup.retryRate,
+    successRate: dedup.successRate,
     duplicateSuccessfulTx: -duplicateSuccessfulTx, // Negative
     aov: effectiveCompletedAOV,
     gmvReduction: -deduplicationGMVReduction, // Negative (reduction shown in brackets)
@@ -370,6 +387,7 @@ export interface Challenge245Inputs {
   forterChargebackReduction: number;
   // Target values for display (always provided now)
   forterTargetCBRate: number;
+  forterTargetPreAuthRate?: number;
   forterTargetPostAuthRate?: number;
   // Deduplication
   deduplication?: DeduplicationAssumptions;
@@ -398,7 +416,9 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const { currencyCode = 'USD', deduplication = defaultDeduplicationAssumptions, includesFraudCBCoverage = false } = inputs;
   const fmt = (n: number) => n.toLocaleString('en-US');
   const fmtCur = createCurrencyFormatter(currencyCode);
+  const fmtCur2 = createCurrencyFormatterWithDecimals(currencyCode, 2);
   const fmtPct = (n: number) => `${n.toFixed(1)}%`;
+  const fmtPct2 = (n: number) => `${n.toFixed(2)}%`; // Fraud chargeback rate: 2 decimals
 
   const {
     transactionAttempts, transactionAttemptsValue, grossMarginPercent,
@@ -407,7 +427,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     fraudChargebackRate,
     isMarketplace = false, commissionRate = 100, completedAOV, forterCompletedAOV, recoveredAovMultiplier,
     forterPreAuthImprovement, forterPostAuthImprovement, forter3DSReduction, forterChargebackReduction,
-    forterTargetCBRate, forterTargetPostAuthRate,
+    forterTargetCBRate, forterTargetPreAuthRate, forterTargetPostAuthRate,
     gmvToNetSalesDeductionPct = 20,
   } = inputs;
 
@@ -428,10 +448,11 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     : grossMarginDecimal;
   const marginLabel = isMarketplace ? 'Commission / Take rate (%)' : 'Gross margin (%)';
 
-  // Deduplication parameters
-  const deduplicationEnabled = deduplication.enabled;
-  const retryRate = deduplication.retryRate / 100;
-  const successRate = deduplication.successRate / 100;
+  // Deduplication parameters: apply defaults so deduplication always applies when switch is on (treat missing .enabled as true)
+  const dedup = { ...defaultDeduplicationAssumptions, ...deduplication };
+  const deduplicationEnabled = dedup.enabled !== false;
+  const retryRate = dedup.retryRate / 100;
+  const successRate = dedup.successRate / 100;
 
   // Customer state
   const custPreAuth = preAuthApprovalRate / 100;
@@ -442,12 +463,13 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const custBankDecline = issuingBankDeclineRate / 100;
   const custCBRate = fraudChargebackRate / 100;
 
-  // Forter state
-  const fortPreAuth = (preAuthApprovalRate + forterPreAuthImprovement) / 100;
-  // For post-auth: if a target rate is provided, use it directly; otherwise calculate from improvement
-  const fortPostAuth = forterTargetPostAuthRate !== undefined 
-    ? forterTargetPostAuthRate / 100 
-    : (postAuthApprovalRate + forterPostAuthImprovement) / 100;
+  // Forter state: when target rate is provided, use it directly; otherwise current + improvement (clamp to 0-100% so outcome can be below customer when target is lower)
+  const fortPreAuth = Math.max(0, Math.min(1, forterTargetPreAuthRate !== undefined
+    ? forterTargetPreAuthRate / 100
+    : (preAuthApprovalRate + forterPreAuthImprovement) / 100));
+  const fortPostAuth = Math.max(0, Math.min(1, forterTargetPostAuthRate !== undefined
+    ? forterTargetPostAuthRate / 100
+    : (postAuthApprovalRate + forterPostAuthImprovement) / 100));
   const fort3DSPct = Math.max(0, creditCard3DSPct - forter3DSReduction) / 100;
   // Forter 3DS failure and bank decline: use overrides when set, else same as customer
   const fort3DSFail = (forter3DSAbandonmentRate !== undefined && forter3DSAbandonmentRate !== null ? forter3DSAbandonmentRate : threeDSFailureRate) / 100;
@@ -496,38 +518,20 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const fortRevenue = isMarketplace ? fortNetSales * commissionDecimal : fortNetSales;
   const fortProfitability = fortNetSales * profitabilityMultiplier;
 
-  // Deduplication calculation for Challenge 245
-  // Based on the spreadsheet: 
-  // a) Fraud transaction drop-off = SUM of pre-auth AND post-auth improvements (full funnel)
-  //    Pre-auth improvement = fortApprovedPreAuth - custApprovedPreAuth
-  //    Post-auth improvement = fortFinalApproved - custFinalApproved (accounting for post-auth approval rate)
-  //    SS (fraud drop-offs) = preAuthImprovement + postAuthImprovement  
-  // b) 3DS drop-off delta = cust3DSFails - fort3DSFails (positive when Forter reduces 3DS failures)
-  // c) Issuing bank decline delta = fortBankDeclines - custBankDeclines (positive - more declines on more tx)
-  // d = a - b - c = Non-fraud delta (subtract 3DS and bank declines as they offset the fraud uplift)
-  // Duplicate successful transactions = d * retryRate * successRate
-  // Deduplication GMV reduction = duplicate transactions * AOV
-  
-  // SS (fraud drop-offs) = pre-auth improvement + post-auth improvement
-  const preAuthImprovement = fortApprovedPreAuth - custApprovedPreAuth;
-  const postAuthImprovement = fortFinalApproved - custFinalApproved;
-  const fraudTxDropOff = preAuthImprovement + postAuthImprovement;
-  
-  // 3DS drop-off should be positive when Forter reduces failures (customer failures - forter failures)
-  const threeDSDropOffDelta = cust3DSFails - fort3DSFails; // Positive when 3DS failures are reduced
-  
-  // Bank decline delta - more transactions reaching bank = more absolute declines (offset)
-  const bankDeclineDelta = fortBankDeclines - custBankDeclines; // Usually positive (more declines on more tx)
-  
-  // Non-fraud delta: start with fraud uplift, subtract the 3DS and bank decline offsets
-  const nonFraudDelta = fraudTxDropOff - threeDSDropOffDelta - bankDeclineDelta;
-  
-  const duplicateSuccessfulTx = nonFraudDelta * retryRate * successRate;
-  const deduplicationGMVReduction = duplicateSuccessfulTx * effectiveCompletedAOV;
+  // Deduplication calculation for Challenge 245 (simplified)
+  // a = Approved transactions (#) improvement = fortFinalApproved - custFinalApproved
+  // b = Total delta (inverse) = −a
+  // c = retry rate, d = success rate
+  // e = b×c×d = Duplicate successful transactions
+  // f = AOV; g = e×f = Deduplication GMV reduction (applied to value of approved transactions)
+  const approvedTxImprovement = fortFinalApproved - custFinalApproved; // a
+  const totalDelta = -approvedTxImprovement; // b = −a
+  const duplicateSuccessfulTx = totalDelta * retryRate * successRate; // e = b×c×d
+  const deduplicationGMVReduction = duplicateSuccessfulTx * effectiveCompletedAOV; // g = e×f
 
-  // Apply deduplication to Forter outcome if enabled
+  // Deduplicated value = Value of approved transactions (Forter outcome) + Deduplication GMV reduction
   const fortFinalValueDeduplicated = deduplicationEnabled 
-    ? fortFinalValue - deduplicationGMVReduction 
+    ? fortFinalValue + deduplicationGMVReduction 
     : fortFinalValue;
   const fortNetSalesDeduplicated = fortFinalValueDeduplicated * netSalesMultiplier;
   // r = q'/b when deduplication enabled
@@ -564,7 +568,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     { formula: 'a', label: 'Transaction Attempts (#)', customerInput: fmt(transactionAttempts), forterImprovement: '', forterOutcome: fmt(transactionAttempts), editableCustomerField: 'amerGrossAttempts', rawCustomerValue: transactionAttempts, valueType: 'number' },
     { formula: 'b', label: 'Transaction Attempts ($)', customerInput: fmtCur(transactionAttemptsValue), forterImprovement: '', forterOutcome: fmtCur(transactionAttemptsValue), editableCustomerField: 'amerAnnualGMV', rawCustomerValue: transactionAttemptsValue, valueType: 'currency' },
     { formula: 'c = b/a', label: 'Average order value (calculated)', customerInput: fmtCur(calculatedAOV), forterImprovement: '', forterOutcome: fmtCur(calculatedAOV), isCalculation: true },
-    { formula: 'd', label: 'Pre-Auth Fraud Approval Rate (%)', customerInput: fmtPct(preAuthApprovalRate), forterImprovement: formatPctImprovementRel(preAuthApprovalRate, preAuthApprovalRate + forterPreAuthImprovement), forterOutcome: fmtPct(preAuthApprovalRate + forterPreAuthImprovement), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: preAuthApprovalRate, editableForterField: 'preAuthApprovalImprovement', rawForterValue: preAuthApprovalRate + forterPreAuthImprovement, valueType: 'percent' },
+    { formula: 'd', label: 'Pre-Auth Fraud Approval Rate (%)', customerInput: fmtPct(preAuthApprovalRate), forterImprovement: formatPctImprovementRel(preAuthApprovalRate, fortPreAuth * 100), forterOutcome: fmtPct(fortPreAuth * 100), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: preAuthApprovalRate, editableForterField: 'preAuthApprovalImprovement', rawForterValue: fortPreAuth * 100, valueType: 'percent' },
     { formula: 'e = a*d', label: 'Approved transactions (#)', customerInput: fmt(Math.round(custApprovedPreAuth)), forterImprovement: fmt(Math.round(fortApprovedPreAuth - custApprovedPreAuth)), forterOutcome: fmt(Math.round(fortApprovedPreAuth)), isCalculation: true },
     { formula: '', label: '3DS', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'f', label: '% of Transactions that are Credit Cards (%)', customerInput: fmtPct(creditCardPct), forterImprovement: '0.0% pts', forterOutcome: fmtPct(creditCardPct), editableCustomerField: 'amerCreditCardPct', rawCustomerValue: creditCardPct, valueType: 'percent' },
@@ -584,9 +588,9 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     ...(aovMultiplier !== 1 ? [{ formula: '', label: `  ↳ Recovered transactions at ${aovMultiplier}× AOV (Forter KPI assumption)`, customerInput: '', forterImprovement: '', forterOutcome: '' } as CalculatorRow] : []),
     // Always show the non-deduplicated value first
     { formula: 'q = c\'*p', label: 'Value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUplift), forterOutcome: fmtCur(fortFinalValue), valueDriver: deduplicationEnabled ? undefined : 'revenue', isCalculation: true },
-    // When deduplication is enabled, show the deduplicated row as well (this becomes the value driver)
+    // When deduplication is enabled, show the deduplicated row: q' = q + g (value of approved + GMV reduction)
     ...(deduplicationEnabled ? [
-      { formula: 'q\' = q - dedup', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUpliftDeduplicated), forterOutcome: fmtCur(fortFinalValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
+      { formula: 'q\' = q + g', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUpliftDeduplicated), forterOutcome: fmtCur(fortFinalValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
     // forterOutcome = r = q'/b when dedup enabled (displayFortCompletionRate from fortFinalValueDeduplicated)
     { formula: 'r = q/b', label: 'Completion rate (%)', customerInput: fmtPct(custCompletionRate), forterImprovement: formatPctImprovementRel(custCompletionRate, displayFortCompletionRate, 2), forterOutcome: fmtPct(displayFortCompletionRate), isCalculation: true },
@@ -627,34 +631,29 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: '', forterOutcome: fmtCur(displayFortFinalValue), isCalculation: true },
-    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, fortCBRate * 100), forterOutcome: includesFraudCBCoverage ? '0.0%*' : fmtPct(fortCBRate * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: fortCBRate * 100, valueType: 'percent' },
+    { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct2(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, fortCBRate * 100, 2), forterOutcome: includesFraudCBCoverage ? '0.00%*' : fmtPct2(fortCBRate * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: fortCBRate * 100, valueType: 'percent' },
     { 
       formula: 'c = a*b', 
       label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', 
-      customerInput: fmtCur(-custChargebacks), 
-      forterImprovement: fmtCur(chargebackSavings), 
-      forterOutcome: includesFraudCBCoverage ? '$0*' : fmtCur(-fortChargebacks), 
+      customerInput: fmtCur2(-custChargebacks), 
+      forterImprovement: fmtCur2(chargebackSavings), 
+      forterOutcome: includesFraudCBCoverage ? '$0.00*' : fmtCur2(-fortChargebacks), 
       valueDriver: 'cost', 
       isCalculation: true,
       footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined,
     },
   ];
 
-  // Build deduplication breakdown for info popover (Challenge 245 includes 3DS and bank decline deltas)
-  // Display convention: positive values shown as-is, negative values shown in brackets
-  // fraudTxDropOff: positive (improvement), display as negative (shown in brackets as reduction)
-  // threeDSDropOff: positive (reduction in 3DS failures), display as negative (shown in brackets as offset)
-  // bankDeclineDelta: positive (more declines from more tx), display as positive (an offset)
+  // Build deduplication breakdown for info popover (a→b→c,d→e→f→g)
   const deduplicationBreakdown: DeduplicationBreakdown = {
-    fraudTxDropOff: -fraudTxDropOff, // Negative for display (uplift shown in brackets per convention)
-    threeDSDropOff: threeDSDropOffDelta, // Positive for display (3DS reduction is an offset to deduct)
-    bankDeclineDelta: bankDeclineDelta, // Positive (more bank declines from more approved tx - an offset)
-    nonFraudDelta: -nonFraudDelta, // Negative for display (net uplift after offsets, shown in brackets)
-    retryRate: deduplication.retryRate,
-    successRate: deduplication.successRate,
-    duplicateSuccessfulTx: -duplicateSuccessfulTx, // Negative
-    aov: effectiveCompletedAOV,
-    gmvReduction: -deduplicationGMVReduction, // Negative (reduction shown in brackets)
+    approvedTxImprovement, // a
+    fraudTxDropOff: 0, // unused in simplified model
+    nonFraudDelta: totalDelta, // b = −a
+    retryRate: dedup.retryRate, // c
+    successRate: dedup.successRate, // d
+    duplicateSuccessfulTx, // e = b×c×d
+    aov: effectiveCompletedAOV, // f
+    gmvReduction: deduplicationGMVReduction, // g = e×f
   };
 
   return {

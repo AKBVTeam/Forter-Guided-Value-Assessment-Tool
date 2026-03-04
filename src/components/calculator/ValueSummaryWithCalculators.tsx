@@ -334,7 +334,7 @@ export const ValueSummaryWithCalculators = ({
       preAuthImprovement = forterKPIs.preAuthApprovalImprovement ?? 4;
       if (forterKPIs.preAuthApprovalIsAbsolute) {
         const targetPreAuth = Math.min(100, Math.max(0, forterKPIs.preAuthApprovalImprovement ?? 4));
-        preAuthImprovement = Math.max(0, targetPreAuth - currentPreAuthRate);
+        preAuthImprovement = targetPreAuth - currentPreAuthRate; // allow negative (Forter outcome below customer)
       }
       // Clamp improvement so result doesn't exceed 100%
       preAuthImprovement = Math.min(preAuthImprovement, 100 - currentPreAuthRate);
@@ -347,7 +347,7 @@ export const ValueSummaryWithCalculators = ({
       postAuthImprovement = forterKPIs.postAuthApprovalImprovement ?? 2;
       if (forterKPIs.postAuthApprovalIsAbsolute) {
         const targetPostAuth = Math.min(100, Math.max(0, forterKPIs.postAuthApprovalImprovement ?? 2));
-        postAuthImprovement = Math.max(0, targetPostAuth - currentPostAuthRate);
+        postAuthImprovement = targetPostAuth - currentPostAuthRate; // allow negative (Forter outcome below customer)
       }
       // Clamp improvement so result doesn't exceed 100%
       postAuthImprovement = Math.min(postAuthImprovement, 100 - currentPostAuthRate);

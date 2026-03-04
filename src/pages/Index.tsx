@@ -211,8 +211,18 @@ export type CalculatorData = {
   _pathwayMode?: 'manual' | 'custom'; // Tracks which pathway was used for this analysis
   /** True if user has viewed Value Summary (unlocks ROI tab); persisted so ROI stays unlocked when switching back to this analysis */
   _valueSummaryViewed?: boolean;
+  /** Show in millions toggle (Value Summary / ROI); persisted so re-opening analysis restores preference */
+  _showInMillions?: boolean;
   /** True after we've applied the one-time default of "Show in millions" for analyses with annual impact > $10m */
   _showInMillionsDefaultApplied?: boolean;
+  /** Apply deduplication in value model; persisted so re-opening analysis restores preference */
+  _deduplicationEnabled?: boolean;
+  /** Deduplication retry rate (%); persisted with analysis */
+  _deduplicationRetryRate?: number;
+  /** Deduplication success rate (%); persisted with analysis */
+  _deduplicationSuccessRate?: number;
+  /** Show investment rows in ROI tab; persisted so re-opening analysis restores preference */
+  _showInvestmentRowsOn?: boolean;
   _lastUpdatedAt?: string; // ISO string of the most recent save/change to this analysis
   _startedAt?: string; // ISO string when this analysis was first started (for display)
   /** Changelog since inception: all modified inputs across sessions (persisted with analysis) */

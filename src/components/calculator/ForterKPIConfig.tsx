@@ -19,16 +19,26 @@ import { Input } from "@/components/ui/input";
 export interface ForterKPIs {
   approvalRateImprovement: number;
   approvalRateIsAbsolute: boolean;
+  /** When true, do not auto-overwrite approval/pre/post from industry/HQ benchmark. */
+  approvalRateUserOverride?: boolean;
   chargebackReduction: number;
   chargebackReductionIsAbsolute: boolean;
+  /** When true, do not auto-overwrite chargebackReduction from vendor/CB benchmark. */
+  chargebackReductionUserOverride?: boolean;
   preAuthApprovalImprovement: number;
   preAuthApprovalIsAbsolute: boolean;
+  /** When true, do not auto-overwrite preAuth from industry/HQ benchmark. */
+  preAuthApprovalUserOverride?: boolean;
   preAuthIncluded: boolean;
   postAuthApprovalImprovement: number;
   postAuthApprovalIsAbsolute: boolean;
+  /** When true, do not auto-overwrite postAuth from industry/HQ benchmark. */
+  postAuthApprovalUserOverride?: boolean;
   postAuthIncluded: boolean;
   threeDSReduction: number;
   threeDSReductionIsAbsolute: boolean;
+  /** When true, do not auto-overwrite threeDSReduction from country/AOV benchmark (user or calculator override). */
+  threeDSRateUserOverride?: boolean;
   /** Forter outcome override for 3DS Failure & Abandonment Rate (%) in payment funnel; when set, used as Forter rate (0-100). */
   forter3DSAbandonmentRate?: number;
   /** Forter outcome override for Issuing Bank Decline Rate (%) in payment funnel; when set, used as Forter rate (0-100). */
@@ -383,17 +393,27 @@ export const ForterKPIConfig = ({
     const updates: Partial<ForterKPIs> = { [field]: value };
     if (field === 'chargebackReduction') {
       updates.chargebackReductionIsAbsolute = true;
+      const bench = forterBenchmarkValues?.chargebackReduction;
+      updates.chargebackReductionUserOverride = (typeof bench === 'number' && typeof value === 'number' && valuesEqual(value, bench)) ? false : true;
     } else if (field === 'approvalRateImprovement') {
       updates.approvalRateIsAbsolute = true;
+      const bench = forterBenchmarkValues?.approvalRateImprovement;
+      updates.approvalRateUserOverride = (typeof bench === 'number' && typeof value === 'number' && valuesEqual(value, bench)) ? false : true;
     } else if (field === 'preAuthApprovalImprovement') {
       updates.preAuthApprovalIsAbsolute = true;
+      const bench = forterBenchmarkValues?.preAuthApprovalImprovement;
+      updates.preAuthApprovalUserOverride = (typeof bench === 'number' && typeof value === 'number' && valuesEqual(value, bench)) ? false : true;
     } else if (field === 'postAuthApprovalImprovement') {
       updates.postAuthApprovalIsAbsolute = true;
+      const bench = forterBenchmarkValues?.postAuthApprovalImprovement;
+      updates.postAuthApprovalUserOverride = (typeof bench === 'number' && typeof value === 'number' && valuesEqual(value, bench)) ? false : true;
     } else if (field === 'threeDSReduction') {
       updates.threeDSReductionIsAbsolute = true;
+      const bench = forterBenchmarkValues?.threeDSReduction;
+      updates.threeDSRateUserOverride = (typeof bench === 'number' && typeof value === 'number' && valuesEqual(value, bench)) ? false : true;
     }
     onUpdate({ ...kpisRef.current, ...updates });
-  }, [onUpdate]);
+  }, [onUpdate, forterBenchmarkValues]);
 
   const challenge1 = selectedChallenges['1'] === true;
   const challenge2 = selectedChallenges['2'] === true;

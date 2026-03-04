@@ -129,7 +129,7 @@ function calculateSegmentResults(
     if (preAuthIncluded) {
       preAuthImprovement = segmentKPIs.preAuthApprovalTarget ?? 0;
       if (globalForterKPIs.preAuthApprovalIsAbsolute && preAuthImprovement > 0) {
-        preAuthImprovement = Math.max(0, preAuthImprovement - currentPreAuthRate);
+        preAuthImprovement = preAuthImprovement - currentPreAuthRate; // allow negative (Forter outcome below customer)
       }
       preAuthImprovement = Math.min(preAuthImprovement, 100 - currentPreAuthRate);
     }
@@ -140,7 +140,7 @@ function calculateSegmentResults(
     if (postAuthIncluded) {
       postAuthImprovement = segmentKPIs.postAuthApprovalTarget ?? 0;
       if (globalForterKPIs.postAuthApprovalIsAbsolute && postAuthImprovement > 0) {
-        postAuthImprovement = Math.max(0, postAuthImprovement - currentPostAuthRate);
+        postAuthImprovement = postAuthImprovement - currentPostAuthRate; // allow negative (Forter outcome below customer)
       }
       postAuthImprovement = Math.min(postAuthImprovement, 100 - currentPostAuthRate);
     } else {
@@ -483,6 +483,7 @@ export function computeSegmentedAggregateDeduplicationBreakdown(
   if (enabledSegments.length === 0) return null;
   
   // Aggregate breakdown values across segments (summing transaction counts and values)
+  let totalApprovedTxImprovement = 0;
   let totalFraudTxDropOff = 0;
   let totalThreeDSDropOff = 0;
   let totalBankDeclineDelta = 0;
@@ -492,6 +493,7 @@ export function computeSegmentedAggregateDeduplicationBreakdown(
   let totalWeight = 0;
   let weightedAov = 0;
   let hasFullBreakdown = false;
+  let hasSimplifiedBreakdown = false;
   
   for (const segment of enabledSegments) {
     const result = calculateSegmentResults(
@@ -509,19 +511,21 @@ export function computeSegmentedAggregateDeduplicationBreakdown(
       const breakdown = result.deduplicationBreakdown;
       const weight = segment.inputs.grossAttempts ?? 0;
       
+      if (breakdown.approvedTxImprovement !== undefined) {
+        hasSimplifiedBreakdown = true;
+        totalApprovedTxImprovement += breakdown.approvedTxImprovement;
+      }
       totalFraudTxDropOff += breakdown.fraudTxDropOff;
       totalNonFraudDelta += breakdown.nonFraudDelta;
       totalDuplicateSuccessfulTx += breakdown.duplicateSuccessfulTx;
       totalGmvReduction += breakdown.gmvReduction;
       
-      // Track 3DS and bank decline deltas for C245
       if (breakdown.threeDSDropOff !== undefined) {
         hasFullBreakdown = true;
         totalThreeDSDropOff += breakdown.threeDSDropOff;
         totalBankDeclineDelta += (breakdown.bankDeclineDelta ?? 0);
       }
       
-      // Weighted average for AOV
       if (weight > 0) {
         weightedAov += breakdown.aov * weight;
         totalWeight += weight;
@@ -532,6 +536,7 @@ export function computeSegmentedAggregateDeduplicationBreakdown(
   if (totalWeight === 0) return null;
   
   return {
+    approvedTxImprovement: hasSimplifiedBreakdown ? totalApprovedTxImprovement : undefined,
     fraudTxDropOff: totalFraudTxDropOff,
     threeDSDropOff: hasFullBreakdown ? totalThreeDSDropOff : undefined,
     bankDeclineDelta: hasFullBreakdown ? totalBankDeclineDelta : undefined,

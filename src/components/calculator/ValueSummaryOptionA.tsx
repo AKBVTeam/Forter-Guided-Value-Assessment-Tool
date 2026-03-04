@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { LucideIcon } from "lucide-react";
@@ -407,9 +407,18 @@ export const ValueSummaryOptionA = ({
       });
     }
   }, [enabledBenefitIds, driverStates]);
-  const [deduplicationEnabled, setDeduplicationEnabled] = useState(true);
-  const [deduplicationRetryRate, setDeduplicationRetryRate] = useState(50);
-  const [deduplicationSuccessRate, setDeduplicationSuccessRate] = useState(75);
+  const deduplicationEnabled = formData._deduplicationEnabled ?? true;
+  const setDeduplicationEnabled = useCallback((value: boolean) => {
+    onFormDataChange?.('_deduplicationEnabled' as keyof CalculatorData, value);
+  }, [onFormDataChange]);
+  const deduplicationRetryRate = formData._deduplicationRetryRate ?? 50;
+  const setDeduplicationRetryRate = useCallback((value: number) => {
+    onFormDataChange?.('_deduplicationRetryRate' as keyof CalculatorData, value);
+  }, [onFormDataChange]);
+  const deduplicationSuccessRate = formData._deduplicationSuccessRate ?? 75;
+  const setDeduplicationSuccessRate = useCallback((value: number) => {
+    onFormDataChange?.('_deduplicationSuccessRate' as keyof CalculatorData, value);
+  }, [onFormDataChange]);
   const [showDeduplicationInfo, setShowDeduplicationInfo] = useState(false);
   
   // Fraud chargeback coverage state - synced with investment modal bidirectionally
@@ -889,7 +898,7 @@ export const ValueSummaryOptionA = ({
       preAuthImprovement = forterKPIs.preAuthApprovalImprovement ?? 4;
       if (forterKPIs.preAuthApprovalIsAbsolute) {
         const targetPreAuth = Math.min(100, Math.max(0, forterKPIs.preAuthApprovalImprovement ?? 4));
-        preAuthImprovement = Math.max(0, targetPreAuth - currentPreAuthRate);
+        preAuthImprovement = targetPreAuth - currentPreAuthRate; // allow negative (Forter outcome below customer)
       }
       preAuthImprovement = Math.min(preAuthImprovement, 100 - currentPreAuthRate);
     }
@@ -900,7 +909,7 @@ export const ValueSummaryOptionA = ({
       postAuthImprovement = forterKPIs.postAuthApprovalImprovement ?? 2;
       if (forterKPIs.postAuthApprovalIsAbsolute) {
         const targetPostAuth = Math.min(100, Math.max(0, forterKPIs.postAuthApprovalImprovement ?? 2));
-        postAuthImprovement = Math.max(0, targetPostAuth - currentPostAuthRate);
+        postAuthImprovement = targetPostAuth - currentPostAuthRate; // allow negative (Forter outcome below customer)
       }
       postAuthImprovement = Math.min(postAuthImprovement, 100 - currentPostAuthRate);
     } else {
@@ -2644,8 +2653,8 @@ export const ValueSummaryOptionA = ({
   };
 
   const handleDriverClick = (driver: ValueDriver) => {
-    // Allow clicking on TBD drivers to show benefit summary (without calculator)
-    if (driver.enabled && (driver.calculatorRows || driver.isTBD)) {
+    // Allow opening modal even when driver is disabled (greyed out) so users can view/edit calculator
+    if (driver.calculatorRows || driver.isTBD) {
       // Check if we need margin data before opening calculator
       if (needsMarginData(driver.id)) {
         setPendingCalculatorId(driver.id);
@@ -4372,7 +4381,7 @@ export const ValueSummaryOptionA = ({
                           if (preAuthIncluded) {
                             preAuthImprovement = segmentKPIs.preAuthApprovalTarget ?? 0;
                             if (forterKPIs.preAuthApprovalIsAbsolute && preAuthImprovement > 0) {
-                              preAuthImprovement = Math.max(0, preAuthImprovement - currentPreAuthRate);
+                              preAuthImprovement = preAuthImprovement - currentPreAuthRate; // allow negative (Forter outcome below customer)
                             }
                             preAuthImprovement = Math.min(preAuthImprovement, 100 - currentPreAuthRate);
                           }
@@ -4383,7 +4392,7 @@ export const ValueSummaryOptionA = ({
                           if (postAuthIncluded) {
                             postAuthImprovement = segmentKPIs.postAuthApprovalTarget ?? 0;
                             if (forterKPIs.postAuthApprovalIsAbsolute && postAuthImprovement > 0) {
-                              postAuthImprovement = Math.max(0, postAuthImprovement - currentPostAuthRate);
+                              postAuthImprovement = postAuthImprovement - currentPostAuthRate; // allow negative (Forter outcome below customer)
                             }
                             postAuthImprovement = Math.min(postAuthImprovement, 100 - currentPostAuthRate);
                           } else {
@@ -4669,8 +4678,7 @@ export const ValueSummaryOptionA = ({
                           
                           const fmtCur = createCurrencyFormatter(formData.baseCurrency || 'USD');
                           const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });
-                          
-                          const hasFullBreakdown = breakdown.threeDSDropOff !== undefined;
+                          const isSimplified = breakdown.approvedTxImprovement !== undefined;
                           
                           return (
                             <div className="border rounded-md overflow-hidden mb-3">
@@ -4683,55 +4691,83 @@ export const ValueSummaryOptionA = ({
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                  <tr>
-                                    <td className="px-2 py-1 text-muted-foreground">a</td>
-                                    <td className="px-2 py-1">Fraud transaction drop-off</td>
-                                    <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.fraudTxDropOff))}</td>
-                                  </tr>
-                                  {hasFullBreakdown && (
+                                  {isSimplified ? (
                                     <>
                                       <tr>
-                                        <td className="px-2 py-1 text-muted-foreground">b</td>
-                                        <td className="px-2 py-1">3DS drop-off delta (non-deduped)</td>
-                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.threeDSDropOff || 0))}</td>
+                                        <td className="px-2 py-1 text-muted-foreground">a</td>
+                                        <td className="px-2 py-1">Approved transactions (#) improvement (Forter − Customer)</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.approvedTxImprovement!))}</td>
+                                      </tr>
+                                      <tr className="bg-muted/50 font-medium">
+                                        <td className="px-2 py-1 text-muted-foreground">b = −a</td>
+                                        <td className="px-2 py-1">Total delta (inverse)</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.nonFraudDelta))}</td>
+                                      </tr>
+                                      <tr className="bg-blue-50 dark:bg-blue-950">
+                                        <td className="px-2 py-1 text-muted-foreground">c</td>
+                                        <td className="px-2 py-1">Assumed retry rate</td>
+                                        <td className="px-2 py-1 text-right font-mono">{breakdown.retryRate.toFixed(1)}%</td>
+                                      </tr>
+                                      <tr className="bg-blue-50 dark:bg-blue-950">
+                                        <td className="px-2 py-1 text-muted-foreground">d</td>
+                                        <td className="px-2 py-1">Assumed success rate</td>
+                                        <td className="px-2 py-1 text-right font-mono">{breakdown.successRate.toFixed(1)}%</td>
+                                      </tr>
+                                      <tr className="font-medium">
+                                        <td className="px-2 py-1 text-muted-foreground">e = b×c×d</td>
+                                        <td className="px-2 py-1">Duplicate successful transactions</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.duplicateSuccessfulTx))}</td>
                                       </tr>
                                       <tr>
+                                        <td className="px-2 py-1 text-muted-foreground">f</td>
+                                        <td className="px-2 py-1">AOV</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
+                                      </tr>
+                                      <tr className="bg-green-50 dark:bg-green-950 font-semibold">
+                                        <td className="px-2 py-1 text-muted-foreground">g = e×f</td>
+                                        <td className="px-2 py-1">Deduplication GMV reduction (applied to value of approved transactions)</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
+                                      </tr>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <tr>
+                                        <td className="px-2 py-1 text-muted-foreground">a</td>
+                                        <td className="px-2 py-1">Fraud transaction drop-off</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.fraudTxDropOff))}</td>
+                                      </tr>
+                                      <tr className="bg-muted/50 font-medium">
+                                        <td className="px-2 py-1 text-muted-foreground">b</td>
+                                        <td className="px-2 py-1">Total delta</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.nonFraudDelta))}</td>
+                                      </tr>
+                                      <tr className="bg-blue-50 dark:bg-blue-950">
                                         <td className="px-2 py-1 text-muted-foreground">c</td>
-                                        <td className="px-2 py-1">Issuing bank decline delta (non-deduped)</td>
-                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.bankDeclineDelta || 0))}</td>
+                                        <td className="px-2 py-1">Assumed retry rate</td>
+                                        <td className="px-2 py-1 text-right font-mono">{breakdown.retryRate.toFixed(1)}%</td>
+                                      </tr>
+                                      <tr className="bg-blue-50 dark:bg-blue-950">
+                                        <td className="px-2 py-1 text-muted-foreground">d</td>
+                                        <td className="px-2 py-1">Assumed success rate</td>
+                                        <td className="px-2 py-1 text-right font-mono">{breakdown.successRate.toFixed(1)}%</td>
+                                      </tr>
+                                      <tr className="font-medium">
+                                        <td className="px-2 py-1 text-muted-foreground">e = b×c×d</td>
+                                        <td className="px-2 py-1">Duplicate successful transactions</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.duplicateSuccessfulTx))}</td>
+                                      </tr>
+                                      <tr>
+                                        <td className="px-2 py-1 text-muted-foreground">f</td>
+                                        <td className="px-2 py-1">AOV</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
+                                      </tr>
+                                      <tr className="bg-green-50 dark:bg-green-950 font-semibold">
+                                        <td className="px-2 py-1 text-muted-foreground">g = e×f</td>
+                                        <td className="px-2 py-1">Deduplication GMV reduction (applied to value of approved transactions)</td>
+                                        <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
                                       </tr>
                                     </>
                                   )}
-                                  <tr className="bg-muted/50 font-medium">
-                                    <td className="px-2 py-1 text-muted-foreground">{hasFullBreakdown ? 'd = a+b+c' : 'd'}</td>
-                                    <td className="px-2 py-1">Non-fraud delta</td>
-                                    <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.nonFraudDelta))}</td>
-                                  </tr>
-                                  <tr className="bg-blue-50 dark:bg-blue-950">
-                                    <td className="px-2 py-1 text-muted-foreground">e</td>
-                                    <td className="px-2 py-1">Assumed retry rate</td>
-                                    <td className="px-2 py-1 text-right font-mono">{breakdown.retryRate.toFixed(1)}%</td>
-                                  </tr>
-                                  <tr className="bg-blue-50 dark:bg-blue-950">
-                                    <td className="px-2 py-1 text-muted-foreground">f</td>
-                                    <td className="px-2 py-1">Assumed success rate</td>
-                                    <td className="px-2 py-1 text-right font-mono">{breakdown.successRate.toFixed(1)}%</td>
-                                  </tr>
-                                  <tr className="font-medium">
-                                    <td className="px-2 py-1 text-muted-foreground">g = d*e*f</td>
-                                    <td className="px-2 py-1">Duplicate successful transactions</td>
-                                    <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.duplicateSuccessfulTx))}</td>
-                                  </tr>
-                                  <tr>
-                                    <td className="px-2 py-1 text-muted-foreground">h</td>
-                                    <td className="px-2 py-1">AoV</td>
-                                    <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
-                                  </tr>
-                                  <tr className="bg-green-50 dark:bg-green-950 font-semibold">
-                                    <td className="px-2 py-1 text-muted-foreground">i = g*h</td>
-                                    <td className="px-2 py-1">Duplication GMV reduction</td>
-                                    <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
-                                  </tr>
                                 </tbody>
                               </table>
                             </div>
