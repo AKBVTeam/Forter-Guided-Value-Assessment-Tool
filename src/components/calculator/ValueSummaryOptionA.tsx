@@ -3109,29 +3109,29 @@ export const ValueSummaryOptionA = ({
     );
   }
 
-  // Check which highlights should be shown based on enabled drivers (only when metric is an improvement)
+  // Check which highlights should be shown based on enabled drivers (only when benefit is toggled ON and metric is an improvement)
   const approvalImprovement = challenge245Results ? forterKPIs.preAuthApprovalImprovement : forterKPIs.approvalRateImprovement;
-  const showApprovalRate = ((challenge1Results && driverStates["c1-revenue"] !== 'removed') || (challenge245Results && driverStates["c245-revenue"] !== 'removed')) && (approvalImprovement ?? 0) > 0;
+  const showApprovalRate = ((challenge1Results && getDriverEnabled("c1-revenue")) || (challenge245Results && getDriverEnabled("c245-revenue"))) && (approvalImprovement ?? 0) > 0;
   const threeDSCurrent = formData.amer3DSChallengeRate || 30;
   const threeDSTarget = forterKPIs.threeDSReduction ?? 0;
   const threeDSDecreasePct = threeDSCurrent > 0 ? Math.round(((threeDSCurrent - threeDSTarget) / threeDSCurrent) * 100) : 0;
-  const show3DS = challenge245Results && driverStates["c245-revenue"] !== 'removed' && threeDSDecreasePct > 0;
+  const show3DS = challenge245Results && getDriverEnabled("c245-revenue") && threeDSDecreasePct > 0;
   const chargebackCurrent = formData.fraudCBRate || 0.5;
   const chargebackReductionBps = forterKPIs.chargebackReductionIsAbsolute
     ? Math.round((chargebackCurrent - (forterKPIs.chargebackReduction ?? 0)) * 100)
     : Math.round(chargebackCurrent * (forterKPIs.chargebackReduction ?? 50) / 100 * 100);
-  const showChargeback = ((challenge1Results && driverStates["c1-chargeback"] !== 'removed') || (challenge245Results && driverStates["c245-chargeback"] !== 'removed')) && chargebackReductionBps > 0;
+  const showChargeback = ((challenge1Results && getDriverEnabled("c1-chargeback")) || (challenge245Results && getDriverEnabled("c245-chargeback"))) && chargebackReductionBps > 0;
   const manualReviewCurrent = formData.manualReviewPct || 5;
   const manualReviewTarget = forterKPIs.manualReviewReduction ?? 0;
   const manualReviewDecreasePct = manualReviewCurrent > 0 ? Math.round(((manualReviewCurrent - manualReviewTarget) / manualReviewCurrent) * 100) : 0;
-  const showManualReview = challenge3Results && driverStates["c3-review"] !== 'removed' && manualReviewDecreasePct > 0;
+  const showManualReview = challenge3Results && getDriverEnabled("c3-review") && manualReviewDecreasePct > 0;
   const recoveryIncreasePct = totalRecoveryMetrics && totalRecoveryMetrics.current > 0
     ? Math.round(((totalRecoveryMetrics.target - totalRecoveryMetrics.current) / totalRecoveryMetrics.current) * 100)
     : 0;
-  const showDispute = challenge7Results && driverStates["c7-disputes"] !== 'removed' && recoveryIncreasePct > 0;
-  const showAbuse = challenge8Results && (driverStates["c8-returns"] !== 'removed' || driverStates["c8-inr"] !== 'removed') && (forterKPIs.forterCatchRate ?? 0) > 0;
-  const showInstantRefundsNPS = challenge9Results && driverStates["c9-cx-uplift"] !== 'removed' && (forterKPIs.npsIncreaseFromInstantRefunds ?? 0) > 0;
-  const showInstantRefundsCS = challenge9Results && driverStates["c9-cs-opex"] !== 'removed' && (forterKPIs.instantRefundPct ?? 0) > 0;
+  const showDispute = challenge7Results && getDriverEnabled("c7-disputes") && recoveryIncreasePct > 0;
+  const showAbuse = challenge8Results && (getDriverEnabled("c8-returns") || getDriverEnabled("c8-inr")) && (forterKPIs.forterCatchRate ?? 0) > 0;
+  const showInstantRefundsNPS = challenge9Results && getDriverEnabled("c9-cx-uplift") && (forterKPIs.npsIncreaseFromInstantRefunds ?? 0) > 0;
+  const showInstantRefundsCS = challenge9Results && getDriverEnabled("c9-cs-opex") && (forterKPIs.instantRefundPct ?? 0) > 0;
   const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDispute || showAbuse || showInstantRefundsNPS || showInstantRefundsCS;
 
   return (

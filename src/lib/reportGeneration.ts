@@ -61,6 +61,39 @@ export interface ReportOptions {
   caseStudySourceSlides?: Array<{ presentationId: string; pageObjectId: string }>;
   /** Optional: use this presentation's first N slides as case studies (N = case study count). Overridden by caseStudySourceSlides if both set. */
   caseStudySourcePresentationId?: string;
+  /** Optional: per-driver enabled state (true/false/'removed'). When set, performance highlights and target outcomes only include KPIs for drivers that are enabled. */
+  driverStates?: Record<string, boolean | 'removed'>;
+  /** When true (custom value pathway): omit Executive Summary, KPIs, Target Outcomes; case studies and appendix only for selected standard benefit calculators. */
+  isCustomPathway?: boolean;
+}
+
+// Map each performance highlight metric to the driver IDs that "own" it. Include highlight only if at least one of these drivers is enabled.
+const PERF_HIGHLIGHT_METRIC_TO_DRIVER_IDS: Record<string, string[]> = {
+  'Fraud approval rate': ['c1-revenue', 'c245-revenue'],
+  '3DS Challenge Rate': ['c245-revenue'],
+  'Fraud Chargeback Rate': ['c1-chargeback', 'c245-chargeback'],
+  'Manual Review Rate': ['c3-review'],
+  'Fraud Dispute Win Rate': ['c7-disputes'],
+  'Abuse Catch Rate': ['c8-returns', 'c8-inr'],
+  'Expected NPS Increase': ['c9-cx-uplift'],
+  'ATO Catch Rate': ['c12-ato-opex', 'c13-clv'],
+  'Fraudulent Signup Reduction': ['c14-marketing', 'c14-reactivation', 'c14-kyc'],
+};
+
+function isDriverEnabled(driverId: string, driverStates: Record<string, boolean | 'removed'>): boolean {
+  const s = driverStates[driverId];
+  return s !== false && s !== 'removed';
+}
+
+function filterPerformanceHighlightsByDriverState(
+  highlights: Array<{ metric: string; current: string; target: string; improvement?: string }>,
+  driverStates: Record<string, boolean | 'removed'>
+): Array<{ metric: string; current: string; target: string; improvement?: string }> {
+  return highlights.filter((h) => {
+    const driverIds = PERF_HIGHLIGHT_METRIC_TO_DRIVER_IDS[h.metric];
+    if (!driverIds?.length) return true; // unknown metric, keep
+    return driverIds.some((id) => isDriverEnabled(id, driverStates));
+  });
 }
 
 // Payloads for Google Slides/Docs (serializable, sent to Edge Function)
@@ -114,15 +147,18 @@ export interface ValueDeckPayload {
   caseStudySourcePresentationId?: string;
   /** Case study slide numbers to include (for selected benefits only). Order = display order. When set, only these slides are used; otherwise API uses all. */
   caseStudySlideNumbers?: number[];
+  /** When true, deck is from custom value pathway: no Executive Summary content, no KPIs, no Target Outcomes; case studies and appendix only for selected standard calculators. */
+  isCustomPathway?: boolean;
 }
 
-// Format date as MMDDYY for filenames
-function formatDateMMDDYY(): string {
+// Format date as MMM-DD-YY for filenames (e.g. Jan-27-26)
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatDateMMMDDYY(): string {
   const now = new Date();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const mmm = MONTH_ABBR[now.getMonth()];
   const dd = String(now.getDate()).padStart(2, '0');
   const yy = String(now.getFullYear()).slice(-2);
-  return `${mm}${dd}${yy}`;
+  return `${mmm}-${dd}-${yy}`;
 }
 
 /** Encode ArrayBuffer to base64 in chunks to avoid "too many arguments" for large images. */
@@ -328,6 +364,18 @@ export function getSelectedCaseStudySlideNumbers(challenges: Record<string, bool
   return Array.from(slideNums).sort((a, b) => a - b);
 }
 
+/** Case study slide numbers for a given set of standard calculator IDs (for custom pathway). */
+function getCaseStudySlideNumbersForCalculators(calcIds: Set<string>): number[] {
+  const slideNums = new Set<number>();
+  for (const calcId of calcIds) {
+    if (hasCaseStudy(calcId)) {
+      const n = getCaseStudySlideNumber(calcId);
+      if (typeof n === "number" && n >= 1) slideNums.add(n);
+    }
+  }
+  return Array.from(slideNums).sort((a, b) => a - b);
+}
+
 // Get ALL active value drivers with category, sorted by category then value (no limit)
 function getAllValueDrivers(
   challenges: Record<string, boolean>,
@@ -373,6 +421,30 @@ const CALCULATOR_ID_TO_KEYWORDS: Record<string, string[]> = {
   'c14-reactivation': ['re-activation', 'reactivation'],
   'c14-kyc': ['kyc'],
 };
+
+/** Get standard calculator IDs that match a driver label (by keyword or exact label). Used for custom pathway to filter case studies and appendix. */
+function getStandardCalculatorIdsForDriverLabel(label: string): string[] {
+  const out: string[] = [];
+  const lower = label.trim().toLowerCase();
+  for (const [calcId, keywords] of Object.entries(CALCULATOR_ID_TO_KEYWORDS)) {
+    if (keywords.some(kw => lower.includes(kw))) {
+      out.push(calcId);
+      continue;
+    }
+    const exact = CALCULATOR_ID_TO_LABEL[calcId]?.label?.toLowerCase();
+    if (exact && (lower.includes(exact) || exact.includes(lower))) out.push(calcId);
+  }
+  return out;
+}
+
+/** Set of standard calculator IDs that appear in the given driver labels (for custom pathway filtering). */
+function getSelectedStandardCalculatorIds(driverLabels: string[]): Set<string> {
+  const set = new Set<string>();
+  for (const label of driverLabels) {
+    getStandardCalculatorIdsForDriverLabel(label).forEach(id => set.add(id));
+  }
+  return set;
+}
 
 // Get all value drivers for a benefit group
 function getValueDriversForBenefitGroup(
@@ -988,7 +1060,7 @@ export async function generateCalculatorSlide(
 
   // Save - Format: AnalysisName_CalculatorTitle (MMDDYY).pptx
   const blob = await pptx.write({ outputType: 'blob' }) as Blob;
-  const dateStr = formatDateMMDDYY();
+  const dateStr = formatDateMMMDDYY();
   const sanitizedAnalysisName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const sanitizedTitle = calculatorTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40);
   const segmentSuffix = isSegmented ? '_Segmented' : '';
@@ -1011,7 +1083,10 @@ export function getExecutiveSummaryPayload(
   const currency = formData.baseCurrency || 'USD';
   const headline = generateHeadline(formData, valueTotals);
   const solutions = getSolutionApproaches(challenges);
-  const performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  let performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  if (options.driverStates) {
+    performanceHighlights = filterPerformanceHighlightsByDriverState(performanceHighlights, options.driverStates);
+  }
   const topDrivers = getAllValueDrivers(challenges, valueTotals);
   const useStrategicAlignment = options.selectedObjectives.length > 0;
   const strategicObjectives = getStrategicObjectiveDetails(options.selectedObjectives);
@@ -1021,7 +1096,7 @@ export function getExecutiveSummaryPayload(
 
   const recommendedApproach = {
     solutions,
-    outcomesTable: performanceHighlights.map(m => ({ metric: m.metric, current: m.current, target: m.target, improvement: m.improvement })),
+    outcomesTable: options.isCustomPathway ? [] : performanceHighlights.map(m => ({ metric: m.metric, current: m.current, target: m.target, improvement: m.improvement })),
   };
 
   let investment: Array<{ label: string; val: string }> | null = null;
@@ -1066,6 +1141,7 @@ export function getExecutiveSummaryPayload(
     recommendedApproach,
     investment,
     projectedValue,
+    ...(options.isCustomPathway && { isCustomPathway: true }),
   };
 }
 
@@ -1102,7 +1178,10 @@ export async function generateExecutiveSummaryDocx(
   const currency = formData.baseCurrency || 'USD';
   const headline = generateHeadline(formData, valueTotals);
   const solutions = getSolutionApproaches(challenges);
-  const performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  let performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  if (options.driverStates) {
+    performanceHighlights = filterPerformanceHighlightsByDriverState(performanceHighlights, options.driverStates);
+  }
   const topDrivers = getAllValueDrivers(challenges, valueTotals);
   
   const useStrategicAlignment = options.selectedObjectives.length > 0;
@@ -1459,7 +1538,7 @@ export async function generateExecutiveSummaryDocx(
   });
   
   const blob = await Packer.toBlob(doc);
-  const dateStr = formatDateMMDDYY();
+  const dateStr = formatDateMMMDDYY();
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `${sanitizedName}_Executive_Summary (${dateStr}).docx`;
   saveAs(blob, filename);
@@ -1587,7 +1666,13 @@ export function getValueDeckPayload(
   const currency = formData.baseCurrency || 'USD';
   const headline = generateHeadline(formData, valueTotals);
   const allDrivers = getAllValueDrivers(challenges, valueTotals);
-  const performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  let performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  if (options.driverStates) {
+    performanceHighlights = filterPerformanceHighlightsByDriverState(performanceHighlights, options.driverStates);
+  }
+  if (options.isCustomPathway) {
+    performanceHighlights = [];
+  }
   const problems = getSelectedChallengeProblems(challenges);
   const solutions = getSolutionApproaches(challenges);
   const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -1632,51 +1717,97 @@ export function getValueDeckPayload(
   };
 
   const appendixSlides: ValueDeckPayload['appendixSlides'] = [];
-  const activeBenefitGroups = getActiveBenefitGroups(challenges);
-  const driverLabels = new Set(allDrivers.map((d) => d.label.trim().toLowerCase()));
-  const appendixGroupIds = new Set(activeBenefitGroups.map((g) => g.id));
-  for (const group of BENEFIT_GROUPS) {
-    if (appendixGroupIds.has(group.id)) continue;
-    const tables = getCalculatorRowsForBenefitGroup(group, formData);
-    const hasMatchingDriver = tables.some((calc) =>
-      driverLabels.has(calc.title.trim().toLowerCase())
-    );
-    if (hasMatchingDriver) appendixGroupIds.add(group.id);
-  }
-  const appendixGroups = BENEFIT_GROUPS.filter((g) => appendixGroupIds.has(g.id));
-  for (const group of appendixGroups) {
-    const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
-    const badge = getCategoryBadge(group);
-    for (const calc of calculatorTables) {
-      const calcId = group.calculatorIds.find((id) => {
-        const content = getChallengeBenefitContent(id);
-        return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
-      }) || group.calculatorIds[0];
-      const benefitContent = getChallengeBenefitContent(calcId);
-      const slideTitle = calc.title || group.title;
-      const benefitDescription = benefitContent?.benefitDescription || group.solution;
-      const challengeDescription = benefitContent?.challengeDescription || group.problem;
-      const isTBD = isCalculatorTBD(calc.rows);
-      const tableRows: Array<{ cells: string[] }> = [];
-      if (!isTBD) {
-        const dataRows: Array<{ isSection: boolean; row: CalculatorRow }> = [];
-        calc.rows.forEach(row => {
-          dataRows.push({ isSection: !row.formula && !!row.label && !row.customerInput && !row.forterOutcome, row });
-        });
-        for (const { isSection, row: r } of dataRows) {
-          if (isSection) tableRows.push({ cells: [(r.label || '').toUpperCase(), '', '', '', ''] });
-          else tableRows.push({ cells: [r.formula || '', r.label || '', r.customerInput || '', r.forterImprovement || '', r.forterOutcome || ''] });
+  const isCustomPathway = !!options.isCustomPathway;
+  let caseStudySlideNumbersResult: number[];
+
+  if (isCustomPathway) {
+    const selectedStandardCalculatorIds = getSelectedStandardCalculatorIds(allDrivers.map((d) => d.label));
+    caseStudySlideNumbersResult = getCaseStudySlideNumbersForCalculators(selectedStandardCalculatorIds);
+    const appendixGroupsCustom = BENEFIT_GROUPS.filter((g) => g.calculatorIds.some((id) => selectedStandardCalculatorIds.has(id)));
+    for (const group of appendixGroupsCustom) {
+      const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
+      const badge = getCategoryBadge(group);
+      for (const calc of calculatorTables) {
+        const calcId = group.calculatorIds.find((id) => {
+          const content = getChallengeBenefitContent(id);
+          return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
+        }) || group.calculatorIds[0];
+        if (!selectedStandardCalculatorIds.has(calcId)) continue;
+        const benefitContent = getChallengeBenefitContent(calcId);
+        const slideTitle = calc.title || group.title;
+        const benefitDescription = benefitContent?.benefitDescription || group.solution;
+        const challengeDescription = benefitContent?.challengeDescription || group.problem;
+        const isTBD = isCalculatorTBD(calc.rows);
+        const tableRows: Array<{ cells: string[] }> = [];
+        if (!isTBD) {
+          const dataRows: Array<{ isSection: boolean; row: CalculatorRow }> = [];
+          calc.rows.forEach(row => {
+            dataRows.push({ isSection: !row.formula && !!row.label && !row.customerInput && !row.forterOutcome, row });
+          });
+          for (const { isSection, row: r } of dataRows) {
+            if (isSection) tableRows.push({ cells: [(r.label || '').toUpperCase(), '', '', '', ''] });
+            else tableRows.push({ cells: [r.formula || '', r.label || '', r.customerInput || '', r.forterImprovement || '', r.forterOutcome || ''] });
+          }
         }
+        appendixSlides.push({
+          title: slideTitle,
+          problem: challengeDescription,
+          solution: benefitDescription,
+          benefit: group.benefit,
+          badge,
+          isTBD,
+          tableRows,
+        });
       }
-      appendixSlides.push({
-        title: slideTitle,
-        problem: challengeDescription,
-        solution: benefitDescription,
-        benefit: group.benefit,
-        badge,
-        isTBD,
-        tableRows,
-      });
+    }
+  } else {
+    caseStudySlideNumbersResult = getSelectedCaseStudySlideNumbers(challenges);
+    const activeBenefitGroups = getActiveBenefitGroups(challenges);
+    const driverLabels = new Set(allDrivers.map((d) => d.label.trim().toLowerCase()));
+    const appendixGroupIds = new Set(activeBenefitGroups.map((g) => g.id));
+    for (const group of BENEFIT_GROUPS) {
+      if (appendixGroupIds.has(group.id)) continue;
+      const tables = getCalculatorRowsForBenefitGroup(group, formData);
+      const hasMatchingDriver = tables.some((calc) =>
+        driverLabels.has(calc.title.trim().toLowerCase())
+      );
+      if (hasMatchingDriver) appendixGroupIds.add(group.id);
+    }
+    const appendixGroups = BENEFIT_GROUPS.filter((g) => appendixGroupIds.has(g.id));
+    for (const group of appendixGroups) {
+      const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
+      const badge = getCategoryBadge(group);
+      for (const calc of calculatorTables) {
+        const calcId = group.calculatorIds.find((id) => {
+          const content = getChallengeBenefitContent(id);
+          return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
+        }) || group.calculatorIds[0];
+        const benefitContent = getChallengeBenefitContent(calcId);
+        const slideTitle = calc.title || group.title;
+        const benefitDescription = benefitContent?.benefitDescription || group.solution;
+        const challengeDescription = benefitContent?.challengeDescription || group.problem;
+        const isTBD = isCalculatorTBD(calc.rows);
+        const tableRows: Array<{ cells: string[] }> = [];
+        if (!isTBD) {
+          const dataRows: Array<{ isSection: boolean; row: CalculatorRow }> = [];
+          calc.rows.forEach(row => {
+            dataRows.push({ isSection: !row.formula && !!row.label && !row.customerInput && !row.forterOutcome, row });
+          });
+          for (const { isSection, row: r } of dataRows) {
+            if (isSection) tableRows.push({ cells: [(r.label || '').toUpperCase(), '', '', '', ''] });
+            else tableRows.push({ cells: [r.formula || '', r.label || '', r.customerInput || '', r.forterImprovement || '', r.forterOutcome || ''] });
+          }
+        }
+        appendixSlides.push({
+          title: slideTitle,
+          problem: challengeDescription,
+          solution: benefitDescription,
+          benefit: group.benefit,
+          badge,
+          isTBD,
+          tableRows,
+        });
+      }
     }
   }
 
@@ -1738,7 +1869,8 @@ export function getValueDeckPayload(
     appendixSlides,
     ...(options.caseStudySourceSlides && { caseStudySourceSlides: options.caseStudySourceSlides }),
     ...(options.caseStudySourcePresentationId && { caseStudySourcePresentationId: options.caseStudySourcePresentationId }),
-    caseStudySlideNumbers: getSelectedCaseStudySlideNumbers(challenges),
+    caseStudySlideNumbers: caseStudySlideNumbersResult,
+    ...(isCustomPathway && { isCustomPathway: true }),
   };
 }
 
@@ -1768,7 +1900,10 @@ export async function generateValueDeckPptx(
   const currency = formData.baseCurrency || 'USD';
   const headline = generateHeadline(formData, valueTotals);
   const allDrivers = getAllValueDrivers(challenges, valueTotals);
-  const performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  let performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  if (options.driverStates) {
+    performanceHighlights = filterPerformanceHighlightsByDriverState(performanceHighlights, options.driverStates);
+  }
   const problems = getSelectedChallengeProblems(challenges);
   const solutions = getSolutionApproaches(challenges);
 
@@ -2368,7 +2503,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
   // Save using blob and file-saver for compatibility
   // Format: Forter_x_AnalysisName_Value_Assessment (MMDDYY).pptx
   const blob = await pptx.write({ outputType: 'blob' }) as Blob;
-  const dateStr = formatDateMMDDYY();
+  const dateStr = formatDateMMMDDYY();
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `Forter_x_${sanitizedName}_Value_Assessment (${dateStr}).pptx`;
   saveAs(blob, filename);

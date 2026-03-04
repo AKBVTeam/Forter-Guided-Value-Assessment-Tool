@@ -117,9 +117,21 @@ function GenerateReportModalWithGoogle({
     const costs = calculateInvestmentCosts(investmentInputs, formData);
     const hasInvestment = costs.totalACV > 0 || costs.integrationCost > 0;
     const caseStudySourcePresentationId = import.meta.env.VITE_CASE_STUDY_SOURCE_PRESENTATION_ID as string | undefined;
+    const analysisId = (formData as any)._analysisId ?? "default";
+    const driverStatesKey = `forter_value_assessment_driver_states_${analysisId}`;
+    let driverStates: Record<string, boolean | "removed"> | undefined;
+    try {
+      const saved = typeof localStorage !== "undefined" ? localStorage.getItem(driverStatesKey) : null;
+      driverStates = saved ? (JSON.parse(saved) as Record<string, boolean | "removed">) : undefined;
+    } catch {
+      driverStates = undefined;
+    }
+    const isCustomPathway = (formData as any)._pathwayMode === "custom";
     const options = {
       hasInvestment,
       selectedObjectives,
+      ...(driverStates && { driverStates }),
+      ...(isCustomPathway && { isCustomPathway: true }),
       ...(typeof caseStudySourcePresentationId === "string" &&
         caseStudySourcePresentationId.trim() && { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }),
     };

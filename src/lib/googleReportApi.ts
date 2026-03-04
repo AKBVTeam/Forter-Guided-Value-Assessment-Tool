@@ -131,27 +131,29 @@ function createImageRequest(
   };
 }
 
-function formatDateDDMMYYYY(): string {
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatDateMMMDDYY(): string {
   const d = new Date();
+  const mmm = MONTH_ABBR[d.getMonth()];
   const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${mmm}-${dd}-${yy}`;
 }
 
 export function googleReportFileName(clientName: string): string {
-  return `[BV] ${clientName} x Forter - Value_Assessment (${formatDateDDMMYYYY()})`;
+  return `[BV] ${clientName} x Forter - Value_Assessment (${formatDateMMMDDYY()})`;
 }
 
 /** File name for Executive Summary Google Doc. */
 export function googleReportExecutiveSummaryFileName(merchantName: string): string {
-  return `[BV] ${merchantName} x Forter - Executive Summary (${formatDateDDMMYYYY()})`;
+  return `[BV] ${merchantName} x Forter - Executive Summary (${formatDateMMMDDYY()})`;
 }
 
 /** File name for calculator-subset Google Slides (single benefit + success story). */
 export function googleReportCalculatorSubsetFileName(merchantName: string, calculatorTitle: string): string {
   const safeTitle = calculatorTitle.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, " ").trim().slice(0, 50);
-  return `[BV] ${merchantName} - ${safeTitle || "Calculator"} (${formatDateDDMMYYYY()})`;
+  return `[BV] ${merchantName} - ${safeTitle || "Calculator"} (${formatDateMMMDDYY()})`;
 }
 
 /**
@@ -201,6 +203,7 @@ export async function buildGoogleDoc(
     projectedValue?: { rows: Array<{ label: string; val: string }>; nextSteps: string[] } | null;
     valueDrivers?: Array<{ label: string; value: string }>;
     customerLogoUrl?: string;
+    isCustomPathway?: boolean;
   };
   const requests: Record<string, unknown>[] = [];
 
@@ -265,37 +268,51 @@ export async function buildGoogleDoc(
   insert("HEADLINE", "section");
   insert(opportunityStatement, "body");
 
-  if (p.strategicAlignment?.objectives?.length) {
+  const isCustomPathwayDoc = !!p.isCustomPathway;
+  const placeholderText = `[User to add relevant text here to share with ${customerName}]`;
+
+  if (isCustomPathwayDoc) {
     insert("STRATEGIC ALIGNMENT", "section");
-    insert(`This initiative directly supports ${customerName}'s key strategic priorities:`, "body");
-    for (const obj of p.strategicAlignment.objectives) {
-      insert(`→  ${obj.name}: ${obj.description}`, "bullet");
-    }
-    if (p.strategicAlignment.useCases?.length) {
-      insert("TARGETED CAPABILITIES WITH FORTER", "section");
-      for (const uc of p.strategicAlignment.useCases) {
-        insert(`→  ${uc.name}`, "bullet");
+    insert(placeholderText, "body");
+    insert("TARGETED CAPABILITIES WITH FORTER", "section");
+    insert(placeholderText, "body");
+    insert("RECOMMENDED APPROACH", "section");
+    insert(placeholderText, "body");
+    insert("TARGET OUTCOMES", "section");
+    insert(placeholderText, "body");
+  } else {
+    if (p.strategicAlignment?.objectives?.length) {
+      insert("STRATEGIC ALIGNMENT", "section");
+      insert(`This initiative directly supports ${customerName}'s key strategic priorities:`, "body");
+      for (const obj of p.strategicAlignment.objectives) {
+        insert(`→  ${obj.name}: ${obj.description}`, "bullet");
+      }
+      if (p.strategicAlignment.useCases?.length) {
+        insert("TARGETED CAPABILITIES WITH FORTER", "section");
+        for (const uc of p.strategicAlignment.useCases) {
+          insert(`→  ${uc.name}`, "bullet");
+        }
+      }
+    } else if (p.problemStatement?.length) {
+      insert("THE PROBLEM STATEMENT", "section");
+      insert("This initiative addresses the following high-priority challenges:", "body");
+      for (const item of p.problemStatement) {
+        insert(`→  ${item}`, "bullet");
       }
     }
-  } else if (p.problemStatement?.length) {
-    insert("THE PROBLEM STATEMENT", "section");
-    insert("This initiative addresses the following high-priority challenges:", "body");
-    for (const item of p.problemStatement) {
-      insert(`→  ${item}`, "bullet");
-    }
-  }
 
-  const recApproach = p.recommendedApproach ?? { solutions: [], outcomesTable: [] };
-  insert("RECOMMENDED APPROACH", "section");
-  (recApproach.solutions || []).forEach((s: string, i: number) => {
-    insert(`${i + 1}.  ${s}`, "bullet");
-  });
-  insert("TARGET OUTCOMES", "section");
-  const outcomesRows = recApproach.outcomesTable ?? [];
-  insert("Key Metric  |  Improvement", "subtitle");
-  for (const r of outcomesRows) {
-    const displayVal = (r as { improvement?: string }).improvement ?? r.target;
-    insert(`${r.metric}  |  ${displayVal}`, "body");
+    const recApproach = p.recommendedApproach ?? { solutions: [], outcomesTable: [] };
+    insert("RECOMMENDED APPROACH", "section");
+    (recApproach.solutions || []).forEach((s: string, i: number) => {
+      insert(`${i + 1}.  ${s}`, "bullet");
+    });
+    insert("TARGET OUTCOMES", "section");
+    const outcomesRows = recApproach.outcomesTable ?? [];
+    insert("Key Metric  |  Improvement", "subtitle");
+    for (const r of outcomesRows) {
+      const displayVal = (r as { improvement?: string }).improvement ?? r.target;
+      insert(`${r.metric}  |  ${displayVal}`, "body");
+    }
   }
 
   if (p.investment?.length) {
@@ -537,6 +554,8 @@ type SlidesPayload = {
   caseStudySourcePresentationId?: string;
   /** Optional: case study slide numbers to include (for selected benefits). When set, only these slides are created/copied; order = display order. */
   caseStudySlideNumbers?: number[];
+  /** When true (custom value pathway), Executive Summary, Key Performance Improvements, and Target Outcomes are not populated. */
+  isCustomPathway?: boolean;
 };
 
 /** Create a RECTANGLE or ELLIPSE shape (x,y,w,h in PPT inches; scaled to Google Slides canvas). */
@@ -642,6 +661,7 @@ export async function buildGoogleSlides(
   }
 
   const isSubset = !p.executiveSlide && Array.isArray(p.appendixSlides) && p.appendixSlides.length > 0;
+  const isCustomPathwayEarly = !!(p as { isCustomPathway?: boolean }).isCustomPathway;
   const caseStudySlideNums =
     Array.isArray(p.caseStudySlideNumbers) && p.caseStudySlideNumbers.length > 0
       ? p.caseStudySlideNumbers
@@ -667,10 +687,12 @@ export async function buildGoogleSlides(
   }, 0);
   // Subset (calculator modal): no title, no appendix divider, no case studies divider — only appendix content + case study image slides
   // Full deck: optionally end with GVA Case Study Deck last slide (when caseStudySourcePresentationId is set)
+  // Custom pathway: omit Executive Summary and Target Outcomes slides (two fewer slides)
   const closingGvaSlideCount = !isSubset && caseStudySourcePresentationId ? 1 : 0;
+  const fullDeckSlideCount = 1 + 1 + 1 + 1 + driverPageCount + 1 + (p.roiSlide ? 1 : 0) + 1 + caseStudyCount + appendixDividerCount + totalAppendixContentSlides + closingGvaSlideCount;
   const slideCount = isSubset
     ? totalAppendixContentSlides + caseStudySlideNums.length
-    : 1 + 1 + 1 + 1 + driverPageCount + 1 + (p.roiSlide ? 1 : 0) + 1 + caseStudyCount + appendixDividerCount + totalAppendixContentSlides + closingGvaSlideCount;
+    : isCustomPathwayEarly ? fullDeckSlideCount - 2 : fullDeckSlideCount;
   for (let i = 0; i < slideCount; i++) {
     createRequests.push({
       createSlide: {
@@ -704,12 +726,15 @@ export async function buildGoogleSlides(
   const pres2 = await getPres2.json();
   const slides = (pres2.slides || []) as Array<{ objectId: string }>;
 
-  const titleSlide = p.titleSlide ?? { customerName: "Customer", headline: "", date: formatDateDDMMYYYY() };
+  const titleSlide = p.titleSlide ?? { customerName: "Customer", headline: "", date: formatDateMMMDDYY() };
   const execSlide = p.executiveSlide ?? { problems: [], solutions: [], valueCategories: [], ebitda: "", roiMetrics: [] };
   const valueSummary = p.valueSummarySlide ?? { categories: [], ebitda: "", kpis: [] };
   const valueDrivers = p.valueDriversSlide ?? { rows: [] };
   const targetOutcomes = p.targetOutcomesSlide ?? { rows: [] };
   const nextSteps = p.nextStepsSlide ?? { steps: [] };
+  const isCustomPathway = !!(p as { isCustomPathway?: boolean }).isCustomPathway;
+  /** When custom pathway, Executive Summary slide is omitted so content slides shift back by 1. */
+  const contentSlideOffset = isCustomPathway ? 1 : 0;
   /** Only use logo when URL is public (https/http). Data/blob URLs cause Slides API to return 400. */
   const customerLogoUrlForSlides =
     p.customerLogoUrl?.trim() && isPublicImageUrl(p.customerLogoUrl.trim()) ? p.customerLogoUrl.trim() : undefined;
@@ -823,7 +848,9 @@ export async function buildGoogleSlides(
     addTextBox(requests, "howto_title", sHowTo, 0.5, 0.5, 12.33, 0.5, "General template guidelines", {
       bold: true, fontSize: 24, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "howto_sub", sHowTo, 0.5, 0.92, 12.33, 0.3, "Slides will pre-populate based on the Guided Value Calculator Inputs", {
+    addTextBox(requests, "howto_sub", sHowTo, 0.5, 0.92, 12.33, 0.3, isCustomPathway
+      ? "Slides will pre-populate based on the Custom Value Calculator inputs (no Executive Summary or Target Outcomes)."
+      : "Slides will pre-populate based on the Guided Value Calculator Inputs", {
       fontSize: 14, colorRgb: grayRgb, fontFamily: FONT_BODY,
     });
     const bodyGrayRgb = hexToRgb(BODY_GRAY);
@@ -841,6 +868,26 @@ export async function buildGoogleSlides(
       });
     });
     // Slide map table (PPT inches; scale for Slides canvas)
+    const howtoDataRows: [string, string, string][] = isCustomPathway
+      ? [
+          ["1 — Title", "Customer name, report type, date", "Auto-populated"],
+          ["2 — Value Summary", "Active value category cards (no KPI pills)", "Auto-populated"],
+          ["3 — Value Drivers", "Ranked breakdown of value contributors", "Auto-populated"],
+          ["4 — ROI Summary", "3-year projection (if investment entered)", "Auto-populated"],
+          ["5 — Next Steps ✏️", "Action items and stakeholder names", "MUST BE EDITED MANUALLY"],
+          ["6+ — Appendix", "Standard benefit calculator slides only", "Auto-populated"],
+        ]
+      : [
+          ["1 — Title", "Customer name, report type, date", "Auto-populated"],
+          ["2 — Executive Summary", "Challenges, approach, value metrics", "Auto-populated"],
+          ["3 — Value Summary", "Active value category cards + KPI pills", "Auto-populated"],
+          ["4 — Value Drivers", "Ranked breakdown of value contributors", "Auto-populated"],
+          ["5 — Target Outcomes", "Current vs Forter KPI table", "Auto-populated"],
+          ["6 — ROI Summary", "3-year projection (if investment entered)", "Auto-populated"],
+          ["7 — Next Steps ✏️", "Action items and stakeholder names", "MUST BE EDITED MANUALLY"],
+          ["8+ — Appendix", "Calculator detail slides (may span multiple pages)", "Auto-populated"],
+        ];
+    const howtoTableRows = 1 + howtoDataRows.length;
     requests.push({
       createTable: {
         objectId: "table_howto",
@@ -858,7 +905,7 @@ export async function buildGoogleSlides(
             unit: "PT",
           },
         },
-        rows: 9,
+        rows: howtoTableRows,
         columns: 3,
       },
     });
@@ -886,7 +933,7 @@ export async function buildGoogleSlides(
         fields: "columnWidth",
       },
     });
-    const howtoRowIndices = Array.from({ length: 9 }, (_, i) => i);
+    const howtoRowIndices = Array.from({ length: howtoTableRows }, (_, i) => i);
     requests.push({
       updateTableRowProperties: {
         objectId: "table_howto",
@@ -906,16 +953,6 @@ export async function buildGoogleSlides(
         },
       });
     });
-    const howtoDataRows: [string, string, string][] = [
-      ["1 — Title", "Customer name, report type, date", "Auto-populated"],
-      ["2 — Executive Summary", "Challenges, approach, value metrics", "Auto-populated"],
-      ["3 — Value Summary", "Active value category cards + KPI pills", "Auto-populated"],
-      ["4 — Value Drivers", "Ranked breakdown of value contributors", "Auto-populated"],
-      ["5 — Target Outcomes", "Current vs Forter KPI table", "Auto-populated"],
-      ["6 — ROI Summary", "3-year projection (if investment entered)", "Auto-populated"],
-      ["7 — Next Steps ✏️", "Action items and stakeholder names", "MUST BE EDITED MANUALLY"],
-      ["8+ — Appendix", "Calculator detail slides (may span multiple pages)", "Auto-populated"],
-    ];
     howtoDataRows.forEach((row, r) => {
       row.forEach((cell, c) => {
         requests.push({
@@ -952,7 +989,7 @@ export async function buildGoogleSlides(
     const howtoGreenRgb = hexToRgb(GREEN);
     const howtoRedRgb = hexToRgb(RED);
     const howtoAltRgb = hexToRgb(ALT_ROW);
-    for (let r = 1; r <= 8; r++) {
+    for (let r = 1; r < howtoTableRows; r++) {
       if (r % 2 === 1) {
         requests.push({
           updateTableCellProperties: {
@@ -967,7 +1004,7 @@ export async function buildGoogleSlides(
       }
       for (let c = 0; c < 3; c++) {
         const isNotesCol = c === 2;
-        const isRedNotes = r === 7 && isNotesCol; // "MUST BE EDITED MANUALLY"
+        const isRedNotes = r === howtoTableRows - 1 && isNotesCol; // "MUST BE EDITED MANUALLY" on last data row
         requests.push({
           updateTextStyle: {
             objectId: "table_howto",
@@ -1066,8 +1103,8 @@ export async function buildGoogleSlides(
   // ----- Full deck only: Slide 2 Executive Summary through Next Steps -----
   let slideIdx = 0;
   if (!isSubset) {
-  // ----- Slide 2: Executive Summary -----
-  const s1 = slides[2]?.objectId;
+  // ----- Slide 2: Executive Summary (omitted entirely in custom pathway; slide not created) -----
+  const s1 = !isCustomPathway ? slides[2]?.objectId : undefined;
   if (s1) {
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s1_customer_logo", s1, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
@@ -1196,8 +1233,8 @@ export async function buildGoogleSlides(
     });
   }
 
-  // ----- Slide 3: Value Summary -----
-  const s2 = slides[3]?.objectId;
+  // ----- Slide 3: Value Summary (slide index 2 when custom pathway) -----
+  const s2 = slides[3 - contentSlideOffset]?.objectId;
   if (s2) {
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s2_customer_logo", s2, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
@@ -1205,7 +1242,7 @@ export async function buildGoogleSlides(
     addTextBox(requests, "s2_section", s2, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "s2_page", s2, 0.28, FOOTER_Y, 1.0, 0.2, "4", { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
+    addTextBox(requests, "s2_page", s2, 0.28, FOOTER_Y, 1.0, 0.2, String(4 - contentSlideOffset), { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
     addTextBox(requests, "s2_footer", s2, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
       fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
@@ -1300,6 +1337,7 @@ export async function buildGoogleSlides(
       alignment: "END",
     });
     const s2KpiY = s2EbitdaY + s2EbitdaH + 0.22;
+    if (!isCustomPathway) {
     addTextBox(requests, "s2_kpi_h", s2, 0.5, s2KpiY, CONTENT_W, 0.26, "KEY PERFORMANCE IMPROVEMENTS", {
       bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD,
     });
@@ -1340,6 +1378,7 @@ export async function buildGoogleSlides(
         fontSize: 9, colorRgb: hexToRgb("9CA3AF"), fontFamily: FONT_BODY,
       });
     });
+    }
   }
 
   // ----- Slide 4: Value Drivers (table, paginated) -----
@@ -1353,13 +1392,13 @@ export async function buildGoogleSlides(
 
   const altRowRgb = hexToRgb(ALT_ROW);
   driverPages.forEach((page, pageIndex) => {
-    const pageSlide = slides[4 + pageIndex]?.objectId;
+    const pageSlide = slides[4 - contentSlideOffset + pageIndex]?.objectId;
     if (!pageSlide) return;
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest(`s3_customer_logo_${pageIndex}`, pageSlide, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
     const pageLabel = driverPages.length > 1 ? ` (Page ${pageIndex + 1} of ${driverPages.length})` : "";
-    const pageNum = String(5 + pageIndex);
+    const pageNum = String(5 - contentSlideOffset + pageIndex);
     addTextBox(requests, `s3_section_${pageIndex}`, pageSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
@@ -1546,10 +1585,10 @@ export async function buildGoogleSlides(
     });
   });
 
-  const baseAfterDrivers = 4 + driverPageCount;
-  // ----- Slide 5: Target Outcomes (table) -----
+  const baseAfterDrivers = 4 - contentSlideOffset + driverPageCount;
+  // ----- Slide 5: Target Outcomes (table; skipped for custom value pathway) -----
   const s4 = slides[baseAfterDrivers]?.objectId;
-  if (s4) {
+  if (s4 && !isCustomPathway) {
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s4_customer_logo", s4, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
@@ -1766,12 +1805,13 @@ export async function buildGoogleSlides(
     });
   }
 
-  // ----- Slide 6: ROI Summary (optional) -----
-  slideIdx = baseAfterDrivers + 1;
-  if (p.roiSlide && slides[baseAfterDrivers + 1]?.objectId) {
-    const s5 = slides[baseAfterDrivers + 1].objectId;
+  // ----- Slide 6: ROI Summary (optional). When custom pathway, Target Outcomes slide is omitted so ROI is at baseAfterDrivers. -----
+  const roiSlideIndex = baseAfterDrivers + (isCustomPathway ? 0 : 1);
+  slideIdx = baseAfterDrivers + (isCustomPathway ? (p.roiSlide ? 1 : 0) : (p.roiSlide ? 2 : 1));
+  if (p.roiSlide && slides[roiSlideIndex]?.objectId) {
+    const s5 = slides[roiSlideIndex].objectId;
     const roi = p.roiSlide;
-    const pageNum = String(baseAfterDrivers + 2);
+    const pageNum = String(roiSlideIndex + 1);
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s5_customer_logo", s5, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
@@ -2029,13 +2069,13 @@ export async function buildGoogleSlides(
         safeParagraphAlign(requests, "table_roi", r, col, "END", cellTexts[col - 1] ?? "");
       });
     }
-    slideIdx = baseAfterDrivers + 2;
+    slideIdx = baseAfterDrivers + (isCustomPathway ? 1 : 2);
   }
 
   // ----- Next Steps -----
   const sNext = slides[slideIdx]?.objectId;
   if (sNext) {
-    const pageNum = String(baseAfterDrivers + (p.roiSlide ? 3 : 2));
+    const pageNum = String(slideIdx + 1);
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("snext_customer_logo", sNext, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }

@@ -597,7 +597,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       const unlockedTabs = ['inputs', 'summary'];
       setRecentlyUnlockedTabs(unlockedTabs);
       toast.success("Tabs unlocked!", {
-        description: "You can now access Customer Inputs and Value Summary. Use \"Refine Forter KPI assumptions\" when needed. View Value Summary to unlock ROI.",
+        description: "You can now access Customer Inputs and Value Summary. Use \"Refine Forter KPI benchmarks\" when needed. View Value Summary to unlock ROI.",
         duration: 4000,
         icon: <Unlock className="h-4 w-4" />,
       });
@@ -1443,7 +1443,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   }, [entryMode]);
 
   // Ensure activeTab always matches a visible tab (prevents blank screen when Tabs value doesn't match any trigger)
-  // In guided mode, Forter KPI is in a modal (Refine Forter KPI assumptions), not a tab
+  // In guided mode, Forter KPI is in a modal (Refine Forter KPI benchmarks), not a tab
   const guidedTabs = ["profile", "challenges", "inputs", "summary", "roi"];
   const customTabs = ["profile", "summary", "roi"];
   const validTabs = showGuidedTabs ? guidedTabs : customTabs;
@@ -2372,7 +2372,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   onClick={() => setForterKPIModalOpen(true)}
                 >
                   <Gauge className="h-4 w-4" />
-                  Refine Forter KPI assumptions
+                  Refine Forter KPI benchmarks
                 </Button>
               </div>
             )}
@@ -2402,7 +2402,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   onClick={() => setForterKPIModalOpen(true)}
                 >
                   <Gauge className="h-4 w-4" />
-                  Refine Forter KPI assumptions
+                  Refine Forter KPI benchmarks
                 </Button>
               )}
             </div>
@@ -2541,7 +2541,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         )}
       </Card>
       
-      {/* Refine Forter KPI assumptions modal (guided mode) */}
+      {/* Refine Forter KPI benchmarks modal (guided mode) */}
       <Dialog
         open={forterKPIModalOpen}
         onOpenChange={(open) => {
@@ -2551,7 +2551,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col">
           <DialogHeader>
-            <DialogTitle>Refine Forter KPI assumptions</DialogTitle>
+            <DialogTitle>Refine Forter KPI benchmarks</DialogTitle>
             <DialogDescription>
               Configure Forter performance assumptions and targets used in the value model. Updates are optional; figures are benchmarked to Forter and 3rd party data (Country, Industry, AoV, etc.).
             </DialogDescription>
@@ -2718,7 +2718,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
             <AlertDialogTitle>Switch to Guided Value Pathway?</AlertDialogTitle>
             <AlertDialogDescription>
               Switching to the Guided pathway will show additional tabs for Use Cases, Customer Inputs, and Value Summary. 
-              You can refine Forter KPI assumptions from Customer Inputs or Value Summary when needed.
+              You can refine Forter KPI benchmarks from Customer Inputs or Value Summary when needed.
               <br /><br />
               <strong className="text-foreground">All existing data will be preserved.</strong> All custom calculations and any previously entered values will remain intact.
             </AlertDialogDescription>
