@@ -100,6 +100,7 @@ export interface DeduplicationBreakdown {
   retryRate: number;
   successRate: number;
   duplicateSuccessfulTx: number;
+  /** Completed AOV ($) — same as "Completed AOV (for value of approved transactions)" in the calculator */
   aov: number;
   gmvReduction: number;
 }
@@ -324,14 +325,14 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     { formula: 'c = a*b', label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', customerInput: fmtCur2(-customerChargebacks), forterImprovement: fmtCur2(chargebackSavings), forterOutcome: includesFraudCBCoverage ? '$0.00*' : fmtCur2(-forterChargebacks), valueDriver: 'cost', isCalculation: true, footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined },
   ];
 
-  // Build deduplication breakdown for info popover
+  // Build deduplication breakdown for info popover (AOV = Completed AOV, same as value of approved transactions)
   const deduplicationBreakdown: DeduplicationBreakdown = {
     fraudTxDropOff: -approvedTxImprovement, // Negative (fewer declines = negative drop-off)
     nonFraudDelta: -approvedTxImprovement,
     retryRate: dedup.retryRate,
     successRate: dedup.successRate,
     duplicateSuccessfulTx: -duplicateSuccessfulTx, // Negative
-    aov: effectiveCompletedAOV,
+    aov: effectiveCompletedAOV, // Completed AOV (same as calculator row)
     gmvReduction: -deduplicationGMVReduction, // Negative (reduction shown in brackets)
   };
 
@@ -644,7 +645,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     },
   ];
 
-  // Build deduplication breakdown for info popover (a→b→c,d→e→f→g)
+  // Build deduplication breakdown for info popover (a→b→c,d→e→f→g; f = Completed AOV, same as calculator row)
   const deduplicationBreakdown: DeduplicationBreakdown = {
     approvedTxImprovement, // a
     fraudTxDropOff: 0, // unused in simplified model
@@ -652,7 +653,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     retryRate: dedup.retryRate, // c
     successRate: dedup.successRate, // d
     duplicateSuccessfulTx, // e = b×c×d
-    aov: effectiveCompletedAOV, // f
+    aov: effectiveCompletedAOV, // f = Completed AOV (same as value of approved transactions)
     gmvReduction: deduplicationGMVReduction, // g = e×f
   };
 

@@ -4720,7 +4720,7 @@ export const ValueSummaryOptionA = ({
                                       </tr>
                                       <tr>
                                         <td className="px-2 py-1 text-muted-foreground">f</td>
-                                        <td className="px-2 py-1">AOV</td>
+                                        <td className="px-2 py-1">Completed AOV</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
                                       </tr>
                                       <tr className="bg-green-50 dark:bg-green-950 font-semibold">
@@ -4758,7 +4758,7 @@ export const ValueSummaryOptionA = ({
                                       </tr>
                                       <tr>
                                         <td className="px-2 py-1 text-muted-foreground">f</td>
-                                        <td className="px-2 py-1">AOV</td>
+                                        <td className="px-2 py-1">Completed AOV</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
                                       </tr>
                                       <tr className="bg-green-50 dark:bg-green-950 font-semibold">
