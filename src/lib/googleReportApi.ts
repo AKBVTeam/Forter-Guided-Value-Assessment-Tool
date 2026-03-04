@@ -133,27 +133,27 @@ function createImageRequest(
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function formatDateMMMDDYY(): string {
+function formatDateMMMDDYYYY(): string {
   const d = new Date();
   const mmm = MONTH_ABBR[d.getMonth()];
   const dd = String(d.getDate()).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${mmm}-${dd}-${yy}`;
+  const yyyy = d.getFullYear();
+  return `${mmm} ${dd}, ${yyyy}`;
 }
 
 export function googleReportFileName(clientName: string): string {
-  return `[BV] ${clientName} x Forter - Value_Assessment (${formatDateMMMDDYY()})`;
+  return `[BV] ${clientName} x Forter - Value_Assessment (${formatDateMMMDDYYYY()})`;
 }
 
 /** File name for Executive Summary Google Doc. */
 export function googleReportExecutiveSummaryFileName(merchantName: string): string {
-  return `[BV] ${merchantName} x Forter - Executive Summary (${formatDateMMMDDYY()})`;
+  return `[BV] ${merchantName} x Forter - Executive Summary (${formatDateMMMDDYYYY()})`;
 }
 
 /** File name for calculator-subset Google Slides (single benefit + success story). */
 export function googleReportCalculatorSubsetFileName(merchantName: string, calculatorTitle: string): string {
   const safeTitle = calculatorTitle.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, " ").trim().slice(0, 50);
-  return `[BV] ${merchantName} - ${safeTitle || "Calculator"} (${formatDateMMMDDYY()})`;
+  return `[BV] ${merchantName} - ${safeTitle || "Calculator"} (${formatDateMMMDDYYYY()})`;
 }
 
 /**
@@ -726,7 +726,7 @@ export async function buildGoogleSlides(
   const pres2 = await getPres2.json();
   const slides = (pres2.slides || []) as Array<{ objectId: string }>;
 
-  const titleSlide = p.titleSlide ?? { customerName: "Customer", headline: "", date: formatDateMMMDDYY() };
+  const titleSlide = p.titleSlide ?? { customerName: "Customer", headline: "", date: formatDateMMMDDYYYY() };
   const execSlide = p.executiveSlide ?? { problems: [], solutions: [], valueCategories: [], ebitda: "", roiMetrics: [] };
   const valueSummary = p.valueSummarySlide ?? { categories: [], ebitda: "", kpis: [] };
   const valueDrivers = p.valueDriversSlide ?? { rows: [] };

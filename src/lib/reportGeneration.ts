@@ -151,14 +151,14 @@ export interface ValueDeckPayload {
   isCustomPathway?: boolean;
 }
 
-// Format date as MMM-DD-YY for filenames (e.g. Jan-27-26)
+// Format date as MMM DD, YYYY for filenames (e.g. Jan 27, 2026)
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function formatDateMMMDDYY(): string {
+function formatDateMMMDDYYYY(): string {
   const now = new Date();
   const mmm = MONTH_ABBR[now.getMonth()];
   const dd = String(now.getDate()).padStart(2, '0');
-  const yy = String(now.getFullYear()).slice(-2);
-  return `${mmm}-${dd}-${yy}`;
+  const yyyy = now.getFullYear();
+  return `${mmm} ${dd}, ${yyyy}`;
 }
 
 /** Encode ArrayBuffer to base64 in chunks to avoid "too many arguments" for large images. */
@@ -1060,7 +1060,7 @@ export async function generateCalculatorSlide(
 
   // Save - Format: AnalysisName_CalculatorTitle (MMDDYY).pptx
   const blob = await pptx.write({ outputType: 'blob' }) as Blob;
-  const dateStr = formatDateMMMDDYY();
+  const dateStr = formatDateMMMDDYYYY();
   const sanitizedAnalysisName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const sanitizedTitle = calculatorTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40);
   const segmentSuffix = isSegmented ? '_Segmented' : '';
@@ -1538,7 +1538,7 @@ export async function generateExecutiveSummaryDocx(
   });
   
   const blob = await Packer.toBlob(doc);
-  const dateStr = formatDateMMMDDYY();
+  const dateStr = formatDateMMMDDYYYY();
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `${sanitizedName}_Executive_Summary (${dateStr}).docx`;
   saveAs(blob, filename);
@@ -2503,7 +2503,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
   // Save using blob and file-saver for compatibility
   // Format: Forter_x_AnalysisName_Value_Assessment (MMDDYY).pptx
   const blob = await pptx.write({ outputType: 'blob' }) as Blob;
-  const dateStr = formatDateMMMDDYY();
+  const dateStr = formatDateMMMDDYYYY();
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `Forter_x_${sanitizedName}_Value_Assessment (${dateStr}).pptx`;
   saveAs(blob, filename);
