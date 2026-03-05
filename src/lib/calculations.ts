@@ -121,6 +121,8 @@ export interface Challenge1Results {
     deduplicationBreakdown?: DeduplicationBreakdown;
     /** Current-state completed transaction count (for refund volume formula: attempts × completion rate × refund rate) */
     customerCompletedTransactionCount: number;
+    /** Net sales ($) customer value = value of approved × (1 - GMV to Net sales deductions %) — for Instant refunds baseline */
+    customerNetSales?: number;
   };
   // Calculator 2: Reduce fraud chargebacks
   calculator2: {
@@ -217,9 +219,9 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
   const recoveredOrderAOV_c1 = effectiveCompletedAOV * aovMultiplier; // AOV × Recovered Order AOV multiplier
   const deduplicationGMVReduction = duplicateSuccessfulTx * recoveredOrderAOV_c1;
   
-  // Deduplicated value = Value of approved transactions (Forter outcome) + Deduplication GMV reduction
+  // Deduplicated value = Value of approved transactions (Forter outcome) − Deduplication GMV reduction
   const forterApprovedValueDeduplicated = deduplicationEnabled 
-    ? forterApprovedValue + deduplicationGMVReduction 
+    ? forterApprovedValue - deduplicationGMVReduction 
     : forterApprovedValue;
   const approvedValueImprovementDeduplicated = forterApprovedValueDeduplicated - customerApprovedValue;
 
@@ -280,13 +282,13 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     ...(aovMultiplier !== 1 ? [{ formula: '', label: `  ↳ Recovered transactions at ${aovMultiplier}× AOV (Forter KPI assumption)`, customerInput: '', forterImprovement: '', forterOutcome: '' } as CalculatorRow] : []),
     // Always show the non-deduplicated value first
     { formula: 'f = c\'*e', label: 'Value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: fmtCur(approvedValueImprovement), forterOutcome: fmtCur(forterApprovedValue), valueDriver: deduplicationEnabled ? undefined : 'revenue', isCalculation: true },
-    // When deduplication is enabled, show the deduplicated row as well (this becomes the value driver)
+    // When deduplication is enabled, show the deduplicated row (this becomes the value driver). Deduplication GMV reduction is subtracted from Forter value of approved.
     ...(deduplicationEnabled ? [
       { formula: 'f\' = f - dedup', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: fmtCur(approvedValueImprovementDeduplicated), forterOutcome: fmtCur(forterApprovedValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
     { formula: 'g = f/b', label: 'Completion rate (%)', customerInput: fmtPct(customerCompletionRate), forterImprovement: formatPctImprovementRel(customerCompletionRate, forterCompletionRate), forterOutcome: fmtPct(forterCompletionRate), isCalculation: true },
     { formula: 'h', label: 'GMV to Net sales deductions (sales tax/cancellations) (%)', customerInput: fmtPct(gmvToNetSalesDeductionPct), forterImprovement: '', forterOutcome: fmtPct(gmvToNetSalesDeductionPct), editableCustomerField: 'gmvToNetSalesDeductionPct', rawCustomerValue: gmvToNetSalesDeductionPct, valueType: 'percent' },
-    { formula: 'i = f×(1-h)', label: 'Net sales ($)', customerInput: fmtCur(customerNetSales), forterImprovement: fmtCur(netSalesImprovement), forterOutcome: fmtCur(forterNetSales), isCalculation: true },
+    { formula: 'i = f×(1-h)', label: 'Net sales ($)', customerInput: fmtCur(customerNetSales), forterImprovement: fmtCur(netSalesImprovement), forterOutcome: fmtCur(forterNetSales), rawCustomerValue: customerNetSales, isCalculation: true },
     ...(deduplicationEnabled ? [
       { formula: 'i\' = f\'×(1-h)', label: 'Net sales ($) (deduplicated)', customerInput: fmtCur(customerNetSales), forterImprovement: fmtCur(netSalesImprovementDeduplicated), forterOutcome: fmtCur(forterNetSalesDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
@@ -332,6 +334,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
 
   // Build deduplication breakdown for info popover (f = AOV, f' = Recovered Order AOV, g = e×f')
   const deduplicationBreakdown: DeduplicationBreakdown = {
+    approvedTxImprovement, // Forter improvement in approved transactions (#) — used for Value Impact "Total recoverable"
     fraudTxDropOff: -approvedTxImprovement, // Negative (fewer declines = negative drop-off)
     nonFraudDelta: -approvedTxImprovement,
     retryRate: dedup.retryRate,
@@ -340,7 +343,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     aov: effectiveCompletedAOV, // Base Completed AOV
     aovMultiplier: aovMultiplier,
     recoveredOrderAOV: recoveredOrderAOV_c1, // AOV × Recovered Order AOV multiplier (used for g)
-    gmvReduction: -deduplicationGMVReduction, // Negative (reduction shown in brackets)
+    gmvReduction: deduplicationGMVReduction, // Amount added to Forter value of approved to get deduplicated value (same sign as C245)
   };
 
   return {
@@ -353,6 +356,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
       deduplicationApplied: deduplicationEnabled,
       deduplicationBreakdown,
       customerCompletedTransactionCount: customerApprovedTx,
+      customerNetSales,
     },
     calculator2: { rows: calculator2Rows, costReduction: chargebackSavings },
   };
@@ -438,6 +442,8 @@ export interface Challenge245Results {
     customerCompletionRate?: number;
     /** Payments funnel: current state in % + recoverable opportunity (volume) */
     funnelBreakdown?: PaymentFunnelStage[];
+    /** Net sales ($) customer value — for Instant refunds baseline */
+    customerNetSales?: number;
   };
   calculator2: { rows: CalculatorRow[]; costReduction: number; };
 }
@@ -560,9 +566,9 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const recoveredOrderAOV_c245 = effectiveCompletedAOV * aovMultiplier; // f' = AOV × Recovered Order AOV multiplier
   const deduplicationGMVReduction = duplicateSuccessfulTx * recoveredOrderAOV_c245; // g = e×f'
 
-  // Deduplicated value = Value of approved transactions (Forter outcome) + Deduplication GMV reduction
+  // Deduplicated value = Value of approved transactions (Forter outcome) − Deduplication GMV reduction
   const fortFinalValueDeduplicated = deduplicationEnabled 
-    ? fortFinalValue + deduplicationGMVReduction 
+    ? fortFinalValue - deduplicationGMVReduction 
     : fortFinalValue;
   const fortNetSalesDeduplicated = fortFinalValueDeduplicated * netSalesMultiplier;
   // r = q'/b when deduplication enabled
@@ -619,14 +625,14 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     ...(aovMultiplier !== 1 ? [{ formula: '', label: `  ↳ Recovered transactions at ${aovMultiplier}× AOV (Forter KPI assumption)`, customerInput: '', forterImprovement: '', forterOutcome: '' } as CalculatorRow] : []),
     // Always show the non-deduplicated value first
     { formula: 'q = c\'*p', label: 'Value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUplift), forterOutcome: fmtCur(fortFinalValue), valueDriver: deduplicationEnabled ? undefined : 'revenue', isCalculation: true },
-    // When deduplication is enabled, show the deduplicated row: q' = q + g (value of approved + GMV reduction)
+    // When deduplication is enabled, show the deduplicated row: q' = q − g (value of approved − GMV reduction)
     ...(deduplicationEnabled ? [
-      { formula: 'q\' = q + g', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUpliftDeduplicated), forterOutcome: fmtCur(fortFinalValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
+      { formula: 'q\' = q − g', label: 'Deduplicated value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUpliftDeduplicated), forterOutcome: fmtCur(fortFinalValueDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
     // forterOutcome = r = q'/b when dedup enabled (displayFortCompletionRate from fortFinalValueDeduplicated)
     { formula: 'r = q/b', label: 'Completion rate (%)', customerInput: fmtPct(custCompletionRate), forterImprovement: formatPctImprovementRel(custCompletionRate, displayFortCompletionRate, 2), forterOutcome: fmtPct(displayFortCompletionRate), isCalculation: true },
     { formula: 's', label: 'GMV to Net sales deductions (sales tax/cancellations) (%)', customerInput: fmtPct(gmvToNetSalesDeductionPct), forterImprovement: '', forterOutcome: fmtPct(gmvToNetSalesDeductionPct), editableCustomerField: 'gmvToNetSalesDeductionPct', rawCustomerValue: gmvToNetSalesDeductionPct, valueType: 'percent' },
-    { formula: 't = q×(1-s)', label: 'Net sales ($)', customerInput: fmtCur(custNetSales), forterImprovement: fmtCur(deduplicationEnabled ? fortNetSalesDeduplicated - custNetSales : fortNetSales - custNetSales), forterOutcome: fmtCur(deduplicationEnabled ? fortNetSalesDeduplicated : fortNetSales), isCalculation: true },
+    { formula: 't = q×(1-s)', label: 'Net sales ($)', customerInput: fmtCur(custNetSales), forterImprovement: fmtCur(deduplicationEnabled ? fortNetSalesDeduplicated - custNetSales : fortNetSales - custNetSales), forterOutcome: fmtCur(deduplicationEnabled ? fortNetSalesDeduplicated : fortNetSales), rawCustomerValue: custNetSales, isCalculation: true },
     ...(deduplicationEnabled ? [
       { formula: 't\' = q\'×(1-s)', label: 'Net sales ($) (deduplicated)', customerInput: fmtCur(custNetSales), forterImprovement: fmtCur(fortNetSalesDeduplicated - custNetSales), forterOutcome: fmtCur(fortNetSalesDeduplicated), valueDriver: 'revenue' as const, isCalculation: true } as CalculatorRow,
     ] : []),
@@ -756,6 +762,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
       /** Completion rate (%) = r = q/b; funnel "Approved transactions" uses this so it matches the calculator row */
       customerCompletionRate: custCompletionRate,
       funnelBreakdown,
+      customerNetSales: custNetSales,
     },
     calculator2: { rows: calculator2Rows, costReduction: chargebackSavings },
   };
@@ -1501,7 +1508,7 @@ export function calculateChallenge9(inputs: Challenge9Inputs): Challenge9Results
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Expected Refunds - Volume (#)', customerInput: fmt(Math.round(expectedRefundsVolume)), forterImprovement: '', forterOutcome: fmt(Math.round(expectedRefundsVolume)), editableCustomerField: 'expectedRefundsVolume', rawCustomerValue: expectedRefundsVolume, valueType: 'number' },
     { formula: 'b', label: '% of Refund Tickets to CS (%)', customerInput: fmtPct(pctRefundsToCS), forterImprovement: formatPctImprovementRel(pctRefundsToCS, pctRefundsToCS * (1 - forterCSReduction / 100)), forterOutcome: fmtPct(pctRefundsToCS * (1 - forterCSReduction / 100)), editableCustomerField: 'pctRefundsToCS', rawCustomerValue: pctRefundsToCS, valueType: 'percent' },
-    { formula: 'c = a*b', label: 'Refund tickets / calls going to customer service', customerInput: fmt(Math.round(custCSContacts)), forterImprovement: fmt(Math.round(-csContactsReduction)), forterOutcome: fmt(Math.round(forterCSContacts)), isCalculation: true },
+    { formula: 'c = a*b', label: 'Refund tickets / calls going to customer service', customerInput: fmt(Math.round(custCSContacts)), forterImprovement: fmt(Math.round(-csContactsReduction)), forterOutcome: fmt(Math.round(forterCSContacts)), rawCustomerValue: custCSContacts, rawForterValue: forterCSContacts, isCalculation: true },
     { formula: 'd', label: 'Cost per CS Contact ($)', customerInput: fmtCur(costPerCSContact), forterImprovement: '', forterOutcome: fmtCur(costPerCSContact), editableCustomerField: 'costPerCSContact', rawCustomerValue: costPerCSContact, valueType: 'currency' },
     { formula: 'e = -c*d', label: 'Customer service cost ($)', customerInput: fmtCur(custCSCost), forterImprovement: fmtCur(costImprovement), forterOutcome: fmtCur(forterCSCost), valueDriver: 'cost', isCalculation: true },
   ];
@@ -1596,9 +1603,9 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
   const calculator1Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of logins (#)', customerInput: fmt(Math.round(annualLogins)), forterImprovement: '', forterOutcome: fmt(Math.round(annualLogins)), editableCustomerField: 'monthlyLogins', rawCustomerValue: monthlyLogins, valueType: 'number' },
     { formula: 'b', label: 'Percent of fraudulent logins (%)', customerInput: fmtPct(pctFraudulentLogins), forterImprovement: '', forterOutcome: fmtPct(pctFraudulentLogins), editableForterField: 'pctFraudulentLogins', rawForterValue: pctFraudulentLogins, valueType: 'percent' },
-    { formula: 'c = a*b', label: 'Estimated ATO attempts (#)', customerInput: fmt(Math.round(estimatedATOAttempts)), forterImprovement: '', forterOutcome: fmt(Math.round(estimatedATOAttempts)), isCalculation: true },
+    { formula: 'c = a*b', label: 'Estimated ATO attempts (#)', customerInput: fmt(Math.round(estimatedATOAttempts)), forterImprovement: '', forterOutcome: fmt(Math.round(estimatedATOAttempts)), rawCustomerValue: estimatedATOAttempts, rawForterValue: estimatedATOAttempts, isCalculation: true },
     { formula: 'd', label: 'ATO catch rate (%)', customerInput: '0%', forterImprovement: `+${atoCatchRate}% pts`, forterOutcome: fmtPct(atoCatchRate), editableForterField: 'atoCatchRate', rawForterValue: atoCatchRate, valueType: 'percent' },
-    { formula: 'e = c*(1-d)', label: 'Successful ATO (#)', customerInput: fmt(Math.round(custSuccessfulATO)), forterImprovement: fmt(Math.round(forterSuccessfulATO - custSuccessfulATO)), forterOutcome: fmt(Math.round(forterSuccessfulATO)), isCalculation: true },
+    { formula: 'e = c*(1-d)', label: 'Successful ATO (#)', customerInput: fmt(Math.round(custSuccessfulATO)), forterImprovement: fmt(Math.round(forterSuccessfulATO - custSuccessfulATO)), forterOutcome: fmt(Math.round(forterSuccessfulATO)), rawCustomerValue: custSuccessfulATO, rawForterValue: forterSuccessfulATO, isCalculation: true },
     { formula: '', label: 'Cost to appease', customerInput: '', forterImprovement: '', forterOutcome: '' },
     { formula: 'f', label: 'Average appeasement value (e.g. refunded points)', customerInput: fmtCur(avgAppeasementValue), forterImprovement: '', forterOutcome: fmtCur(avgAppeasementValue), editableCustomerField: 'avgAppeasementValue', rawCustomerValue: avgAppeasementValue, valueType: 'currency' },
     { formula: 'g', label: 'Hourly salary per customer service member ($)', customerInput: fmtCur(hourlySalary), forterImprovement: '', forterOutcome: fmtCur(hourlySalary), isCalculation: true },
@@ -1727,7 +1734,7 @@ export function calculateChallenge14_15(inputs: Challenge14_15Inputs): Challenge
 
   const calculator1Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of sign-ups (#)', customerInput: fmt(Math.round(annualSignups)), forterImprovement: '', forterOutcome: fmt(Math.round(annualSignups)), editableCustomerField: 'monthlySignups', rawCustomerValue: monthlySignups, valueType: 'number' },
-    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: formatPctImprovementRel(pctFraudulentSignups, forterFraudPct * 100), forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
+    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: formatPctImprovementRel(pctFraudulentSignups, forterFraudPct * 100), forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Estimated duplicate accounts annually (#)', customerInput: fmt(Math.round(custDuplicateAccounts)), forterImprovement: fmt(Math.round(forterDuplicateAccounts - custDuplicateAccounts)), forterOutcome: fmt(Math.round(forterDuplicateAccounts)), isCalculation: true },
     { formula: 'd', label: 'Average new member bonus / discount ($)', customerInput: fmtCur(avgNewMemberBonus), forterImprovement: '', forterOutcome: fmtCur(avgNewMemberBonus), editableCustomerField: 'avgNewMemberBonus', rawCustomerValue: avgNewMemberBonus, valueType: 'currency' },
     { formula: 'e = -c*d', label: 'Marketing loss of duplicate accounts ($)', customerInput: fmtCur(custMarketingLoss), forterImprovement: fmtCur(marketingImprovement), forterOutcome: fmtCur(forterMarketingLoss), valueDriver: 'cost', isCalculation: true },
@@ -1742,7 +1749,7 @@ export function calculateChallenge14_15(inputs: Challenge14_15Inputs): Challenge
 
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of sign-ups (#)', customerInput: fmt(Math.round(annualSignups)), forterImprovement: '', forterOutcome: fmt(Math.round(annualSignups)), editableCustomerField: 'monthlySignups', rawCustomerValue: monthlySignups, valueType: 'number' },
-    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: formatPctImprovementRel(pctFraudulentSignups, forterFraudPct * 100), forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
+    { formula: 'b', label: 'Percent of fraudulent sign-ups (e.g. duplicate) (%)', customerInput: fmtPct(pctFraudulentSignups), forterImprovement: formatPctImprovementRel(pctFraudulentSignups, forterFraudPct * 100), forterOutcome: fmtPct(forterFraudPct * 100), editableCustomerField: 'pctFraudulentSignups', rawCustomerValue: pctFraudulentSignups, editableForterField: 'forterFraudulentSignupReduction', rawForterValue: forterFraudPct * 100, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Estimated duplicate accounts annually (#)', customerInput: fmt(Math.round(custDuplicateAccounts)), forterImprovement: fmt(Math.round(forterDuplicateAccounts - custDuplicateAccounts)), forterOutcome: fmt(Math.round(forterDuplicateAccounts)), isCalculation: true },
     { formula: 'd', label: 'Number of digital communications per year to users (#)', customerInput: fmt(numDigitalCommunicationsPerYear), forterImprovement: '', forterOutcome: fmt(numDigitalCommunicationsPerYear), editableCustomerField: 'numDigitalCommunicationsPerYear', rawCustomerValue: numDigitalCommunicationsPerYear, valueType: 'number' },
     { formula: 'e', label: 'Average cost per outreach (email, SMS) ($)', customerInput: fmtCur(avgCostPerOutreach), forterImprovement: '', forterOutcome: fmtCur(avgCostPerOutreach), editableCustomerField: 'avgCostPerOutreach', rawCustomerValue: avgCostPerOutreach, valueType: 'currency' },
@@ -1764,7 +1771,7 @@ export function calculateChallenge14_15(inputs: Challenge14_15Inputs): Challenge
 
   const calculator3Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Annual number of sign-ups (#)', customerInput: fmt(Math.round(annualSignups)), forterImprovement: '', forterOutcome: fmt(Math.round(annualSignups)), editableCustomerField: 'monthlySignups', rawCustomerValue: monthlySignups, valueType: 'number' },
-    { formula: 'b', label: '% of new accounts going through KYC (%)', customerInput: fmtPct(pctAccountsGoingThroughKYC), forterImprovement: formatPctImprovementRel(pctAccountsGoingThroughKYC, forterKYCPct * 100), forterOutcome: fmtPct(forterKYCPct * 100), editableCustomerField: 'pctAccountsGoingThroughKYC', rawCustomerValue: pctAccountsGoingThroughKYC, editableForterField: 'forterKYCReduction', rawForterValue: forterKYCPct * 100, valueType: 'percent', footnote: 'forter-outcome-from-reduction' },
+    { formula: 'b', label: '% of new accounts going through KYC (%)', customerInput: fmtPct(pctAccountsGoingThroughKYC), forterImprovement: formatPctImprovementRel(pctAccountsGoingThroughKYC, forterKYCPct * 100), forterOutcome: fmtPct(forterKYCPct * 100), editableCustomerField: 'pctAccountsGoingThroughKYC', rawCustomerValue: pctAccountsGoingThroughKYC, editableForterField: 'forterKYCReduction', rawForterValue: forterKYCPct * 100, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Annual number of KYC checks (#)', customerInput: fmt(Math.round(custKYCChecks)), forterImprovement: fmt(Math.round(forterKYCChecks - custKYCChecks)), forterOutcome: fmt(Math.round(forterKYCChecks)), isCalculation: true },
     { formula: 'd', label: 'Average KYC cost per new account ($)', customerInput: fmtCur(avgKYCCostPerAccount), forterImprovement: '', forterOutcome: fmtCur(avgKYCCostPerAccount), editableCustomerField: 'avgKYCCostPerAccount', rawCustomerValue: avgKYCCostPerAccount, valueType: 'currency' },
     { formula: 'e = -c*d', label: 'KYC costs ($)', customerInput: fmtCur(custKYCCost), forterImprovement: fmtCur(kycImprovement), forterOutcome: fmtCur(forterKYCCost), valueDriver: 'cost', isCalculation: true },

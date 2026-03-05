@@ -167,9 +167,9 @@ export const EditableCalculatorDisplay = ({
         }
       } else if (editingCell.type === 'forter' && row.editableForterField && onForterFieldChange) {
         // Handle special case: Forter outcome is calculated from reduction percentage
-        // When user edits the outcome, calculate the corresponding reduction
-        // This applies to 'forter-outcome-from-reduction' and 'abuse-benchmark-outcome' footnotes
-        if ((row.footnote === 'forter-outcome-from-reduction' || row.footnote === 'abuse-benchmark-outcome') && row.rawCustomerValue !== undefined && formData && forterKPIs) {
+        // When user edits the outcome, calculate the corresponding reduction (e.g. forterFraudulentSignupReduction, forterKYCReduction)
+        const isOutcomeFromReduction = row.editableForterField === 'forterFraudulentSignupReduction' || row.editableForterField === 'forterKYCReduction' || row.footnote === 'abuse-benchmark-outcome';
+        if (isOutcomeFromReduction && row.rawCustomerValue !== undefined && formData && forterKPIs) {
           const customerValue = row.rawCustomerValue;
           const forterOutcomePct = numValue; // User entered the Forter outcome percentage
           

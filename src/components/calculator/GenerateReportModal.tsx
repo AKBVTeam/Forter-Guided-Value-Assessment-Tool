@@ -100,9 +100,12 @@ function GenerateReportModalWithGoogle({
           formData,
           subset.segmentData,
           subset.totalRows,
-          typeof caseStudySourcePresentationId === "string" && caseStudySourcePresentationId.trim()
-            ? { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }
-            : undefined
+          {
+            ...(typeof caseStudySourcePresentationId === "string" && caseStudySourcePresentationId.trim()
+              ? { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }
+              : {}),
+            ...(subset.funnelSlide && { funnelSlide: subset.funnelSlide }),
+          }
         ),
         ...(customerLogoUrl ? { customerLogoUrl } : {}),
       };

@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowRight,
   ArrowUpRight,
+  BadgeDollarSign,
   Ban,
   Building,
   Camera,
@@ -35,7 +36,9 @@ import {
   Zap,
   Loader2,
   Lock,
+  Mail,
   ChevronLeft,
+  DollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -127,6 +130,504 @@ interface ValueDriver {
   performanceHighlight?: PerformanceHighlight;
   sourceUrl?: string;
   isTBD?: boolean; // True when challenge is selected but inputs are insufficient
+}
+
+/** Format ticket count with no decimal places */
+function fmtTickets(n: number) {
+  return Math.round(n).toLocaleString('en-US');
+}
+
+/** Generate evenly spaced Y-axis ticks from 0 to a nice ceiling >= max (for bar charts) */
+function getEqualYAxisTicks(max: number, tickCount: number = 5): number[] {
+  if (!Number.isFinite(max) || max <= 0) return [0, 1];
+  const cap = max <= 1
+    ? Math.ceil(max * 10) / 10
+    : max <= 100
+      ? Math.ceil(max / 20) * 20
+      : Math.ceil(max / 50) * 50;
+  const step = cap / (tickCount - 1);
+  return Array.from({ length: tickCount }, (_, i) => Math.round(i * step * 100) / 100);
+}
+
+/** Visual tab content for c9-cs-opex (Reduced CS ticket handling): ticket flow bars + cost impact cards + benchmark callout */
+function CSOpExVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const row = (formula: string) => rows.find((r) => r.formula === formula || r.formula?.startsWith(`${formula} `) || r.formula?.startsWith(`${formula}=`));
+  const ticketsCurrent = (row('c')?.rawCustomerValue ?? 0) as number;
+  const ticketsForter = (row('c')?.rawForterValue ?? 0) as number;
+  const ticketsElim = ticketsCurrent - ticketsForter;
+  const yMax = Math.max(ticketsCurrent, ticketsForter, 1) * 1.15;
+  const chartData = [
+    { name: 'Current', value: ticketsCurrent, fill: '#94a3b8' },
+    { name: 'With Forter', value: ticketsForter, fill: '#22c55e' },
+  ];
+  const reductionPct = ticketsCurrent > 0 ? `${Math.round((ticketsElim / ticketsCurrent) * 100)}%` : (row('b')?.forterOutcome ?? '0%');
+  const annualSaving = row('e')?.forterImprovement ?? '—';
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+      {/* Left — Bar chart */}
+      <div className="flex flex-col min-h-0 md:border-r md:border-border/60 md:pr-6">
+        <h4 className="text-sm font-semibold text-muted-foreground mb-3">Refund tickets reaching CS: current vs. with Forter</h4>
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={chartData} margin={{ top: 40, right: 40, left: 20, bottom: 8 }} barCategoryGap="50%" barGap={4}>
+            <ReferenceLine y={0} stroke="hsl(var(--border))" />
+            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 13, fontWeight: 600 }} />
+            <YAxis hide domain={[0, yMax]} />
+            <Bar dataKey="value" barSize={56} radius={[4, 4, 0, 0]} isAnimationActive={false}>
+              {chartData.map((entry, i) => (
+                <Cell key={i} fill={entry.fill} />
+              ))}
+              <LabelList
+                position="top"
+                content={(props: unknown) => {
+                  const { x, y, width, value } = (props as { x?: number; y?: number; width?: number; value?: number });
+                  const formatted = fmtTickets(Number(value));
+                  return (
+                    <text
+                      x={Number(x) + Number(width) / 2}
+                      y={Number(y) - 8}
+                      textAnchor="middle"
+                      fontSize={13}
+                      fontWeight={600}
+                      fill={value === ticketsForter ? '#16a34a' : '#475569'}
+                    >
+                      {formatted}
+                    </text>
+                  );
+                }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <div className="flex justify-center mt-2">
+          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+            {reductionPct} reduction in refund ticket volumes
+          </Badge>
+        </div>
+      </div>
+      {/* Right — Value Impact (heading + three cards) */}
+      <div className="flex flex-col gap-4 min-h-0">
+        <h4 className="text-sm font-semibold text-muted-foreground">Value Impact</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1 min-h-0">
+          <Card className="w-full h-28 flex flex-col justify-between p-4 rounded-lg border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+            <Zap className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div>
+              <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{fmtTickets(ticketsElim)}</div>
+              <div className="text-xs text-muted-foreground">tickets eliminated</div>
+            </div>
+          </Card>
+          <Card className="w-full h-28 flex flex-col justify-between p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+            <DollarSign className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+            <div>
+              <div className="text-xl font-bold text-slate-800 dark:text-slate-200">{row('d')?.customerInput ?? '—'}</div>
+              <div className="text-xs text-muted-foreground">per CS contact</div>
+            </div>
+          </Card>
+          <Card className="w-full h-28 flex flex-col justify-between p-4 rounded-lg border bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+            <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <div>
+              <div className="text-[1.25rem] font-bold text-green-700 dark:text-green-300">{annualSaving}</div>
+              <div className="text-xs text-muted-foreground">annual CS OpEx saving</div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Parse currency string (e.g. "£253,385") to number */
+function parseCurrencyFromRow(s: string | undefined): number {
+  if (s == null || s === '—') return 0;
+  const numStr = String(s).replace(/[^\d.-]/g, '');
+  const n = parseFloat(numStr);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Visual tab content for c12-ato-opex (ATO protection OpEx): chart + Value Impact cards */
+function ATOOpExVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const rowC = rows.find((r) => r.formula === 'c' || r.formula?.startsWith('c ='));
+  const rowD = rows.find((r) => r.formula === 'd');
+  const rowE = rows.find((r) => r.formula === 'e' || r.formula?.startsWith('e ='));
+  const costRow = rows.find((r) => r.valueDriver === 'cost');
+  const atoAttempts = (rowC?.rawCustomerValue ?? 0) as number;
+  const atoSucceed = (rowE?.rawCustomerValue ?? 0) as number;
+  const atoForter = (rowE?.rawForterValue ?? 0) as number;
+  const atoBlocked = atoAttempts - atoForter;
+  const yMax = Math.max(atoSucceed, atoForter, 1) * 1.15;
+  const chartData = [
+    { name: 'Current', value: atoSucceed, fill: '#94a3b8' },
+    { name: 'With Forter', value: atoForter, fill: '#22c55e' },
+  ];
+  const catchRatePct = (rowD?.rawForterValue ?? 0) as number;
+  const annualOpExSaving = parseCurrencyFromRow(costRow?.forterImprovement);
+  const avgAppeasementPerClaim = atoBlocked > 0 ? annualOpExSaving / atoBlocked : 0;
+  const fmtCur = createCurrencyFormatter(currencyCode);
+  return (
+    <div className="flex gap-6 items-start">
+      {/* Left — Chart */}
+      <div className="flex-1 min-w-0 md:border-r md:border-border/60 md:pr-6">
+        <h4 className="text-sm font-semibold text-muted-foreground mb-3">Successful ATO events: current vs. with Forter</h4>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={chartData} margin={{ top: 40, right: 20, left: 20, bottom: 8 }} barCategoryGap="50%" barGap={4}>
+            <ReferenceLine y={0} stroke="hsl(var(--border))" />
+            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 13, fontWeight: 600 }} />
+            <YAxis hide domain={[0, yMax]} />
+            <Bar dataKey="value" barSize={56} radius={[4, 4, 0, 0]} isAnimationActive={false}>
+              {chartData.map((entry, i) => (
+                <Cell key={i} fill={entry.fill} />
+              ))}
+              <LabelList
+                position="top"
+                content={(props: unknown) => {
+                  const { x, y, width, value } = (props as { x?: number; y?: number; width?: number; value?: number });
+                  return (
+                    <text
+                      x={Number(x) + Number(width) / 2}
+                      y={Number(y) - 8}
+                      textAnchor="middle"
+                      fontSize={13}
+                      fontWeight={600}
+                      fill={value === atoForter ? '#16a34a' : '#475569'}
+                    >
+                      {Number(value).toLocaleString('en-US')}
+                    </text>
+                  );
+                }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <div className="flex justify-center mt-2">
+          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+            {Math.round(catchRatePct)}% catch rate on ATO attempts
+          </Badge>
+        </div>
+      </div>
+      {/* Right — Value Impact cards (equal width with chart) */}
+      <div className="flex-1 min-w-0 flex flex-col gap-3">
+        <p className="text-sm font-semibold text-muted-foreground mb-3">Value Impact</p>
+        <Card className="rounded-lg border p-4 flex flex-col gap-1 h-24 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+          <Shield className="w-5 h-5 text-slate-500" />
+          <div className="text-slate-700 dark:text-slate-300 font-bold text-xl">{atoBlocked.toLocaleString('en-US')}</div>
+          <div className="text-xs text-muted-foreground">ATO events blocked</div>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-col gap-1 h-24 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+          <Ban className="w-5 h-5 text-blue-500" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex flex-col gap-1 cursor-help">
+                <div className="text-blue-700 dark:text-blue-300 font-bold text-xl">{atoBlocked > 0 ? fmtCur(avgAppeasementPerClaim) : '—'}</div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  Estimated appeasement cost per claim
+                  <Info className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                </div>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs p-3">
+              <p className="font-medium mb-1">How this is calculated</p>
+              <p className="text-muted-foreground text-sm">
+                Annual OpEx saving ÷ ATO events blocked = estimated average appeasement cost per claim avoided.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-col gap-1 h-24 bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+          <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+          <div className="text-green-700 dark:text-green-300 font-bold text-2xl">{costRow?.forterImprovement ?? '—'}</div>
+          <div className="text-xs text-muted-foreground">annual OpEx saving</div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab content for c14-marketing: signup population dot grids + Value Impact cards */
+function MarketingBudgetVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const rowA = rows.find((r) => r.formula === 'a');
+  const rowB = rows.find((r) => r.formula === 'b');
+  const rowC = rows.find((r) => r.formula === 'c' || r.formula?.startsWith('c ='));
+  const rowD = rows.find((r) => r.formula === 'd');
+  const rowE = rows.find((r) => (r.formula === 'e' || r.formula?.startsWith('e =')) && r.valueDriver === 'cost');
+  const monthlySignups = (rowA?.rawCustomerValue ?? 0) as number;
+  const totalSignups = monthlySignups * 12;
+  const rawB = (rowB?.rawCustomerValue ?? 0) as number;
+  const fraudPctCurrent = rawB <= 1 && rawB >= 0 ? rawB * 100 : rawB;
+  const fraudPctForter = (rowB?.rawForterValue ?? 0) as number;
+  const dupsCurrent = (rowC?.rawCustomerValue ?? 0) as number;
+  const dupsForter = (rowC?.rawForterValue ?? 0) as number;
+  const dupsBlocked = dupsCurrent - dupsForter;
+  // Pill matches "Percent of fraudulent sign-ups" Forter improvement (row B): relative reduction e.g. 95%
+  const improvementStr = rowB?.forterImprovement;
+  const improvementNum = improvementStr != null ? parseFloat(String(improvementStr).replace(/[^0-9.-]/g, '')) : NaN;
+  const reductionPct = Number.isFinite(improvementNum) ? Math.round(Math.abs(improvementNum)) : (fraudPctCurrent > 0 ? Math.round(((fraudPctCurrent - fraudPctForter) / fraudPctCurrent) * 100) : 0);
+  const bonusValue = (rowD?.rawCustomerValue ?? 0) as number;
+  const fraudDotsCount = Math.round(fraudPctCurrent);
+  const forterDotsCount = Math.round(fraudPctForter);
+  const blockedDotsCount = Math.min(100, Math.max(0, fraudDotsCount - forterDotsCount));
+  const residualDotsCount = Math.min(100, forterDotsCount);
+  const dots = Array.from({ length: 100 }, (_, i) => i);
+  return (
+    <div className="flex gap-6 items-start">
+      {/* Left — Waffle/population grids */}
+      <div className="flex-1 min-w-0 md:border-r md:border-border/60 md:pr-6">
+        <h4 className="text-sm font-semibold text-muted-foreground mb-3">Your signup population — fraudulent accounts highlighted</h4>
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Today</p>
+            <div className="grid grid-cols-10 gap-1">
+              {dots.map((i) => (
+                <div key={i} className={cn('w-5 h-5 rounded-full', i < fraudDotsCount ? 'bg-red-400' : 'bg-slate-200')} />
+              ))}
+            </div>
+            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full bg-red-400" />
+                Fraudulent ({fraudPctCurrent.toFixed(1)}%)
+              </span>
+              <span className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full bg-slate-200" />
+                Legitimate
+              </span>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">With Forter</p>
+            <div className="grid grid-cols-10 gap-1">
+              {dots.map((i) => {
+                let bg = 'bg-slate-200';
+                if (i < residualDotsCount) bg = 'bg-amber-300';
+                else if (i < residualDotsCount + blockedDotsCount) bg = 'bg-green-400';
+                return <div key={i} className={cn('w-5 h-5 rounded-full', bg)} />;
+              })}
+            </div>
+            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full bg-green-400" />
+                Blocked by Forter
+              </span>
+              <span className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full bg-amber-300" />
+                Residual ({fraudPctForter.toFixed(1)}%)
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-center mt-3">
+          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+            {reductionPct}% reduction in unwanted duplicate accounts
+          </Badge>
+        </div>
+      </div>
+      {/* Right — Value Impact cards */}
+      <div className="flex-1 min-w-0 flex flex-col gap-3">
+        <p className="text-sm font-semibold text-muted-foreground mb-3">Value Impact</p>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+          <Ban className="w-6 h-6 shrink-0 text-slate-500" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-slate-700 dark:text-slate-300 font-bold text-xl">{(rowC?.forterImprovement != null ? (() => { const n = parseInt(String(rowC.forterImprovement).replace(/[^0-9-]/g, ''), 10); return Number.isFinite(n) ? Math.abs(n) : dupsBlocked; })() : dupsBlocked).toLocaleString('en-US')}</div>
+            <div className="text-xs text-muted-foreground">duplicate accounts blocked</div>
+          </div>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+          <BadgeDollarSign className="w-6 h-6 shrink-0 text-amber-500" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-amber-700 dark:text-amber-300 font-bold text-xl">{rowD?.customerInput ?? '—'}</div>
+            <div className="text-xs text-muted-foreground">avg bonus paid per fake signup</div>
+          </div>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+          <TrendingUp className="w-6 h-6 shrink-0 text-green-600 dark:text-green-400" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-green-700 dark:text-green-300 font-bold text-2xl">{rowE?.forterImprovement ?? '—'}</div>
+            <div className="text-xs text-muted-foreground">marketing budget protected</div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab content for c14-reactivation: multiplication chain + Value Impact cards */
+function ReactivationVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const rowA = rows.find((r) => r.formula === 'a');
+  const rowB = rows.find((r) => r.formula === 'b');
+  const rowC = rows.find((r) => r.formula === 'c' || r.formula?.startsWith('c ='));
+  const rowD = rows.find((r) => r.formula === 'd');
+  const rowE = rows.find((r) => r.formula === 'e');
+  const rowF = rows.find((r) => (r.formula === 'f' || r.formula?.startsWith('f =')) && r.valueDriver === 'cost');
+
+  const parseNum = (raw: number | undefined, display: string | undefined): number => {
+    if (raw !== undefined && raw !== 0) return Number(raw);
+    if (!display) return 0;
+    const cleaned = String(display).replace(/[^0-9.-]/g, '');
+    return parseFloat(cleaned) || 0;
+  };
+
+  const dupsCurrent = parseNum(rowC?.rawCustomerValue as number | undefined, rowC?.customerInput);
+  const dupsForter = parseNum(rowC?.rawForterValue as number | undefined, rowC?.forterOutcome);
+  const dupsBlocked = dupsCurrent - dupsForter;
+  const commsPerYear = parseNum(rowD?.rawCustomerValue as number | undefined, rowD?.customerInput);
+  const wastedCommsTotal = dupsCurrent * commsPerYear;
+  const wastedCommsSaved = dupsBlocked * commsPerYear;
+
+  const boxClass = "w-36 min-w-[9rem] h-28 flex-shrink-0 flex flex-col justify-between p-3 rounded-lg border";
+  const connectorClass = "rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-sm font-bold self-center shrink-0";
+
+  return (
+    <div className="flex gap-6 items-start">
+      <div className="flex-1 min-w-0 md:border-r md:border-border/60 md:pr-6">
+        <h4 className="text-sm font-semibold text-muted-foreground mb-3">How re-activation waste is calculated</h4>
+        <div className="flex items-stretch gap-2 flex-wrap">
+          <div className={cn(boxClass, "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700")}>
+            <span className="text-xs text-muted-foreground">Fake accounts today</span>
+            <span className="text-xl font-bold text-slate-700 dark:text-slate-300">{rowC?.customerInput ?? '—'}</span>
+            <span className="text-xs text-muted-foreground">→ {rowC?.forterOutcome ?? '—'} with Forter</span>
+          </div>
+          <span className={connectorClass}>×</span>
+          <div className={cn(boxClass, "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700")}>
+            <span className="text-xs text-muted-foreground">Comms per year</span>
+            <span className="text-xl font-bold text-slate-700 dark:text-slate-300">{rowD?.customerInput ?? '—'}</span>
+            <span className="text-xs text-muted-foreground">emails / SMS per account</span>
+          </div>
+          <span className={connectorClass}>×</span>
+          <div className={cn(boxClass, "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800")}>
+            <span className="text-xs text-muted-foreground">Cost per outreach</span>
+            <span className="text-xl font-bold text-amber-700 dark:text-amber-300">{rowE?.customerInput ?? '—'}</span>
+            <span className="text-xs text-muted-foreground">per email / SMS</span>
+          </div>
+          <span className={connectorClass}>=</span>
+          <div className={cn(boxClass, "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800")}>
+            <span className="text-xs text-muted-foreground">Wasted annually (today)</span>
+            <span className="text-xl font-bold text-red-600 dark:text-red-400">{rowF?.customerInput ?? '—'}</span>
+            <span className="text-xs text-muted-foreground">spent on fake accounts</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mt-4 p-3 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 rounded-lg">
+          <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-green-800 dark:text-green-300">95% of fake accounts eliminated</p>
+          </div>
+        </div>
+      </div>
+      <div className="w-64 shrink-0 flex flex-col gap-3">
+        <p className="text-sm font-semibold text-muted-foreground mb-3">Value Impact</p>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+          <Ban className="w-6 h-6 shrink-0 text-slate-500" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-slate-700 dark:text-slate-300 font-bold text-xl">
+              {dupsBlocked > 0 ? dupsBlocked.toLocaleString('en-US') : (rowC?.forterImprovement ?? '—')}
+            </div>
+            <div className="text-xs text-muted-foreground">fake accounts eliminated</div>
+          </div>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+          <Mail className="w-6 h-6 shrink-0 text-amber-500" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-amber-700 dark:text-amber-300 font-bold text-xl">
+              {wastedCommsSaved > 0 ? wastedCommsSaved.toLocaleString('en-US') : `~${dupsBlocked.toLocaleString('en-US')} × ${rowD?.customerInput ?? '—'}`}
+            </div>
+            <div className="text-xs text-muted-foreground">outreach messages eliminated</div>
+          </div>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+          <TrendingUp className="w-6 h-6 shrink-0 text-green-600 dark:text-green-400" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-green-700 dark:text-green-300 font-bold text-2xl">{rowF?.forterImprovement ?? '—'}</div>
+            <div className="text-xs text-muted-foreground">re-activation spend saved</div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab content for c14-kyc: KYC funnel + Value Impact cards */
+function KYCVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const rowA = rows.find((r) => r.formula === 'a');
+  const rowB = rows.find((r) => r.formula === 'b');
+  const rowC = rows.find((r) => r.formula === 'c' || r.formula?.startsWith('c ='));
+  const rowD = rows.find((r) => r.formula === 'd');
+  const rowE = rows.find((r) => (r.formula === 'e' || r.formula?.startsWith('e =')) && r.valueDriver === 'cost');
+
+  const parseNum = (raw: number | undefined, display: string | undefined): number => {
+    if (raw !== undefined && raw !== 0) return Number(raw);
+    if (!display) return 0;
+    return parseFloat(String(display).replace(/[^0-9.-]/g, '')) || 0;
+  };
+
+  const totalSignups = parseNum(rowA?.rawCustomerValue as number | undefined, rowA?.customerInput);
+  const kycPctCurrent = parseNum(rowB?.rawCustomerValue as number | undefined, rowB?.customerInput);
+  const kycPctForter = parseNum(rowB?.rawForterValue as number | undefined, rowB?.forterOutcome);
+  const checksCurrent = parseNum(rowC?.rawCustomerValue as number | undefined, rowC?.customerInput);
+  const checksForter = parseNum(rowC?.rawForterValue as number | undefined, rowC?.forterOutcome);
+  const checksElim = checksCurrent - checksForter;
+  const reductionPct = kycPctCurrent > 0 ? Math.round((1 - kycPctForter / kycPctCurrent) * 100) : 0;
+
+  const heightToday = Math.max((kycPctCurrent / 100) * 220, 56);
+  const heightForter = Math.max((kycPctForter / 100) * 220, 56);
+  const clipPath = 'polygon(10% 0%, 90% 0%, 75% 100%, 25% 100%)';
+
+  return (
+    <div className="grid grid-cols-2 gap-6 items-start">
+      <div className="min-w-0 md:border-r md:border-border/60 md:pr-6">
+        <h4 className="text-sm font-semibold text-muted-foreground mb-0">Accounts routed to KYC screening</h4>
+        <div className="grid grid-cols-2 gap-6 items-end mt-4">
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm font-semibold text-center">Today</p>
+            <div className="w-full max-w-[220px] mx-auto relative" style={{ height: `${heightToday}px` }}>
+              <div className="absolute inset-0 bg-red-300 rounded-sm flex flex-col items-center justify-center" style={{ clipPath }}>
+                <span className="font-bold text-white text-2xl">{kycPctCurrent.toFixed(0)}%</span>
+                <span className="text-white text-sm opacity-80">screened</span>
+              </div>
+            </div>
+            <p className="text-red-600 dark:text-red-400 font-semibold">{checksCurrent.toLocaleString('en-US')} checks</p>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm font-semibold text-center">With Forter</p>
+            <div className="w-full max-w-[220px] mx-auto relative" style={{ height: `${heightForter}px` }}>
+              <div className="absolute inset-0 bg-green-400 rounded-sm flex flex-col items-center justify-center" style={{ clipPath }}>
+                <span className="font-bold text-white text-2xl">{kycPctForter.toFixed(0)}%</span>
+                <span className="text-white text-sm opacity-80">screened</span>
+              </div>
+            </div>
+            <p className="text-green-700 dark:text-green-400 font-semibold">{checksForter.toLocaleString('en-US')} checks</p>
+          </div>
+        </div>
+        <div className="col-span-2 flex justify-center mt-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 rounded-full text-sm font-medium">
+            {checksElim.toLocaleString('en-US')} unnecessary KYC checks eliminated ({reductionPct}% reduction)
+          </div>
+        </div>
+        <p className="text-center text-xs text-muted-foreground mt-2">
+          {checksElim.toLocaleString('en-US')} checks × {rowD?.customerInput ?? '—'} per check = {rowE?.forterImprovement ?? '—'} saved
+        </p>
+      </div>
+      <div className="min-w-0 flex flex-col gap-3">
+        <p className="text-sm font-semibold text-muted-foreground mb-3">Value Impact</p>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+          <UserCheck className="w-6 h-6 shrink-0 text-slate-500" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-slate-700 dark:text-slate-300 font-bold text-xl">{kycPctCurrent.toFixed(0)}% → {kycPctForter.toFixed(0)}%</div>
+            <div className="text-xs text-muted-foreground">accounts requiring KYC</div>
+          </div>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+          <ClipboardList className="w-6 h-6 shrink-0 text-red-400" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-red-700 dark:text-red-300 font-bold text-xl">{checksElim > 0 ? checksElim.toLocaleString('en-US') : (rowC?.forterImprovement ?? '—')}</div>
+            <div className="text-xs text-muted-foreground">KYC checks eliminated</div>
+          </div>
+        </Card>
+        <Card className="rounded-lg border p-4 flex flex-row gap-3 items-center h-24 bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800">
+          <TrendingUp className="w-6 h-6 shrink-0 text-green-600 dark:text-green-400" />
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="text-green-700 dark:text-green-300 font-bold text-2xl">{rowE?.forterImprovement ?? '—'}</div>
+            <div className="text-xs text-muted-foreground">annual KYC spend saved</div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
 }
 
 /** Apply custom benefit/calculator names (custom pathway) to standard drivers */
@@ -249,10 +750,11 @@ export const ValueSummaryOptionA = ({
   const [riskMitigationOpen, setRiskMitigationOpen] = useState(true);
   const [selectedCalculatorId, setSelectedCalculatorId] = useState<string | null>(null);
   const [ebitdaChartModalOpen, setEbitdaChartModalOpen] = useState(false);
-  const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator' | 'funnel' | 'success-stories'>('summary');
+  const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator' | 'funnel' | 'visual' | 'success-stories'>('summary');
   const [funnelViewMode, setFunnelViewMode] = useState<'percent' | 'transactions'>('transactions');
   const [successStoriesViewed, setSuccessStoriesViewed] = useState<Set<string>>(new Set());
   const [funnelViewed, setFunnelViewed] = useState<Set<string>>(new Set());
+  const [visualViewed, setVisualViewed] = useState<Set<string>>(new Set());
   const calculatorDialogRef = useRef<HTMLDivElement>(null);
   const [isCapturingBenefitPdf, setIsCapturingBenefitPdf] = useState(false);
 
@@ -1232,10 +1734,24 @@ export const ValueSummaryOptionA = ({
   const challenge9Results = useMemo(() => {
     if (!isChallenge9Selected) return null;
 
-    // Completed transactions = Transaction attempts × Completion rate (same as payments calculator)
+    // Current eCommerce sales = Net sales ($) from Reduce false declines (c1) or Optimize payment funnel (c245), so it matches the funnel
+    const getNetSalesFromCalc = (res: typeof challenge245Results) => {
+      if (!res?.calculator1) return undefined;
+      if (res.calculator1.customerNetSales != null) return res.calculator1.customerNetSales;
+      const row = res.calculator1.rows?.find((r: { label?: string }) => r.label === 'Net sales ($)');
+      return (row as { rawCustomerValue?: number } | undefined)?.rawCustomerValue;
+    };
+    const netSalesFromC245 = getNetSalesFromCalc(challenge245Results ?? null);
+    const netSalesFromC1 = getNetSalesFromCalc(challenge1Results ?? null);
     const completedCount = getCompletedTransactionCount(formData, isChallenge1Selected, isChallenge245Selected);
     const effectiveAOV = formData.completedAOV ?? ((formData.amerGrossAttempts ?? 0) > 0 ? (formData.amerAnnualGMV ?? 0) / (formData.amerGrossAttempts ?? 1) : 0);
-    const currentEcommerceSales = completedCount * effectiveAOV;
+    const derivedEcommerceSales = completedCount * effectiveAOV;
+    // When a payment calculator is on, use its Net sales only (never derived), so Instant refunds matches 129.9m
+    const currentEcommerceSales = (isChallenge245Selected && netSalesFromC245 != null)
+      ? netSalesFromC245
+      : (isChallenge1Selected && netSalesFromC1 != null)
+        ? netSalesFromC1
+        : derivedEcommerceSales;
 
     const inputs: Challenge9Inputs = {
       currentEcommerceSales,
@@ -1253,7 +1769,7 @@ export const ValueSummaryOptionA = ({
     };
 
     return calculateChallenge9(inputs);
-  }, [isChallenge9Selected, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs]);
+  }, [isChallenge9Selected, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, challenge1Results, challenge245Results]);
 
   // Challenge 12/13: ATO Protection
   const challenge12_13Results = useMemo(() => {
@@ -1355,6 +1871,64 @@ export const ValueSummaryOptionA = ({
       increase: fortTotalRecoveryRate - custTotalRecoveryRate,
     };
   }, [challenge7Results, formData, forterKPIs]);
+
+  // C7 dispute pipeline breakdown for Visual tab (Total chargebacks → Disputed → Won → Recovered)
+  const c7PipelineMetrics = useMemo(() => {
+    if (!challenge7Results) return null;
+    const transactionAttemptsValue = formData.amerAnnualGMV ?? 0;
+    const baseEstFraud = (formData.estFraudChargebackValue !== undefined && formData.estFraudChargebackValue > 0)
+      ? formData.estFraudChargebackValue
+      : transactionAttemptsValue * ((formData.fraudCBRate ?? 0) / 100);
+    const estService = (formData.estServiceChargebackValue !== undefined && formData.estServiceChargebackValue > 0)
+      ? formData.estServiceChargebackValue
+      : transactionAttemptsValue * ((formData.serviceCBRate ?? 0) / 100);
+    const totalCB = baseEstFraud + estService;
+    const fraudDisputeRate = formData.fraudDisputeRate ?? 0;
+    const fraudWinRate = formData.fraudWinRate ?? 0;
+    const serviceDisputeRate = formData.serviceDisputeRate ?? 0;
+    const serviceWinRate = formData.serviceWinRate ?? 0;
+    let fraudDispImprovement = forterKPIs.fraudDisputeRateImprovement ?? 45;
+    if (forterKPIs.fraudDisputeIsAbsolute) {
+      fraudDispImprovement = Math.min(100, forterKPIs.fraudDisputeRateImprovement ?? 45) - fraudDisputeRate;
+    }
+    let fraudWinCh = forterKPIs.fraudWinRateChange ?? -10;
+    if (forterKPIs.fraudWinRateIsAbsolute) {
+      fraudWinCh = Math.min(100, Math.max(0, forterKPIs.fraudWinRateChange ?? 0)) - fraudWinRate;
+    }
+    let servDispImprovement = forterKPIs.serviceDisputeRateImprovement ?? 65;
+    if (forterKPIs.serviceDisputeIsAbsolute) {
+      servDispImprovement = Math.min(100, forterKPIs.serviceDisputeRateImprovement ?? 65) - serviceDisputeRate;
+    }
+    let servWinCh = forterKPIs.serviceWinRateChange ?? -10;
+    if (forterKPIs.serviceWinRateIsAbsolute) {
+      servWinCh = Math.min(100, Math.max(0, forterKPIs.serviceWinRateChange ?? 0)) - serviceWinRate;
+    }
+    const custFraudDisp = baseEstFraud * (fraudDisputeRate / 100);
+    const custFraudWon = custFraudDisp * (fraudWinRate / 100);
+    const fortFraudDisp = fraudCBCoverageEnabled ? 0 : baseEstFraud * Math.min(1, (fraudDisputeRate + fraudDispImprovement) / 100);
+    const fortFraudWon = fraudCBCoverageEnabled ? 0 : fortFraudDisp * Math.max(0, (fraudWinRate + fraudWinCh) / 100);
+    const custServDisp = estService * (serviceDisputeRate / 100);
+    const custServWon = custServDisp * (serviceWinRate / 100);
+    const fortServDisp = estService * Math.min(1, (serviceDisputeRate + servDispImprovement) / 100);
+    const fortServWon = fortServDisp * Math.max(0, (serviceWinRate + servWinCh) / 100);
+    // When fraud chargeback coverage is on, Visual tab shows service chargebacks only (no fraud CB in pipeline)
+    if (fraudCBCoverageEnabled) {
+      return {
+        totalCB: estService,
+        custDisputed: custServDisp,
+        fortDisputed: fortServDisp,
+        custWon: custServWon,
+        fortWon: fortServWon,
+      };
+    }
+    return {
+      totalCB,
+      custDisputed: custFraudDisp + custServDisp,
+      fortDisputed: fortFraudDisp + fortServDisp,
+      custWon: custFraudWon + custServWon,
+      fortWon: fortFraudWon + fortServWon,
+    };
+  }, [challenge7Results, formData, forterKPIs, fraudCBCoverageEnabled]);
 
   // Build drivers with performance highlights
   const businessGrowthDrivers: ValueDriver[] = useMemo(() => {
@@ -4100,7 +4674,7 @@ export const ValueSummaryOptionA = ({
 
       {/* EBITDA Attribution – full chart modal */}
       <Dialog open={ebitdaChartModalOpen} onOpenChange={setEbitdaChartModalOpen}>
-        <DialogContent className="!max-w-none w-[min(95vw,64rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-6xl w-[min(100%,min(72rem,calc(100vw-2rem)))] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Forter Annual EBITDA Attribution</DialogTitle>
             <DialogDescription>
@@ -4189,7 +4763,7 @@ export const ValueSummaryOptionA = ({
           }
         }}
       >
-        <DialogContent ref={calculatorDialogRef} className="!max-w-none w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent ref={calculatorDialogRef} className="max-w-6xl w-[min(100%,min(72rem,calc(100vw-2rem)))] max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-0">
             <div className="flex items-center justify-between pr-8 w-full">
               <div>
@@ -4204,7 +4778,14 @@ export const ValueSummaryOptionA = ({
                 const captureBenefitPdf = async () => {
                   setIsCapturingBenefitPdf(true);
                   const hasFunnel = selectedCalculatorId === 'c245-revenue';
-                  const tabsInOrder = (hasCaseStudy(selectedCalculatorId ?? '') ? (hasFunnel ? ['summary', 'inputs', 'calculator', 'funnel', 'success-stories'] : ['summary', 'inputs', 'calculator', 'success-stories']) : (hasFunnel ? ['summary', 'inputs', 'calculator', 'funnel'] : ['summary', 'inputs', 'calculator'])) as const;
+                  const hasVisual = ['c1-revenue', 'c1-chargeback', 'c245-chargeback', 'c3-review', 'c7-disputes', 'c7-opex', 'c9-cs-opex', 'c9-cx-uplift', 'c12-ato-opex'].includes(selectedCalculatorId ?? '');
+                  const tabsInOrder = (() => {
+                    const tabs: string[] = ['summary', 'inputs', 'calculator'];
+                    if (hasFunnel) tabs.push('funnel');
+                    if (hasVisual) tabs.push('visual');
+                    if (hasCaseStudy(selectedCalculatorId ?? '')) tabs.push('success-stories');
+                    return tabs as const;
+                  })();
                   const prevTab = calculatorModalTab;
                   try {
                     const html2canvas = (await import('html2canvas')).default;
@@ -4689,8 +5270,8 @@ export const ValueSummaryOptionA = ({
                 );
               })()}
               </div>
-              {/* Deduplication toggle - show for GMV uplift calculators on calculator or funnel tab */}
-              {(calculatorModalTab === 'calculator' || calculatorModalTab === 'funnel') && (selectedCalculatorId === "c1-revenue" || selectedCalculatorId === "c245-revenue") && (
+              {/* Deduplication toggle - show for GMV uplift calculators on calculator, funnel, or visual tab */}
+              {(calculatorModalTab === 'calculator' || calculatorModalTab === 'funnel' || calculatorModalTab === 'visual') && (selectedCalculatorId === "c1-revenue" || selectedCalculatorId === "c245-revenue") && (
                 <div className="flex items-center gap-3 ml-auto">
                   <div className="flex items-center gap-2">
                     <Switch
@@ -4790,7 +5371,7 @@ export const ValueSummaryOptionA = ({
                                       ) : null}
                                       <tr className="bg-green-50 dark:bg-green-950 font-semibold">
                                         <td className="px-2 py-1 text-muted-foreground">{breakdown.recoveredOrderAOV != null ? "i = e×h" : "g = e×f"}</td>
-                                        <td className="px-2 py-1">Deduplication GMV reduction (applied to value of approved transactions)</td>
+                                        <td className="px-2 py-1">Deduplication GMV (added to value of approved transactions)</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
                                       </tr>
                                     </>
@@ -4842,7 +5423,7 @@ export const ValueSummaryOptionA = ({
                                       ) : null}
                                       <tr className="bg-green-50 dark:bg-green-950 font-semibold">
                                         <td className="px-2 py-1 text-muted-foreground">{breakdown.recoveredOrderAOV != null ? "i = e×h" : "g = e×f"}</td>
-                                        <td className="px-2 py-1">Deduplication GMV reduction (applied to value of approved transactions)</td>
+                                        <td className="px-2 py-1">Deduplication GMV (added to value of approved transactions)</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
                                       </tr>
                                     </>
@@ -4903,10 +5484,11 @@ export const ValueSummaryOptionA = ({
           
           {/* Tabs for Benefit Summary vs Calculator */}
           <Tabs value={calculatorModalTab} onValueChange={(v) => {
-              setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'funnel' | 'success-stories');
+              setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'funnel' | 'visual' | 'success-stories');
               const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
               if (v === 'success-stories' && calcId) setSuccessStoriesViewed(prev => new Set(prev).add(calcId));
               if (v === 'funnel' && calcId) setFunnelViewed(prev => new Set(prev).add(calcId));
+              if (v === 'visual' && calcId) setVisualViewed(prev => new Set(prev).add(calcId));
             }} className="w-full">
             {/* Show all 3 tabs (Benefit Summary, Inputs, Calculator) in both Guided and Custom mode when calculator has required inputs */}
             {(() => {
@@ -4921,8 +5503,9 @@ export const ValueSummaryOptionA = ({
               // Calculate number of visible tabs (Benefit Summary, optional Inputs, optional Calculator, Success Story)
               const showSuccessStoriesTab = hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '');
               const showFunnelTab = showCalculatorTab && selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0;
-              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + (showFunnelTab ? 1 : 0) + 1;
-              const gridCols = tabCount === 6 ? 'grid-cols-6' : tabCount === 5 ? 'grid-cols-5' : tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
+              const showVisualTab = showCalculatorTab && (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc');
+              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + (showFunnelTab ? 1 : 0) + (showVisualTab ? 1 : 0) + 1;
+              const gridCols = tabCount === 7 ? 'grid-cols-7' : tabCount === 6 ? 'grid-cols-6' : tabCount === 5 ? 'grid-cols-5' : tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
               
               return (
                 <TabsList className={`grid w-full max-w-2xl ${gridCols}`}>
@@ -4944,8 +5527,16 @@ export const ValueSummaryOptionA = ({
                   )}
                   {showFunnelTab && (
                     <TabsTrigger value="funnel" className="gap-2">
-                      Funnel
+                      Visual
                       {funnelViewed.has(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-green-500" />
+                      )}
+                    </TabsTrigger>
+                  )}
+                  {showVisualTab && (
+                    <TabsTrigger value="visual" className="gap-2">
+                      Visual
+                      {visualViewed.has(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
                         <CheckCircle2 className="w-4 h-4 shrink-0 text-green-500" />
                       )}
                     </TabsTrigger>
@@ -5071,7 +5662,7 @@ export const ValueSummaryOptionA = ({
                 const isSegmentationEnabled = modalContext.modalFormData.segmentationEnabled && (modalContext.modalFormData.segments?.filter(s => s.enabled).length ?? 0) > 0;
                 
                 // Show fraud coverage toggle for chargeback calculators and Challenge 1 (reduce false declines / reduce fraud chargebacks)
-                const showFraudCoverageToggle = sourceId === "c1-revenue" || sourceId === "c1-chargeback" || sourceId === "c245-chargeback" || sourceId === "c7-disputes";
+                const showFraudCoverageToggle = sourceId === "c1-chargeback" || sourceId === "c245-chargeback" || sourceId === "c7-disputes";
                 
                 return (
                   <div className="space-y-4">
@@ -5351,7 +5942,7 @@ export const ValueSummaryOptionA = ({
                         const displayGmv = (isSegmentationEnabled && segmentedC245RevenueTotal != null)
                           ? segmentedC245RevenueTotal
                           : (deduplicationEnabled
-                            ? (challenge245Results?.calculator1?.deduplicatedRevenueUplift ?? (approvedTx * recoveredAov + (breakdown.gmvReduction ?? 0)))
+                            ? (challenge245Results?.calculator1?.deduplicatedRevenueUplift ?? (approvedTx * recoveredAov - Math.abs(breakdown.gmvReduction ?? 0)))
                             : (challenge245Results?.calculator1?.revenueUplift ?? approvedTx * recoveredAov));
                         const cardClass = "rounded-lg border bg-card px-4 py-3 text-center shadow-sm w-[9.5rem] min-h-[5.25rem] flex flex-col justify-center items-center";
                         const labelClass = "text-xs text-muted-foreground tracking-wide mb-0.5";
@@ -5359,6 +5950,7 @@ export const ValueSummaryOptionA = ({
                         const hasRecoveredAovMultiplier = breakdown.recoveredOrderAOV != null && breakdown.aovMultiplier != null;
                         return (
                           <div className="flex flex-col gap-4 py-2">
+                            <p className="text-sm font-semibold text-muted-foreground mb-0">Value Impact</p>
                             <div className="flex flex-wrap items-center justify-center gap-2">
                               <div className={cardClass}>
                                 <div className={labelClass}>Total recoverable</div>
@@ -5433,6 +6025,552 @@ export const ValueSummaryOptionA = ({
               </div>
             </TabsContent>
 
+            {/* Visual Tab – c1-revenue, chargeback, c3-review, c7-disputes, c7-opex, c9-cs-opex, c9-cx-uplift */}
+            <TabsContent value="visual" className="mt-4">
+              <div data-benefit-pdf="visual" className="min-h-0 space-y-6">
+                {/* c9-cs-opex: Reduced CS ticket handling visual (ticket flow + cost impact + callout) */}
+                {selectedCalculatorId === 'c9-cs-opex' && challenge9Results?.calculator2 && (
+                  <CSOpExVisual
+                    rows={challenge9Results.calculator2.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {selectedCalculatorId === 'c12-ato-opex' && challenge12_13Results?.calculator1 && (
+                  <ATOOpExVisual
+                    rows={challenge12_13Results.calculator1.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {selectedCalculatorId === 'c14-marketing' && selectedCalculator?.rows && (
+                  <MarketingBudgetVisual
+                    rows={selectedCalculator.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {selectedCalculatorId === 'c14-reactivation' && selectedCalculator?.rows && (
+                  <ReactivationVisual
+                    rows={selectedCalculator.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {selectedCalculatorId === 'c14-kyc' && selectedCalculator?.rows && (
+                  <KYCVisual
+                    rows={selectedCalculator.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {/* c1-revenue: Approval rate bar + Value Impact (same card flow as funnel) */}
+                {(selectedCalculatorId === 'c1-revenue' && challenge1Results?.calculator1) && (() => {
+                  // When segmentation is on, use aggregated rows/breakdown so Visual matches Total calculator (e.g. Approved transactions = Total recoverable)
+                  const rows = (isSegmentationEnabled && segmentedC1AggregateRows.length > 0) ? segmentedC1AggregateRows : challenge1Results.calculator1.rows;
+                  const approvalRow = rows.find((r) => r.formula === 'd');
+                  const currentApproval = (approvalRow?.rawCustomerValue ?? 0) as number;
+                  const forterApproval = (approvalRow?.rawForterValue ?? 0) as number;
+                  const breakdownBase = challenge1Results.calculator1.deduplicationBreakdown;
+                  const breakdown = (isSegmentationEnabled && isChallenge1Selected && !isChallenge245Selected && segmentedDeduplicationBreakdown)
+                    ? segmentedDeduplicationBreakdown
+                    : breakdownBase;
+                  const currencyCode = modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD';
+                  const fmtCur = createCurrencyFormatter(currencyCode);
+                  const cardClass = "rounded-lg border bg-card p-4 text-center shadow-sm min-h-[5.5rem] flex flex-col justify-center items-center w-full";
+                  const labelClass = "text-xs text-muted-foreground tracking-wide mb-0.5";
+                  const valueClass = "font-semibold text-foreground";
+                  const chartData = [
+                    { name: 'Current', value: currentApproval, fill: '#94a3b8' },
+                    { name: 'With Forter', value: forterApproval, fill: '#22c55e' },
+                  ];
+                  const approvedTx = breakdown?.approvedTxImprovement ?? 0;
+                  const recoveredAov = breakdown?.recoveredOrderAOV ?? breakdown?.aov ?? 0;
+                  const dupTx = Math.round(breakdown?.duplicateSuccessfulTx ?? 0);
+                  const dupPct = breakdown?.retryRate != null && breakdown?.successRate != null
+                    ? (breakdown.retryRate * breakdown.successRate) / 100
+                    : 0;
+                  const dedupRecoverableTx = approvedTx + dupTx;
+                  const displayGmv = (isSegmentationEnabled && segmentedC1RevenueTotal != null)
+                    ? segmentedC1RevenueTotal
+                    : (deduplicationEnabled && breakdownBase
+                      ? (challenge1Results.calculator1.deduplicatedRevenueUplift ?? challenge1Results.calculator1.revenueUplift)
+                      : challenge1Results.calculator1.revenueUplift);
+                  const hasRecoveredAovMultiplier = breakdown?.recoveredOrderAOV != null && breakdown?.aovMultiplier != null;
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch min-h-0">
+                      {/* Left: Fraud approval rate + vertical bar chart — fills available space */}
+                      <div className="flex flex-col gap-3 flex-1 min-w-0 md:border-r md:border-border/60 md:pr-6 min-h-[280px]">
+                        <h4 className="text-sm font-semibold text-muted-foreground">Fraud approval rate</h4>
+                        <div className="flex-1 min-h-0 flex items-center justify-center w-full">
+                          <ResponsiveContainer width="100%" height="100%" minHeight={240}>
+                            <BarChart data={chartData} margin={{ top: 24, right: 12, left: 12, bottom: 8 }} barCategoryGap={4} barGap={4}>
+                              <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
+                              <YAxis domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} tick={{ fontSize: 11 }} width={32} />
+                              <Bar dataKey="value" barSize={56} radius={[4, 4, 0, 0]} isAnimationActive={false}>
+                                {chartData.map((entry, i) => (
+                                  <Cell key={i} fill={entry.fill} />
+                                ))}
+                                <LabelList position="top" formatter={(v: number) => `${v.toFixed(1)}%`} />
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      {/* Right: Value Impact — 2×2×1 grid, equal card sizes */}
+                      {breakdown && breakdown.aov != null && (
+                        <div className="flex flex-col gap-3 flex-1 min-w-0">
+                          <h4 className="text-sm font-semibold text-muted-foreground">Value Impact</h4>
+                          <div className="grid grid-cols-2 gap-3 py-2">
+                            {/* Row 1: 2 cards */}
+                            <div className={cardClass}>
+                              <div className={labelClass}>Total recoverable</div>
+                              <div className={valueClass}>{Math.round(approvedTx).toLocaleString('en-US')} tx</div>
+                            </div>
+                            {deduplicationEnabled ? (
+                              <div className={cardClass}>
+                                <div className={cn("flex items-center justify-center gap-1", labelClass)}>
+                                  Less duplicate attempts
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring" aria-label="How duplicate attempts are calculated">
+                                        <Info className="w-3.5 h-3.5 shrink-0" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-xs p-3">
+                                      <p className="font-medium mb-1">Duplicate attempts</p>
+                                      <p className="text-muted-foreground text-sm">
+                                        Duplicate successful transactions = total recoverable × retry rate × success rate. We assume {breakdown.retryRate?.toFixed(1) ?? '—'}% of declined customers retry and {breakdown.successRate?.toFixed(1) ?? '—'}% of those retries succeed, so about {dupPct.toFixed(1)}% of the recoverable volume are duplicates that would have been recovered anyway.
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                                <div className={valueClass}>{dupPct.toFixed(1)}%</div>
+                                <div className="text-xs text-muted-foreground">({Math.abs(dupTx).toLocaleString('en-US')} tx)</div>
+                              </div>
+                            ) : (
+                              <div className={cardClass}>
+                                <div className={cn("flex items-center justify-center gap-1", labelClass)}>
+                                  × Recovered AOV
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring" aria-label="How recovered average order value is calculated">
+                                        <Info className="w-3.5 h-3.5 shrink-0" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-xs p-3">
+                                      <p className="font-medium mb-1">Recovered average order value</p>
+                                      <p className="text-muted-foreground text-sm">
+                                        {hasRecoveredAovMultiplier
+                                          ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from Forter benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
+                                          : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
+                                        }
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                                <div className={valueClass}>{fmtCur(recoveredAov)}</div>
+                              </div>
+                            )}
+                            {/* Row 2: 2 cards */}
+                            {deduplicationEnabled ? (
+                              <>
+                                <div className={cardClass}>
+                                  <div className={labelClass}>Deduplicated recoverable</div>
+                                  <div className={valueClass}>{Math.round(dedupRecoverableTx).toLocaleString('en-US')} tx</div>
+                                </div>
+                                <div className={cardClass}>
+                                  <div className={cn("flex items-center justify-center gap-1", labelClass)}>
+                                    × Recovered AOV
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring" aria-label="How recovered average order value is calculated">
+                                          <Info className="w-3.5 h-3.5 shrink-0" />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-xs p-3">
+                                        <p className="font-medium mb-1">Recovered average order value</p>
+                                        <p className="text-muted-foreground text-sm">
+                                          {hasRecoveredAovMultiplier
+                                            ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from Forter benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
+                                            : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
+                                          }
+                                        </p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                  <div className={valueClass}>{fmtCur(recoveredAov)}</div>
+                                </div>
+                              </>
+                            ) : null}
+                            {/* Row 3: Recoverable GMV potential card (no divider) */}
+                            <div className={cn(cardClass, "col-span-2 bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-800")}>
+                              <div className={labelClass}>Recoverable GMV potential</div>
+                              <div className="font-bold text-lg text-green-800 dark:text-green-300">{fmtCur(displayGmv)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                {/* c1-chargeback / c245-chargeback: Chargeback rate (left) + Value Impact (right), bars with visible colors */}
+                {((selectedCalculatorId === 'c1-chargeback' && challenge1Results?.calculator2) || (selectedCalculatorId === 'c245-chargeback' && challenge245Results?.calculator2)) && (() => {
+                  const res = selectedCalculatorId === 'c1-chargeback' ? challenge1Results!.calculator2 : challenge245Results!.calculator2;
+                  const rows = (selectedCalculatorId === 'c1-chargeback' && isSegmentationEnabled && segmentedC1ChargebackAggregateRows.length > 0)
+                    ? segmentedC1ChargebackAggregateRows
+                    : (selectedCalculatorId === 'c245-chargeback' && isSegmentationEnabled && segmentedC245ChargebackAggregateRows.length > 0)
+                      ? segmentedC245ChargebackAggregateRows
+                      : res.rows;
+                  const rateRow = rows.find((r) => r.label?.includes('Gross Fraud Chargeback Rate') || r.formula === 'b');
+                  const volumeRow = rows.find((r) => r.label?.toLowerCase().includes('fraud chargeback') && (r.formula === 'c' || r.formula?.startsWith('c =') || r.valueDriver === 'cost'));
+                  const currentRate = (rateRow?.rawCustomerValue ?? 0) as number;
+                  const forterRate = (rateRow?.rawForterValue ?? 0) as number;
+                  const currencyCode = modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD';
+                  const fmtCur = createCurrencyFormatter(currencyCode);
+                  const reductionPct = currentRate > 0 ? Math.round(((currentRate - forterRate) / currentRate) * 100) : 0;
+                  const isMore = forterRate > currentRate;
+                  const chartData = [
+                    { name: 'Current', value: currentRate, fill: '#94a3b8' },
+                    { name: 'With Forter', value: forterRate, fill: isMore ? '#ef4444' : '#22c55e' },
+                  ];
+                  const yMax = Math.max(currentRate, forterRate, 0.1) * 1.4 || 1;
+                  const yTicks = getEqualYAxisTicks(yMax, 5);
+                  const yDomainMax = yTicks[yTicks.length - 1] ?? yMax;
+                  const cardClass = "rounded-lg border bg-card p-4 flex flex-col justify-center min-h-[5rem]";
+                  const parseCurToNum = (s: string | undefined): number | null => {
+                    if (s == null || s === '—') return null;
+                    const trimmed = String(s).replace(/\s/g, '').replace(/\*.*$/, '');
+                    const neg = /^\(.*\)$/.test(trimmed);
+                    const numStr = trimmed.replace(/[^\d.-]/g, '');
+                    const n = parseFloat(numStr);
+                    if (Number.isNaN(n)) return null;
+                    return neg ? -n : n;
+                  };
+                  const currentVal = parseCurToNum(volumeRow?.customerInput);
+                  const forterVal = parseCurToNum(volumeRow?.forterOutcome);
+                  const displayCurrent = currentVal != null ? fmtCur(Math.round(currentVal)) : '—';
+                  const displayForter = forterVal != null ? fmtCur(Math.round(forterVal)) : (volumeRow?.forterOutcome === '$0.00*' ? fmtCur(0) : (volumeRow?.forterOutcome ?? '—'));
+                  const costReductionToShow = (selectedCalculatorId === 'c1-chargeback' && isSegmentationEnabled && segmentedC1ChargebackTotal !== null)
+                    ? segmentedC1ChargebackTotal
+                    : (selectedCalculatorId === 'c245-chargeback' && isSegmentationEnabled && segmentedC245ChargebackTotal !== null)
+                      ? segmentedC245ChargebackTotal
+                      : res.costReduction;
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch min-h-0">
+                      {/* Left: Fraud chargeback rate chart with visible colored bars */}
+                      <div className="flex flex-col gap-3 flex-1 min-w-0 md:border-r md:border-border/60 md:pr-6 min-h-[240px]">
+                        <h4 className="text-sm font-semibold text-muted-foreground">Fraud chargeback rate</h4>
+                        <div className="flex-1 min-h-0 flex items-center justify-center w-full">
+                          <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+                            <BarChart data={chartData} margin={{ top: 24, right: 12, left: 12, bottom: 8 }} barCategoryGap={4} barGap={4}>
+                              <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 600 }} />
+                              <YAxis domain={[0, yDomainMax]} ticks={yTicks} tick={{ fontSize: 11 }} tickFormatter={(v) => `${Number(v).toFixed(2)}%`} width={40} />
+                              <Bar dataKey="value" barSize={56} radius={[4, 4, 0, 0]} isAnimationActive={false}>
+                                {chartData.map((entry, i) => (
+                                  <Cell key={i} fill={entry.fill} />
+                                ))}
+                                <LabelList position="top" formatter={(v: number) => `${Number(v).toFixed(2)}%`} />
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex justify-center">
+                          <Badge className={isMore ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"}>
+                            {isMore ? `${Math.abs(reductionPct)}% more chargebacks` : `${reductionPct}% fewer chargebacks`}
+                          </Badge>
+                        </div>
+                      </div>
+                      {/* Right: Value Impact */}
+                      <div className="flex flex-col gap-3 flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-muted-foreground">Value Impact</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-2">
+                          <Card className={cardClass}>
+                            <div className="text-xs text-muted-foreground mb-1">Current fraud chargeback value</div>
+                            <div className="font-semibold">{displayCurrent}</div>
+                          </Card>
+                          <Card className={cardClass}>
+                            <div className="text-xs text-muted-foreground mb-1">Forter outcome fraud chargeback value</div>
+                            <div className="font-semibold">{displayForter}</div>
+                          </Card>
+                          <Card className={cn(cardClass, "bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-800")}>
+                            <div className="text-xs text-muted-foreground mb-1">SG&A cost reduction</div>
+                            <div className="font-bold text-green-800 dark:text-green-300">{fmtCur(Math.round(costReductionToShow))}</div>
+                          </Card>
+                        </div>
+                        {fraudCBCoverageEnabled && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            When Fraud Chargeback Coverage is included, Forter assumes liability for fraud chargebacks, so the Forter outcome fraud chargeback value is $0.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* c3-review: Two cards Current / With Forter + badge */}
+                {(selectedCalculatorId === 'c3-review' && challenge3Results?.calculator1) && (() => {
+                  const rows = challenge3Results.calculator1.rows;
+                  const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
+                  const reviewPctRow = matchFormula('b');
+                  const reviewCountRow = matchFormula('c'); // 'c = a*b' = transactions to manual review
+                  const hoursRow = matchFormula('e');       // 'e = (c*d)/60' = hours required
+                  const hourlyRow = matchFormula('f');
+                  const costRow = matchFormula('g');       // 'g = e*f' = cost for manual reviews
+                  const custReviewPct = (reviewPctRow?.rawCustomerValue ?? 0) as number;
+                  const fortReviewPct = (reviewPctRow?.rawForterValue ?? 0) as number;
+                  const LineItem = ({ label, current, forter, formula }: { label: string; current: string; forter: string; formula?: string }) => (
+                    <div className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
+                      <span className="text-sm text-muted-foreground">
+                        {label}
+                        {formula != null && <span className="block italic text-xs mt-0.5">{formula}</span>}
+                      </span>
+                      <span className="text-sm font-medium tabular-nums">{current} → {forter}</span>
+                    </div>
+                  );
+                  return (
+                    <div className="space-y-6">
+                      <div className="flex flex-wrap items-stretch gap-4 justify-center">
+                        <Card className="p-4 min-w-[200px] border-slate-200 dark:border-slate-700">
+                          <div className="text-sm font-semibold text-muted-foreground mb-3">Current state</div>
+                          <LineItem label="Review rate" current={reviewPctRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="Reviews per year" current={reviewCountRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="Total review hours" current={hoursRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="Hourly cost per reviewer" current={hourlyRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="Total annual review cost" current={costRow?.customerInput ?? '—'} forter="" />
+                        </Card>
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <ArrowRight className="w-6 h-6 text-muted-foreground" aria-hidden />
+                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{manualReviewDecreasePct}% review rate reduction</Badge>
+                        </div>
+                        <Card className="p-4 min-w-[200px] border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
+                          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
+                          <LineItem label="Review rate" current="" forter={reviewPctRow?.forterOutcome ?? '—'} />
+                          <LineItem label="Reviews per year" current="" forter={reviewCountRow?.forterOutcome ?? '—'} />
+                          <LineItem label="Total review hours" current="" forter={hoursRow?.forterOutcome ?? '—'} />
+                          <LineItem label="Hourly cost per reviewer" current="" forter={hourlyRow?.forterOutcome ?? '—'} />
+                          <LineItem label="Total annual review cost" current="" forter={costRow?.forterOutcome ?? '—'} />
+                        </Card>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* c7-opex: Improve recovery efficiency — two cards Current / With Forter (same layout as c3-review) */}
+                {(selectedCalculatorId === 'c7-opex' && challenge7Results?.calculator2) && (() => {
+                  const rows = challenge7Results.calculator2.rows;
+                  const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
+                  const timeRow = matchFormula('a');       // Avg time to review CB (mins)
+                  const reviewsPerHourRow = matchFormula('b'); // # of reviews per hour
+                  const disputesRow = matchFormula('c');   // Number of annual CB disputes
+                  const hoursRow = matchFormula('d');      // # of hours required for all chargebacks
+                  const hourlyRow = matchFormula('e');    // Cost per hour of analyst
+                  const costRow = matchFormula('f');      // Total cost
+                  const custTime = (timeRow?.rawCustomerValue ?? 0) as number;
+                  const fortTime = (timeRow?.rawForterValue ?? 0) as number;
+                  const timeReductionPct = custTime > 0 ? Math.round(((custTime - fortTime) / custTime) * 100) : 0;
+                  const LineItem = ({ label, current, forter }: { label: string; current: string; forter: string }) => (
+                    <div className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
+                      <span className="text-sm text-muted-foreground">{label}</span>
+                      <span className="text-sm font-medium tabular-nums">{current} → {forter}</span>
+                    </div>
+                  );
+                  return (
+                    <div className="space-y-6">
+                      <div className="flex flex-wrap items-stretch gap-4 justify-center">
+                        <Card className="p-4 min-w-[200px] border-slate-200 dark:border-slate-700">
+                          <div className="text-sm font-semibold text-muted-foreground mb-3">Current state</div>
+                          <LineItem label="Avg time to review CB (mins)" current={timeRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="# of reviews per hour" current={reviewsPerHourRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="Number of annual CB disputes" current={disputesRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="# of hours required for all chargebacks" current={hoursRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="Cost per hour of analyst" current={hourlyRow?.customerInput ?? '—'} forter="" />
+                          <LineItem label="Total cost" current={costRow?.customerInput ?? '—'} forter="" />
+                        </Card>
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <ArrowRight className="w-6 h-6 text-muted-foreground" aria-hidden />
+                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{timeReductionPct}% faster review time</Badge>
+                        </div>
+                        <Card className="p-4 min-w-[200px] border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
+                          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
+                          <LineItem label="Avg time to review CB (mins)" current="" forter={timeRow?.forterOutcome ?? '—'} />
+                          <LineItem label="# of reviews per hour" current="" forter={reviewsPerHourRow?.forterOutcome ?? '—'} />
+                          <LineItem label="Number of annual CB disputes" current="" forter={disputesRow?.forterOutcome ?? '—'} />
+                          <LineItem label="# of hours required for all chargebacks" current="" forter={hoursRow?.forterOutcome ?? '—'} />
+                          <LineItem label="Cost per hour of analyst" current="" forter={hourlyRow?.forterOutcome ?? '—'} />
+                          <LineItem label="Total cost" current="" forter={costRow?.forterOutcome ?? '—'} />
+                        </Card>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* c7-disputes: Recovery pipeline (current vs. with Forter) — stacked bars + Improvement column */}
+                {(selectedCalculatorId === 'c7-disputes' && totalRecoveryMetrics && challenge7Results && c7PipelineMetrics) && (() => {
+                  const pipeline = c7PipelineMetrics;
+                  const currencyCode = modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD';
+                  const fmtCur = createCurrencyFormatter(currencyCode);
+                  const maxVal = Math.max(pipeline.totalCB, pipeline.custDisputed, pipeline.fortDisputed, pipeline.custWon, pipeline.fortWon, 1);
+                  const toPct = (v: number) => (maxVal > 0 ? (v / maxVal) * 100 : 0);
+                  const additionalRecovery = fraudCBCoverageEnabled ? (pipeline.fortWon - pipeline.custWon) : (challenge7Results.fortTotalRecoveries - pipeline.custWon);
+                  const disputeRateCurrent = pipeline.totalCB > 0 ? (pipeline.custDisputed / pipeline.totalCB) * 100 : 0;
+                  const disputeRateForter = pipeline.totalCB > 0 ? (pipeline.fortDisputed / pipeline.totalCB) * 100 : 0;
+                  const disputeRatePts = disputeRateForter - disputeRateCurrent;
+                  const winRateCurrent = pipeline.custDisputed > 0 ? (pipeline.custWon / pipeline.custDisputed) * 100 : 0;
+                  const winRateForter = pipeline.fortDisputed > 0 ? (pipeline.fortWon / pipeline.fortDisputed) * 100 : 0;
+                  const winRateChangePts = winRateForter - winRateCurrent;
+                  const recoveryRateCurrent = pipeline.totalCB > 0 ? (pipeline.custWon / pipeline.totalCB) * 100 : 0;
+                  const recoveryRateForter = pipeline.totalCB > 0 ? (pipeline.fortWon / pipeline.totalCB) * 100 : 0;
+                  const recoveryRatePts = recoveryRateForter - recoveryRateCurrent;
+                  return (
+                    <div className="space-y-6">
+                      <h4 className="text-sm font-semibold text-muted-foreground">Recovery pipeline (current vs. with Forter)</h4>
+                      {fraudCBCoverageEnabled && (
+                        <p className="text-xs text-muted-foreground">Service chargebacks only — fraud chargebacks excluded (Fraud Chargeback Coverage enabled).</p>
+                      )}
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="inline-block w-4 h-3 rounded bg-slate-300 dark:bg-slate-400" />
+                        <span>Current</span>
+                        <span className="inline-block w-4 h-3 rounded bg-green-500 dark:bg-green-600 ml-2" />
+                        <span>With Forter</span>
+                      </div>
+                      <div className="grid grid-cols-[140px_1fr_200px] gap-x-4 gap-y-3 items-center text-sm">
+                        <div className="font-medium text-muted-foreground">Stage</div>
+                        <div className="font-medium text-muted-foreground" />
+                        <div className="font-medium text-muted-foreground text-right">Improvement</div>
+                        {/* Total Chargebacks — single grey bar */}
+                        <div className="font-medium">Total Chargebacks</div>
+                        <div className="flex flex-col gap-1 min-h-[28px] justify-center">
+                          <div className="flex items-center gap-2 h-6">
+                            <div className="flex-1 h-full rounded overflow-hidden bg-muted/50 min-w-0">
+                              <div className="h-full rounded bg-slate-400 dark:bg-slate-500" style={{ width: '100%' }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums shrink-0 w-20 text-right">{fmtCur(pipeline.totalCB)}</span>
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">{fmtCur(pipeline.totalCB)} Total CB exposure.</div>
+                        {/* Disputed — two stacked bars: Current (grey), With Forter (green) */}
+                        <div className="font-medium">Disputed</div>
+                        <div className="flex flex-col gap-1 min-h-[52px] justify-center">
+                          <div className="flex items-center gap-2 h-6">
+                            <div className="flex-1 h-full rounded overflow-hidden bg-muted/30 min-w-0 flex">
+                              <div className="h-full rounded-l bg-slate-300 dark:bg-slate-400" style={{ width: `${toPct(pipeline.custDisputed)}%`, minWidth: pipeline.custDisputed > 0 ? 6 : 0 }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums shrink-0 w-20 text-right text-muted-foreground">{fmtCur(pipeline.custDisputed)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 h-6">
+                            <div className="flex-1 h-full rounded overflow-hidden bg-muted/30 min-w-0 flex">
+                              <div className="h-full rounded-l bg-green-500 dark:bg-green-600" style={{ width: `${toPct(pipeline.fortDisputed)}%`, minWidth: pipeline.fortDisputed > 0 ? 6 : 0 }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums shrink-0 w-20 text-right text-green-700 dark:text-green-400">{fmtCur(pipeline.fortDisputed)}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <Badge className="bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 text-xs">
+                            {disputeRatePts >= 0 ? '+' : ''}{disputeRatePts.toFixed(1)}% dispute rate
+                          </Badge>
+                        </div>
+                        {/* Won — two stacked bars */}
+                        <div className="font-medium">Won</div>
+                        <div className="flex flex-col gap-1 min-h-[52px] justify-center">
+                          <div className="flex items-center gap-2 h-6">
+                            <div className="flex-1 h-full rounded overflow-hidden bg-muted/30 min-w-0 flex">
+                              <div className="h-full rounded-l bg-slate-300 dark:bg-slate-400" style={{ width: `${toPct(pipeline.custWon)}%`, minWidth: pipeline.custWon > 0 ? 6 : 0 }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums shrink-0 w-20 text-right text-muted-foreground">{fmtCur(pipeline.custWon)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 h-6">
+                            <div className="flex-1 h-full rounded overflow-hidden bg-muted/30 min-w-0 flex">
+                              <div className="h-full rounded-l bg-green-500 dark:bg-green-600" style={{ width: `${toPct(pipeline.fortWon)}%`, minWidth: pipeline.fortWon > 0 ? 6 : 0 }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums shrink-0 w-20 text-right text-green-700 dark:text-green-400">{fmtCur(pipeline.fortWon)}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-xs">
+                            {winRateChangePts >= 0 ? '+' : ''}{winRateChangePts.toFixed(1)}% win rate
+                          </Badge>
+                        </div>
+                        {/* Recovered $ — two stacked bars */}
+                        <div className="font-medium">Recovered $</div>
+                        <div className="flex flex-col gap-1 min-h-[52px] justify-center">
+                          <div className="flex items-center gap-2 h-6">
+                            <div className="flex-1 h-full rounded overflow-hidden bg-muted/30 min-w-0 flex">
+                              <div className="h-full rounded-l bg-slate-300 dark:bg-slate-400" style={{ width: `${toPct(pipeline.custWon)}%`, minWidth: pipeline.custWon > 0 ? 6 : 0 }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums shrink-0 w-20 text-right text-muted-foreground">{fmtCur(pipeline.custWon)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 h-6">
+                            <div className="flex-1 h-full rounded overflow-hidden bg-muted/30 min-w-0 flex">
+                              <div className="h-full rounded-l bg-green-500 dark:bg-green-600" style={{ width: `${toPct(pipeline.fortWon)}%`, minWidth: pipeline.fortWon > 0 ? 6 : 0 }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums shrink-0 w-20 text-right text-green-700 dark:text-green-400">{fmtCur(pipeline.fortWon)}</span>
+                          </div>
+                        </div>
+                        <div className="text-right space-y-1">
+                          <div className="text-xs text-green-700 dark:text-green-400">+{recoveryRatePts.toFixed(1)}%pts recovery rate.</div>
+                          <div className="text-sm font-semibold text-green-800 dark:text-green-300">+{fmtCur(additionalRecovery)} additional recovery.</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {selectedCalculatorId === 'c9-cx-uplift' && selectedCalculator?.rows && (() => {
+                  const rows = selectedCalculator.rows;
+                  const rowA = rows.find((r) => r.formula === 'a');
+                  const rowB = rows.find((r) => r.formula === 'b');
+                  const rowC = rows.find((r) => r.formula === 'c');
+                  const rowD = rows.find((r) => r.formula === 'd' || r.formula?.startsWith('d ='));
+                  const rowE = rows.find((r) => r.formula === 'e' || r.formula?.startsWith('e ='));
+                  const rowF = rows.find((r) => r.formula === 'f');
+                  const rowH = rows.find((r) => r.formula === 'h');
+                  const rowI = rows.find((r) => r.formula === 'i' || r.formula?.startsWith('i ='));
+                  const connector = (op: string) => (
+                    <div className="flex items-center self-center shrink-0" aria-hidden>
+                      <div className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-1 text-sm font-bold text-muted-foreground">{op}</div>
+                    </div>
+                  );
+                  const cardClass = "w-44 min-w-[11rem] flex-shrink-0 min-h-[9rem] p-4 flex flex-col justify-between overflow-visible";
+                  const cardClassWide = "min-w-[13rem] w-52 flex-shrink-0 min-h-[9rem] p-4 flex flex-col justify-between overflow-visible";
+                  return (
+                    <div className="space-y-6">
+                      {/* Section 1 — Multiplication chain (all cards on same row; scroll horizontally if needed) */}
+                      <div className="flex items-stretch gap-2 flex-nowrap overflow-x-auto min-w-0 pb-1">
+                        <Card className={cn(cardClass, "border-t-4 border-slate-400")}>
+                          <div className="text-xl font-bold text-slate-700 dark:text-slate-300">{rowA?.customerInput ?? '—'}</div>
+                          <div className="text-xs text-muted-foreground">Current eCommerce sales</div>
+                        </Card>
+                        {connector('×')}
+                        <Card className={cn(cardClassWide, "border-t-4 border-amber-400")}>
+                          <div className="text-xl font-bold text-amber-700 dark:text-amber-300">{rowD?.forterOutcome ?? '—'}</div>
+                          <div className="text-xs text-muted-foreground break-words">
+                            <span className="block">Expected sales uplift</span>
+                            <span className="block mt-0.5">From +{rowB?.forterOutcome ?? '—'} NPS pts via LSE benchmark ({rowC?.forterOutcome ?? '—'}/pt)</span>
+                          </div>
+                        </Card>
+                        {connector('=')}
+                        <Card className={cn(cardClass, "border-t-4 border-blue-400")}>
+                          <div className="text-xl font-bold text-blue-700 dark:text-blue-300">{rowE?.forterImprovement ?? '—'}</div>
+                          <div className="text-xs text-muted-foreground">Additional eCommerce sales</div>
+                        </Card>
+                        <div className="flex items-center self-center shrink-0" aria-hidden>
+                          <ArrowRight className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        <Card className={cn(cardClassWide, "border-t-4 border-green-500 bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800")}>
+                          <div className="text-xl font-bold text-green-700 dark:text-green-300">{rowI?.forterImprovement ?? '—'}</div>
+                          <div className="text-xs text-muted-foreground break-words">
+                            <span className="block">Profitability impact</span>
+                            {rowF && (
+                              <span className="block mt-0.5">After {rowF.customerInput ?? '—'} {rowH ? `commission × ${rowH.customerInput ?? '—'} margin` : 'margin'}</span>
+                            )}
+                          </div>
+                        </Card>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </TabsContent>
+
             {/* Success Story Tab – case study slide image when available */}
             <TabsContent value="success-stories" className="mt-4">
               <div data-benefit-pdf="success-stories" className="min-h-0">
@@ -5469,16 +6607,17 @@ export const ValueSummaryOptionA = ({
               return (
                 <div className="flex justify-between items-center pt-4 mt-4 border-t">
                   <div className="flex items-center">
-{(calculatorModalTab === 'inputs' || calculatorModalTab === 'calculator' || calculatorModalTab === 'funnel' || calculatorModalTab === 'success-stories') && (
+{(calculatorModalTab === 'inputs' || calculatorModalTab === 'calculator' || calculatorModalTab === 'funnel' || calculatorModalTab === 'visual' || calculatorModalTab === 'success-stories') && (
                         <Button
                           variant="outline"
                           size="sm"
                           className="gap-1"
                           onClick={() => {
                             if (calculatorModalTab === 'funnel') setCalculatorModalTab('calculator');
+                            else if (calculatorModalTab === 'visual') setCalculatorModalTab('calculator');
                             else if (calculatorModalTab === 'calculator') setCalculatorModalTab(showInputsTab ? 'inputs' : 'summary');
                             else if (calculatorModalTab === 'inputs') setCalculatorModalTab('summary');
-                            else if (calculatorModalTab === 'success-stories') setCalculatorModalTab(selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0 ? 'funnel' : 'calculator');
+                            else if (calculatorModalTab === 'success-stories') setCalculatorModalTab(selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0 ? 'funnel' : (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc') ? 'visual' : 'calculator');
                           }}
                         >
                           <ChevronLeft className="w-4 h-4" /> Back
@@ -5498,10 +6637,20 @@ export const ValueSummaryOptionA = ({
                     )}
                     {calculatorModalTab === 'calculator' && selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0 && (
                       <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('funnel')}>
-                        Go to Funnel <ArrowRight className="w-4 h-4" />
+                        Go to Visual <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {(calculatorModalTab === 'calculator' && (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc')) && (
+                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('visual')}>
+                        Go to Visual <ArrowRight className="w-4 h-4" />
                       </Button>
                     )}
                     {calculatorModalTab === 'funnel' && hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
+                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('success-stories')}>
+                        Go to Success Story <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {calculatorModalTab === 'visual' && hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
                       <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('success-stories')}>
                         Go to Success Story <ArrowRight className="w-4 h-4" />
                       </Button>

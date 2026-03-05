@@ -198,9 +198,10 @@ export const ChallengeInputs = ({
     const fraudCBRateDecimal = actualFraudCBRate / 100;
     const calculatedValue = valueOfApprovedTransactions * fraudCBRateDecimal;
     
-    // Only update if there's a meaningful calculated value and it differs from current
-    if (calculatedValue > 0 && calculatedValue !== formData.estFraudChargebackValue) {
-      onFieldChange("estFraudChargebackValue", calculatedValue);
+    // Only update if there's a meaningful calculated value and it differs from current (store as integer, no decimals)
+    const rounded = Math.round(calculatedValue);
+    if (rounded > 0 && rounded !== formData.estFraudChargebackValue) {
+      onFieldChange("estFraudChargebackValue", rounded);
     }
   }, [isChallenge7Selected, valueOfApprovedTransactions, actualFraudCBRate, formData.estFraudChargebackValueManuallySet]);
   if (!showAnyInputs) {
@@ -802,14 +803,14 @@ export const ChallengeInputs = ({
         const calculatedFraudCBValue = valueOfApprovedTransactions * fraudCBRateDecimal;
         
         // Use calculated value if not manually set, otherwise use the form value
-        const displayFraudCBValue = formData.estFraudChargebackValueManuallySet 
+        // Display and store with no decimal places (integer only)
+        const rawDisplay = formData.estFraudChargebackValueManuallySet 
           ? formData.estFraudChargebackValue 
           : (formData.estFraudChargebackValue ?? calculatedFraudCBValue);
+        const displayFraudCBValue = rawDisplay != null ? Math.round(rawDisplay) : undefined;
         
-        // Auto-populate the fraud chargeback value on first load or when dependencies change
-        // Only if the user hasn't manually set it
         const handleFraudCBValueChange = (v: number | undefined) => {
-          onFieldChange("estFraudChargebackValue", v);
+          onFieldChange("estFraudChargebackValue", v !== undefined ? Math.round(v) : undefined);
           onFieldChange("estFraudChargebackValueManuallySet", true);
         };
         
@@ -840,7 +841,7 @@ export const ChallengeInputs = ({
                                   {new Intl.NumberFormat('en-US', { style: 'currency', currency: formData.baseCurrency || 'USD', maximumFractionDigits: 0 }).format(valueOfApprovedTransactions)} × {actualFraudCBRate.toFixed(2)}%
                                 </p>
                                 <p className="font-medium text-primary">
-                                  = {new Intl.NumberFormat('en-US', { style: 'currency', currency: formData.baseCurrency || 'USD', maximumFractionDigits: 0 }).format(calculatedFraudCBValue)}
+                                  = {new Intl.NumberFormat('en-US', { style: 'currency', currency: formData.baseCurrency || 'USD', maximumFractionDigits: 0 }).format(Math.round(calculatedFraudCBValue))}
                                 </p>
                               </div>
                             </TooltipContent>
@@ -852,7 +853,7 @@ export const ChallengeInputs = ({
                         <button
                           onClick={() => {
                             onFieldChange("estFraudChargebackValueManuallySet", false);
-                            onFieldChange("estFraudChargebackValue", calculatedFraudCBValue);
+                            onFieldChange("estFraudChargebackValue", Math.round(calculatedFraudCBValue));
                           }}
                           className="text-xs text-primary hover:underline"
                         >
@@ -865,6 +866,7 @@ export const ChallengeInputs = ({
                       onChange={handleFraudCBValueChange}
                       placeholder="750,000"
                       formatWithCommas
+                      decimalPlaces={0}
                     />
                   </div>
                   <div className={fieldRowClass}>

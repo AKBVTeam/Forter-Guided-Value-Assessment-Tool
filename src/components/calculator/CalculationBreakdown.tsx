@@ -120,7 +120,7 @@ export const CalculationBreakdown = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!max-w-none w-[calc(100vw-1rem)] p-4">
+      <DialogContent className="max-w-6xl w-[min(100%,min(72rem,calc(100vw-2rem)))] p-4 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>

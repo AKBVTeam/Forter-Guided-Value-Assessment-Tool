@@ -584,6 +584,59 @@ export const ForterKPIConfig = ({
               );
             })}
           </div>
+          {/* Global Recovered AOV Multiplier - applies to all segments; visible in segment analysis for Reduce false declines / payment funnel */}
+          {(challenge1 || show245KPIs) && (
+            <div className="mt-4 pt-4 border-t border-border/60 space-y-2">
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                <Label className="text-sm font-medium">Recovered Order AOV Multiplier</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
+                      <Info className="h-4 w-4 shrink-0" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-sm">
+                    <p className="text-xs">
+                      Multiplier applied to the AOV of recovered transactions (e.g. those saved by reducing false declines). Set to 1.0× to be fully conservative. Default 1.15× reflects that higher-value transactions can face disproportionate friction. Applies to all segments.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[120px] max-w-[200px]">
+                  <Slider
+                    value={[kpis.recoveredAovMultiplier ?? 1.15]}
+                    onValueChange={(v) => updateKPI("recoveredAovMultiplier", v[0])}
+                    min={1}
+                    max={2}
+                    step={0.05}
+                    className="w-full"
+                  />
+                </div>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={((kpis.recoveredAovMultiplier ?? 1.15)).toFixed(2)}
+                  onChange={(e) => {
+                    const parsed = parseFloat(e.target.value.replace(/[^0-9.]/g, ""));
+                    if (!Number.isFinite(parsed)) return;
+                    const clamped = Math.max(1, Math.min(2, parsed));
+                    updateKPI("recoveredAovMultiplier", Number(clamped.toFixed(2)));
+                  }}
+                  className="w-20 text-right shrink-0"
+                />
+                <span className="text-sm text-muted-foreground shrink-0">×</span>
+              </div>
+              <p className={fieldHelperClass}>
+                Baseline AOV × {(kpis.recoveredAovMultiplier ?? 1.15).toFixed(2)}× on recovered transactions
+                {(kpis.recoveredAovMultiplier ?? 1.15) !== 1 && (
+                  <span className="ml-1 font-medium text-primary">
+                    ({((kpis.recoveredAovMultiplier ?? 1.15) - 1) * 100 > 0 ? '+' : ''}{(((kpis.recoveredAovMultiplier ?? 1.15) - 1) * 100).toFixed(0)}%)
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
         </Card>
       )}
       
@@ -703,6 +756,59 @@ export const ForterKPIConfig = ({
                   </p>
                 );
               })()}
+            </div>
+            {/* Recovered Order AOV Multiplier - used for deduplication value in both c1 and c245 */}
+            <div className={fieldRowClass}>
+              <div className={fieldLabelWrapClass}>
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <Label className={fieldLabelClass}>Recovered Order AOV Multiplier</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex cursor-help text-muted-foreground hover:text-foreground">
+                        <Info className="h-4 w-4 shrink-0" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-sm">
+                      <p className="text-xs">
+                        Multiplier applied to the AOV of recovered transactions (e.g. those saved by reducing false declines). Set to 1.0× to be fully conservative. Default 1.15× reflects that higher-value transactions can face disproportionate friction.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 w-full mt-2">
+                <div className="flex-1 min-w-0">
+                  <Slider
+                    value={[kpis.recoveredAovMultiplier ?? 1.15]}
+                    onValueChange={(v) => updateKPI("recoveredAovMultiplier", v[0])}
+                    min={1}
+                    max={2}
+                    step={0.05}
+                    className="w-full"
+                  />
+                </div>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={((kpis.recoveredAovMultiplier ?? 1.15)).toFixed(2)}
+                  onChange={(e) => {
+                    const parsed = parseFloat(e.target.value.replace(/[^0-9.]/g, ""));
+                    if (!Number.isFinite(parsed)) return;
+                    const clamped = Math.max(1, Math.min(2, parsed));
+                    updateKPI("recoveredAovMultiplier", Number(clamped.toFixed(2)));
+                  }}
+                  className="w-20 text-right shrink-0"
+                />
+                <span className="text-sm text-muted-foreground shrink-0">×</span>
+              </div>
+              <p className={fieldHelperClass + " mt-1"}>
+                Baseline AOV × {(kpis.recoveredAovMultiplier ?? 1.15).toFixed(2)}× on recovered transactions
+                {(kpis.recoveredAovMultiplier ?? 1.15) !== 1 && (
+                  <span className="ml-1 font-medium text-primary">
+                    ({((kpis.recoveredAovMultiplier ?? 1.15) - 1) * 100 > 0 ? '+' : ''}{(((kpis.recoveredAovMultiplier ?? 1.15) - 1) * 100).toFixed(0)}%)
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </Card>

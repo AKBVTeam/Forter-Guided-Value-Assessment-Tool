@@ -1579,7 +1579,7 @@ export const ValueSummaryWithCalculators = ({
 
       {/* Calculator Pop-up Dialog */}
       <Dialog open={!!selectedCalculator} onOpenChange={() => setSelectedCalculator(null)}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-6xl w-[min(100%,min(72rem,calc(100vw-2rem)))] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedCalculator?.title}</DialogTitle>
           </DialogHeader>
