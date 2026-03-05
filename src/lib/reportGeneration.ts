@@ -109,6 +109,14 @@ export interface ExecutiveSummaryPayload {
   projectedValue: { rows: Array<{ label: string; val: string }>; nextSteps: string[] } | null;
 }
 
+/** Data for the "How transactions flow — Payments funnel" slide. Rendered as % or # of transactions per user toggle. */
+export interface FunnelSlideData {
+  viewMode: 'percent' | 'transactions';
+  totalTransactionAttempts: number;
+  totalRecoverable: string;
+  stages: Array<{ label: string; currentVal: string; recoverableVal: string }>;
+}
+
 export interface ValueDeckPayload {
   currency: string;
   customerName: string;
@@ -142,6 +150,8 @@ export interface ValueDeckPayload {
     badge: string | null;
     isTBD: boolean;
     tableRows: Array<{ cells: string[] }>;
+    /** When set, one extra slide is added after this appendix entry with the payments funnel (c245-revenue only). */
+    funnelSlide?: FunnelSlideData;
   }>;
   caseStudySourceSlides?: Array<{ presentationId: string; pageObjectId: string }>;
   caseStudySourcePresentationId?: string;

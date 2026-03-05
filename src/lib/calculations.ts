@@ -100,8 +100,12 @@ export interface DeduplicationBreakdown {
   retryRate: number;
   successRate: number;
   duplicateSuccessfulTx: number;
-  /** Completed AOV ($) — same as "Completed AOV (for value of approved transactions)" in the calculator */
+  /** Base Completed AOV ($) from calculator */
   aov: number;
+  /** Recovered Order AOV multiplier from Forter KPI (e.g. 1.15). When set, recoveredOrderAOV = aov × this. */
+  aovMultiplier?: number;
+  /** AOV × aovMultiplier; used for g = e×recoveredOrderAOV when set */
+  recoveredOrderAOV?: number;
   gmvReduction: number;
 }
 
@@ -210,7 +214,8 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
   
   const fraudTxDropOff = approvedTxImprovement; // New approved transactions
   const duplicateSuccessfulTx = fraudTxDropOff * retryRate * successRate;
-  const deduplicationGMVReduction = duplicateSuccessfulTx * effectiveCompletedAOV;
+  const recoveredOrderAOV_c1 = effectiveCompletedAOV * aovMultiplier; // AOV × Recovered Order AOV multiplier
+  const deduplicationGMVReduction = duplicateSuccessfulTx * recoveredOrderAOV_c1;
   
   // Deduplicated value = Value of approved transactions (Forter outcome) + Deduplication GMV reduction
   const forterApprovedValueDeduplicated = deduplicationEnabled 
@@ -325,14 +330,16 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     { formula: 'c = a*b', label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', customerInput: fmtCur2(-customerChargebacks), forterImprovement: fmtCur2(chargebackSavings), forterOutcome: includesFraudCBCoverage ? '$0.00*' : fmtCur2(-forterChargebacks), valueDriver: 'cost', isCalculation: true, footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined },
   ];
 
-  // Build deduplication breakdown for info popover (AOV = Completed AOV, same as value of approved transactions)
+  // Build deduplication breakdown for info popover (f = AOV, f' = Recovered Order AOV, g = e×f')
   const deduplicationBreakdown: DeduplicationBreakdown = {
     fraudTxDropOff: -approvedTxImprovement, // Negative (fewer declines = negative drop-off)
     nonFraudDelta: -approvedTxImprovement,
     retryRate: dedup.retryRate,
     successRate: dedup.successRate,
     duplicateSuccessfulTx: -duplicateSuccessfulTx, // Negative
-    aov: effectiveCompletedAOV, // Completed AOV (same as calculator row)
+    aov: effectiveCompletedAOV, // Base Completed AOV
+    aovMultiplier: aovMultiplier,
+    recoveredOrderAOV: recoveredOrderAOV_c1, // AOV × Recovered Order AOV multiplier (used for g)
     gmvReduction: -deduplicationGMVReduction, // Negative (reduction shown in brackets)
   };
 
@@ -398,6 +405,24 @@ export interface Challenge245Inputs {
   gmvToNetSalesDeductionPct?: number;
 }
 
+/** One stage of the payments funnel (current state % + recoverable opportunity volume) */
+export interface PaymentFunnelStage {
+  id: string;
+  label: string;
+  /** % of booking attempts at this stage (e.g. 4 for "4% declined") */
+  pctOfAttempts: number;
+  /** % of attempts remaining after this stage (e.g. 96) — used for waterfall bar width */
+  pctRemaining: number;
+  isDecline: boolean;
+  isCompleted?: boolean;
+  isPostCompletion?: boolean;
+  /** EST. RECOVERABLE or PREVENTABLE volume (transaction count); shown instead of $ */
+  recoverableVolume?: number;
+  /** Raw (unrounded) recoverable volume; used when aggregating segments so we round once and match calculator */
+  recoverableVolumeRaw?: number;
+  recoverableNote?: string;
+}
+
 export interface Challenge245Results {
   calculator1: { 
     rows: CalculatorRow[]; 
@@ -409,6 +434,10 @@ export interface Challenge245Results {
     deduplicationBreakdown?: DeduplicationBreakdown;
     /** Current-state completed transaction count (for refund volume formula: attempts × completion rate × refund rate) */
     customerCompletedTransactionCount: number;
+    /** Completion rate (%) = r = q/b; funnel "Approved transactions" uses this so it matches the calculator row */
+    customerCompletionRate?: number;
+    /** Payments funnel: current state in % + recoverable opportunity (volume) */
+    funnelBreakdown?: PaymentFunnelStage[];
   };
   calculator2: { rows: CalculatorRow[]; costReduction: number; };
 }
@@ -528,7 +557,8 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   const approvedTxImprovement = fortFinalApproved - custFinalApproved; // a
   const totalDelta = -approvedTxImprovement; // b = −a
   const duplicateSuccessfulTx = totalDelta * retryRate * successRate; // e = b×c×d
-  const deduplicationGMVReduction = duplicateSuccessfulTx * effectiveCompletedAOV; // g = e×f
+  const recoveredOrderAOV_c245 = effectiveCompletedAOV * aovMultiplier; // f' = AOV × Recovered Order AOV multiplier
+  const deduplicationGMVReduction = duplicateSuccessfulTx * recoveredOrderAOV_c245; // g = e×f'
 
   // Deduplicated value = Value of approved transactions (Forter outcome) + Deduplication GMV reduction
   const fortFinalValueDeduplicated = deduplicationEnabled 
@@ -645,7 +675,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     },
   ];
 
-  // Build deduplication breakdown for info popover (a→b→c,d→e→f→g; f = Completed AOV, same as calculator row)
+  // Build deduplication breakdown for info popover (a→b→c,d→e→f→f'→g; f = AOV, f' = Recovered Order AOV, g = e×f')
   const deduplicationBreakdown: DeduplicationBreakdown = {
     approvedTxImprovement, // a
     fraudTxDropOff: 0, // unused in simplified model
@@ -653,9 +683,65 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     retryRate: dedup.retryRate, // c
     successRate: dedup.successRate, // d
     duplicateSuccessfulTx, // e = b×c×d
-    aov: effectiveCompletedAOV, // f = Completed AOV (same as value of approved transactions)
-    gmvReduction: deduplicationGMVReduction, // g = e×f
+    aov: effectiveCompletedAOV, // f = Base Completed AOV
+    aovMultiplier: aovMultiplier, // Recovered Order AOV multiplier from Forter KPI
+    recoveredOrderAOV: recoveredOrderAOV_c245, // f' = AOV × multiplier (used for g)
+    gmvReduction: deduplicationGMVReduction, // g = e×f'
   };
+
+  // Payments funnel: aligned with calculator rows. All % are of transaction attempts (volume or value as noted).
+  // Decline % = volume at that stage / transactionAttempts. Approved % = completion rate (r = q/b) so it matches "Completion rate (%)" row.
+  const attemptsPct = transactionAttempts > 0 ? 100 : 0;
+  const preAuthDeclinePct = transactionAttempts > 0 ? ((transactionAttempts - custApprovedPreAuth) / transactionAttempts) * 100 : 0;
+  const preAuthRemainingPct = transactionAttempts > 0 ? (custApprovedPreAuth / transactionAttempts) * 100 : 0;
+  const threeDSDeclinePct = transactionAttempts > 0 ? (cust3DSFails / transactionAttempts) * 100 : 0;
+  const afterThreeDSPct = transactionAttempts > 0 ? (custToBank / transactionAttempts) * 100 : 0;
+  const bankDeclinePct = transactionAttempts > 0 ? (custBankDeclines / transactionAttempts) * 100 : 0;
+  const afterBankPct = transactionAttempts > 0 ? (custPostBankTx / transactionAttempts) * 100 : 0;
+  const postAuthDeclines = custPostBankTx * (1 - custPostAuth);
+  const postAuthDeclinePct = transactionAttempts > 0 ? (postAuthDeclines / transactionAttempts) * 100 : 0;
+  const completedPct = custCompletionRate; // Same as calculator "Completion rate (%)" row (r = q/b)
+  // Recoverable from calculator Forter improvement rows (allow negative so stages sum to total)
+  // 1) Pre-auth: Approved transactions (#) after pre-auth → Forter improvement
+  const preAuthRecoverableVol = fortApprovedPreAuth - custApprovedPreAuth;
+  // 2) 3DS: inverse of "3DS failure & abandonment rate - Volume" Forter improvement
+  const threeDSRecoverableVol = cust3DSFails - fort3DSFails;
+  // 3) Issuing bank: same as calculator row "Issuing bank declines" recoverable (cust - forter). Never adjusted so funnel matches calculator.
+  const bankRecoverableVol = custBankDeclines - fortBankDeclines;
+  const bankR = Math.round(bankRecoverableVol); // fixed; do not add diff to this stage
+  // 4) Post-auth: actual formula (customer post-auth declines - forter post-auth declines) so 0 when both have 0 declines
+  const custPostAuthDeclines = custPostBankTx * (1 - custPostAuth);
+  const fortPostAuthDeclines = fortPostBankTx * (1 - fortPostAuth);
+  const postAuthRecoverableVolRaw = custPostAuthDeclines - fortPostAuthDeclines;
+  const totalRecoverableVol = fortFinalApproved - custFinalApproved;
+  const totalR = Math.round(totalRecoverableVol);
+  let preAuthR = Math.round(preAuthRecoverableVol);
+  let threeDSR = Math.round(threeDSRecoverableVol);
+  let postAuthR = Math.round(postAuthRecoverableVolRaw);
+  const sumR = preAuthR + threeDSR + bankR + postAuthR;
+  const diff = totalR - sumR;
+  // Apply rounding correction only to preAuth, 3ds, or postAuth so "Issuing bank declines" in funnel always matches calculator.
+  if (diff !== 0) {
+    const stages = [
+      { key: 'preAuth' as const, val: preAuthR },
+      { key: '3ds' as const, val: threeDSR },
+      { key: 'postAuth' as const, val: postAuthR },
+    ].sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+    const target = stages[0];
+    if (target.key === 'preAuth') preAuthR += diff;
+    else if (target.key === '3ds') threeDSR += diff;
+    else postAuthR += diff;
+  }
+  const chargebackPreventedVol = Math.max(0, custFinalApproved * custCBRate - fortFinalApproved * fortCBRate);
+  const funnelBreakdown: PaymentFunnelStage[] = [
+    { id: 'attempts', label: 'Transaction attempts', pctOfAttempts: attemptsPct, pctRemaining: 100, isDecline: false },
+    { id: 'preauth', label: 'Pre-auth fraud declines', pctOfAttempts: preAuthDeclinePct, pctRemaining: preAuthRemainingPct, isDecline: true, recoverableVolume: preAuthR, recoverableNote: 'false declines' },
+    { id: '3ds', label: '3DS failure & abandonment', pctOfAttempts: threeDSDeclinePct, pctRemaining: afterThreeDSPct, isDecline: true, recoverableVolume: threeDSR, recoverableNote: 'frictionless shift' },
+    { id: 'bank', label: 'Issuing bank declines', pctOfAttempts: bankDeclinePct, pctRemaining: afterBankPct, isDecline: true, recoverableVolume: bankR, recoverableVolumeRaw: bankRecoverableVol, recoverableNote: 'retry / updater' },
+    { id: 'postauth', label: 'Post-auth fraud declines', pctOfAttempts: postAuthDeclinePct, pctRemaining: completedPct, isDecline: true, recoverableVolume: postAuthR, recoverableNote: 'post-auth approval' },
+    { id: 'completed', label: 'Approved transactions', pctOfAttempts: completedPct, pctRemaining: completedPct, isDecline: false, isCompleted: true },
+    { id: 'chargebacks', label: 'Fraud Claims / Chargebacks', pctOfAttempts: fraudChargebackRate, pctRemaining: fraudChargebackRate, isDecline: false, isPostCompletion: true, recoverableVolume: Math.round(chargebackPreventedVol), recoverableNote: 'better signals' },
+  ];
 
   return {
     calculator1: { 
@@ -667,6 +753,9 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
       deduplicationApplied: deduplicationEnabled,
       deduplicationBreakdown,
       customerCompletedTransactionCount: custFinalApproved,
+      /** Completion rate (%) = r = q/b; funnel "Approved transactions" uses this so it matches the calculator row */
+      customerCompletionRate: custCompletionRate,
+      funnelBreakdown,
     },
     calculator2: { rows: calculator2Rows, costReduction: chargebackSavings },
   };

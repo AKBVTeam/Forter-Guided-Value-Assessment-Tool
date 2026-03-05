@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { LucideIcon } from "lucide-react";
@@ -83,11 +83,13 @@ import {
   defaultDeduplicationAssumptions,
   DeduplicationBreakdown,
   createCurrencyFormatter,
+  type PaymentFunnelStage,
 } from "@/lib/calculations";
 import { defaultAbuseBenchmarks } from "./AbuseBenchmarksModal";
 import { getCurrencySymbol } from "@/lib/benchmarkData";
 import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
-import { SegmentCalculatorTabs, computeSegmentedAggregateValue, computeSegmentedAggregateRows, computeSegmentedAggregateDeduplicationBreakdown } from "./SegmentCalculatorTabs";
+import { cn } from "@/lib/utils";
+import { SegmentCalculatorTabs, computeSegmentedAggregateValue, computeSegmentedAggregateRows, computeSegmentedAggregateDeduplicationBreakdown, computeSegmentedAggregateFunnel } from "./SegmentCalculatorTabs";
 import { BenefitSelector, BENEFIT_OPTIONS } from "./BenefitSelector";
 import { CalculatorInputsTab, hasCalculatorMissingInputs, getCalculatorCompletionPercentage, CALCULATOR_REQUIRED_INPUTS } from "./CalculatorInputsTab";
 import { runStandaloneCalculator, STANDALONE_CALC_SECTION } from "@/lib/runStandaloneCalculator";
@@ -111,6 +113,8 @@ interface PerformanceHighlight {
   target: number;
   unit: string;
   percentChange?: number;
+  /** Decimal places for display (e.g. 2 for fraud chargeback rate to match calculator) */
+  decimals?: number;
 }
 
 interface ValueDriver {
@@ -245,8 +249,10 @@ export const ValueSummaryOptionA = ({
   const [riskMitigationOpen, setRiskMitigationOpen] = useState(true);
   const [selectedCalculatorId, setSelectedCalculatorId] = useState<string | null>(null);
   const [ebitdaChartModalOpen, setEbitdaChartModalOpen] = useState(false);
-  const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator' | 'success-stories'>('summary');
+  const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator' | 'funnel' | 'success-stories'>('summary');
+  const [funnelViewMode, setFunnelViewMode] = useState<'percent' | 'transactions'>('transactions');
   const [successStoriesViewed, setSuccessStoriesViewed] = useState<Set<string>>(new Set());
+  const [funnelViewed, setFunnelViewed] = useState<Set<string>>(new Set());
   const calculatorDialogRef = useRef<HTMLDivElement>(null);
   const [isCapturingBenefitPdf, setIsCapturingBenefitPdf] = useState(false);
 
@@ -1023,6 +1029,23 @@ export const ValueSummaryOptionA = ({
       deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
     );
   }, [isSegmentationEnabled, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  // Aggregated chargeback calculator rows for Total view (so callout matches calculator modal Total)
+  const segmentedC1ChargebackAggregateRows = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge1Selected || isChallenge245Selected) return [];
+    return computeSegmentedAggregateRows(
+      formData, forterKPIs, "c1", "chargeback",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
+
+  const segmentedC245ChargebackAggregateRows = useMemo(() => {
+    if (!isSegmentationEnabled || !isChallenge245Selected) return [];
+    return computeSegmentedAggregateRows(
+      formData, forterKPIs, "c245", "chargeback",
+      deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+    );
+  }, [isSegmentationEnabled, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled]);
   
   // Aggregated deduplication breakdown for segmented analysis
   const segmentedDeduplicationBreakdown = useMemo(() => {
@@ -1034,6 +1057,16 @@ export const ValueSummaryOptionA = ({
       deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate
     );
   }, [isSegmentationEnabled, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate]);
+
+  // Funnel: use aggregated segment funnel when segment analysis is on (so Approved transactions aligns with Total completion rate)
+  const funnelToShow = useMemo((): PaymentFunnelStage[] => {
+    if (isSegmentationEnabled && isChallenge245Selected && segmentedC245AggregateRows.length > 0) {
+      return computeSegmentedAggregateFunnel(
+        formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled
+      );
+    }
+    return challenge245Results?.calculator1?.funnelBreakdown ?? [];
+  }, [isSegmentationEnabled, isChallenge245Selected, segmentedC245AggregateRows.length, formData, forterKPIs, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled, challenge245Results?.calculator1?.funnelBreakdown]);
 
   const challenge3Results = useMemo(() => {
     if (!isChallenge3Selected) return null;
@@ -1607,7 +1640,7 @@ export const ValueSummaryOptionA = ({
       return !isRemoved;
     });
     return applyCustomBenefitNames(filtered, formData.customBenefitNames).map(d => normalizeZeroValueDriver(d, formData));
-  }, [challenge1Results, challenge245Results, challenge9Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge9Selected, isCustomMode, enabledBenefitIds, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled, isSegmentationEnabled, segmentedC1AggregateRows, segmentedC245AggregateRows]);
+  }, [challenge1Results, challenge245Results, challenge9Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge9Selected, isCustomMode, enabledBenefitIds, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled, isSegmentationEnabled, segmentedC1AggregateRows, segmentedC245AggregateRows, segmentedC1ChargebackAggregateRows, segmentedC245ChargebackAggregateRows]);
 
   const riskAvoidanceDrivers: ValueDriver[] = useMemo(() => {
     const drivers: ValueDriver[] = [];
@@ -1641,12 +1674,19 @@ export const ValueSummaryOptionA = ({
     );
     
     if (showC1Chargeback && challenge1Results && shouldShowChargeback) {
-      const currentCB = formData.fraudCBRate || 0.5;
-      const targetCB = forterKPIs.chargebackReductionIsAbsolute 
-        ? forterKPIs.chargebackReduction 
-        : currentCB * (1 - forterKPIs.chargebackReduction / 100);
-      const percentChange = currentCB > 0 
-        ? ((targetCB - currentCB) / currentCB) * 100 
+      const rowsForCB = (isSegmentationEnabled && segmentedC1ChargebackAggregateRows.length > 0)
+        ? segmentedC1ChargebackAggregateRows
+        : challenge1Results.calculator2.rows;
+      const cbRow = rowsForCB.find((r) => r.label === "Gross Fraud Chargeback Rate (%)");
+      const currentCB = cbRow?.rawCustomerValue ?? formData.fraudCBRate ?? 0;
+      const targetCBFromRow = cbRow?.rawForterValue;
+      const targetCB = targetCBFromRow !== undefined && targetCBFromRow !== null
+        ? targetCBFromRow
+        : forterKPIs.chargebackReductionIsAbsolute
+          ? (forterKPIs.chargebackReduction ?? 0)
+          : currentCB * (1 - (forterKPIs.chargebackReduction ?? 50) / 100);
+      const percentChange = currentCB > 0
+        ? ((targetCB - currentCB) / currentCB) * 100
         : 0;
 
       // Use segmented total if available; otherwise use global result
@@ -1667,15 +1707,23 @@ export const ValueSummaryOptionA = ({
           target: Math.max(0, targetCB),
           unit: "%",
           percentChange,
+          decimals: 2,
         },
       });
     } else if (showC245Chargeback && challenge245Results && shouldShowChargeback) {
-      const currentCB = formData.fraudCBRate || 0.5;
-      const targetCB = forterKPIs.chargebackReductionIsAbsolute 
-        ? forterKPIs.chargebackReduction 
-        : currentCB * (1 - forterKPIs.chargebackReduction / 100);
-      const percentChange = currentCB > 0 
-        ? ((targetCB - currentCB) / currentCB) * 100 
+      const rowsForCB = (isSegmentationEnabled && segmentedC245ChargebackAggregateRows.length > 0)
+        ? segmentedC245ChargebackAggregateRows
+        : challenge245Results.calculator2.rows;
+      const cbRow = rowsForCB.find((r) => r.label === "Gross Fraud Chargeback Rate (%)");
+      const currentCB = cbRow?.rawCustomerValue ?? formData.fraudCBRate ?? 0;
+      const targetCBFromRow = cbRow?.rawForterValue;
+      const targetCB = targetCBFromRow !== undefined && targetCBFromRow !== null
+        ? targetCBFromRow
+        : forterKPIs.chargebackReductionIsAbsolute
+          ? (forterKPIs.chargebackReduction ?? 0)
+          : currentCB * (1 - (forterKPIs.chargebackReduction ?? 50) / 100);
+      const percentChange = currentCB > 0
+        ? ((targetCB - currentCB) / currentCB) * 100
         : 0;
 
       // Use segmented total if available; otherwise use global result
@@ -1696,6 +1744,7 @@ export const ValueSummaryOptionA = ({
           target: Math.max(0, targetCB),
           unit: "%",
           percentChange,
+          decimals: 2,
         },
       });
     } else if ((shouldShowChargebackAlways || (isChallenge1Selected && !isChallenge245Selected) || isChallenge245Selected) && shouldShowChargeback) {
@@ -2699,6 +2748,7 @@ export const ValueSummaryOptionA = ({
   const renderPerformanceHighlight = (highlight?: PerformanceHighlight) => {
     if (!highlight) return null;
 
+    const decimals = highlight.decimals ?? 1;
     const isPositive = highlight.target >= highlight.current;
     const changeText = highlight.percentChange !== undefined
       ? `(${highlight.percentChange >= 0 ? "+" : ""}${highlight.percentChange.toFixed(1)}%)`
@@ -2711,12 +2761,12 @@ export const ValueSummaryOptionA = ({
       <p className="text-xs text-muted-foreground mt-1 pl-14">
         <span className="font-medium">{highlight.label}:</span>{" "}
         {showOnlyTarget ? (
-          <span className="font-medium text-primary">{highlight.target.toFixed(1)}{highlight.unit}</span>
+          <span className="font-medium text-primary">{highlight.target.toFixed(decimals)}{highlight.unit}</span>
         ) : (
           <>
-            <span className="text-foreground">{highlight.current.toFixed(1)}{highlight.unit}</span>
+            <span className="text-foreground">{highlight.current.toFixed(decimals)}{highlight.unit}</span>
             <span className="mx-1">→</span>
-            <span className="font-medium text-primary">{highlight.target.toFixed(1)}{highlight.unit}</span>
+            <span className="font-medium text-primary">{highlight.target.toFixed(decimals)}{highlight.unit}</span>
           </>
         )}
         {changeText && (
@@ -4153,7 +4203,8 @@ export const ValueSummaryOptionA = ({
               {selectedCalculatorId && selectedCalculator && (() => {
                 const captureBenefitPdf = async () => {
                   setIsCapturingBenefitPdf(true);
-                  const tabsInOrder = (hasCaseStudy(selectedCalculatorId ?? '') ? ['summary', 'inputs', 'calculator', 'success-stories'] : ['summary', 'inputs', 'calculator']) as const;
+                  const hasFunnel = selectedCalculatorId === 'c245-revenue';
+                  const tabsInOrder = (hasCaseStudy(selectedCalculatorId ?? '') ? (hasFunnel ? ['summary', 'inputs', 'calculator', 'funnel', 'success-stories'] : ['summary', 'inputs', 'calculator', 'success-stories']) : (hasFunnel ? ['summary', 'inputs', 'calculator', 'funnel'] : ['summary', 'inputs', 'calculator'])) as const;
                   const prevTab = calculatorModalTab;
                   try {
                     const html2canvas = (await import('html2canvas')).default;
@@ -4638,8 +4689,8 @@ export const ValueSummaryOptionA = ({
                 );
               })()}
               </div>
-              {/* Deduplication toggle - only show for GMV uplift calculators and when on calculator tab */}
-              {calculatorModalTab === 'calculator' && (selectedCalculatorId === "c1-revenue" || selectedCalculatorId === "c245-revenue") && (
+              {/* Deduplication toggle - show for GMV uplift calculators on calculator or funnel tab */}
+              {(calculatorModalTab === 'calculator' || calculatorModalTab === 'funnel') && (selectedCalculatorId === "c1-revenue" || selectedCalculatorId === "c245-revenue") && (
                 <div className="flex items-center gap-3 ml-auto">
                   <div className="flex items-center gap-2">
                     <Switch
@@ -4723,8 +4774,22 @@ export const ValueSummaryOptionA = ({
                                         <td className="px-2 py-1">Completed AOV</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
                                       </tr>
+                                      {breakdown.recoveredOrderAOV != null && breakdown.aovMultiplier != null ? (
+                                        <>
+                                          <tr>
+                                            <td className="px-2 py-1 text-muted-foreground">g</td>
+                                            <td className="px-2 py-1">Recovered AOV multiplier (Forter KPI)</td>
+                                            <td className="px-2 py-1 text-right font-mono">{(breakdown.aovMultiplier).toFixed(2)}×</td>
+                                          </tr>
+                                          <tr>
+                                            <td className="px-2 py-1 text-muted-foreground">h = f×g</td>
+                                            <td className="px-2 py-1">Recovered AOV</td>
+                                            <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.recoveredOrderAOV)}</td>
+                                          </tr>
+                                        </>
+                                      ) : null}
                                       <tr className="bg-green-50 dark:bg-green-950 font-semibold">
-                                        <td className="px-2 py-1 text-muted-foreground">g = e×f</td>
+                                        <td className="px-2 py-1 text-muted-foreground">{breakdown.recoveredOrderAOV != null ? "i = e×h" : "g = e×f"}</td>
                                         <td className="px-2 py-1">Deduplication GMV reduction (applied to value of approved transactions)</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
                                       </tr>
@@ -4761,8 +4826,22 @@ export const ValueSummaryOptionA = ({
                                         <td className="px-2 py-1">Completed AOV</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.aov)}</td>
                                       </tr>
+                                      {breakdown.recoveredOrderAOV != null && breakdown.aovMultiplier != null ? (
+                                        <>
+                                          <tr>
+                                            <td className="px-2 py-1 text-muted-foreground">g</td>
+                                            <td className="px-2 py-1">Recovered AOV multiplier (Forter KPI)</td>
+                                            <td className="px-2 py-1 text-right font-mono">{(breakdown.aovMultiplier).toFixed(2)}×</td>
+                                          </tr>
+                                          <tr>
+                                            <td className="px-2 py-1 text-muted-foreground">h = f×g</td>
+                                            <td className="px-2 py-1">Recovered AOV</td>
+                                            <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.recoveredOrderAOV)}</td>
+                                          </tr>
+                                        </>
+                                      ) : null}
                                       <tr className="bg-green-50 dark:bg-green-950 font-semibold">
-                                        <td className="px-2 py-1 text-muted-foreground">g = e×f</td>
+                                        <td className="px-2 py-1 text-muted-foreground">{breakdown.recoveredOrderAOV != null ? "i = e×h" : "g = e×f"}</td>
                                         <td className="px-2 py-1">Deduplication GMV reduction (applied to value of approved transactions)</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmtCur(breakdown.gmvReduction)}</td>
                                       </tr>
@@ -4824,11 +4903,10 @@ export const ValueSummaryOptionA = ({
           
           {/* Tabs for Benefit Summary vs Calculator */}
           <Tabs value={calculatorModalTab} onValueChange={(v) => {
-              setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'success-stories');
-              if (v === 'success-stories') {
-                const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
-                if (calcId) setSuccessStoriesViewed(prev => new Set(prev).add(calcId));
-              }
+              setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'funnel' | 'success-stories');
+              const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
+              if (v === 'success-stories' && calcId) setSuccessStoriesViewed(prev => new Set(prev).add(calcId));
+              if (v === 'funnel' && calcId) setFunnelViewed(prev => new Set(prev).add(calcId));
             }} className="w-full">
             {/* Show all 3 tabs (Benefit Summary, Inputs, Calculator) in both Guided and Custom mode when calculator has required inputs */}
             {(() => {
@@ -4842,8 +4920,9 @@ export const ValueSummaryOptionA = ({
               
               // Calculate number of visible tabs (Benefit Summary, optional Inputs, optional Calculator, Success Story)
               const showSuccessStoriesTab = hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '');
-              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + 1;
-              const gridCols = tabCount === 5 ? 'grid-cols-5' : tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
+              const showFunnelTab = showCalculatorTab && selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0;
+              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + (showFunnelTab ? 1 : 0) + 1;
+              const gridCols = tabCount === 6 ? 'grid-cols-6' : tabCount === 5 ? 'grid-cols-5' : tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
               
               return (
                 <TabsList className={`grid w-full max-w-2xl ${gridCols}`}>
@@ -4861,6 +4940,14 @@ export const ValueSummaryOptionA = ({
                     <TabsTrigger value="calculator" className="gap-2">
                       Calculator
                       {isInputsComplete && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                    </TabsTrigger>
+                  )}
+                  {showFunnelTab && (
+                    <TabsTrigger value="funnel" className="gap-2">
+                      Funnel
+                      {funnelViewed.has(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-green-500" />
+                      )}
                     </TabsTrigger>
                   )}
                   {showSuccessStoriesTab ? (
@@ -5079,6 +5166,273 @@ export const ValueSummaryOptionA = ({
               </div>
             </TabsContent>
 
+            {/* Funnel Tab – waterfall % or # transactions; no chargebacks section; c245-revenue only */}
+            <TabsContent value="funnel" className="mt-4">
+              <div data-benefit-pdf="funnel" className="min-h-0 space-y-4">
+                {(() => {
+                  const funnel = funnelToShow;
+                  if (!funnel || funnel.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>Funnel data is not available. Complete payment funnel inputs to see the chart.</p>
+                      </div>
+                    );
+                  }
+                  const funnelStages = funnel.filter((s: PaymentFunnelStage) => !s.isPostCompletion);
+                  const totalRecoverableVol = funnelStages.reduce((sum, s) => sum + (s.recoverableVolume ?? 0), 0);
+                  // Use same source as first card so funnel total matches "TOTAL RECOVERABLE" card (avoids off-by-one)
+                  const breakdownForTotal = isSegmentationEnabled ? segmentedDeduplicationBreakdown : (challenge245Results?.calculator1?.deduplicationBreakdown ?? null);
+                  const displayTotalRecoverable = breakdownForTotal?.approvedTxImprovement != null ? Math.round(breakdownForTotal.approvedTxImprovement) : totalRecoverableVol;
+                  const fmtVol = (n: number) => n.toLocaleString('en-US');
+                  const fmtVolSigned = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('en-US')})` : n.toLocaleString('en-US');
+                  const fmtVolK = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+                  const getRecoveryLabel = (stageId: string) => {
+                    switch (stageId) {
+                      case 'preauth': return 'false declines';
+                      case '3ds': return 'exemption/frictionless shift';
+                      case 'bank': return 'more authorizations';
+                      case 'postauth': return 'false declines';
+                      default: return '';
+                    }
+                  };
+                  const modalFormData = modalContext.modalFormData;
+                  const totalTransactionAttempts = (modalFormData.segmentationEnabled && (modalFormData.segments?.filter((s: { enabled?: boolean }) => s.enabled).length ?? 0) > 0)
+                    ? (modalFormData.segments ?? []).filter((s: { enabled?: boolean }) => s.enabled).reduce((sum: number, s: { inputs?: { grossAttempts?: number } }) => sum + (s.inputs?.grossAttempts ?? 0), 0)
+                    : (modalFormData.amerGrossAttempts ?? 0);
+                  const showAsTransactions = funnelViewMode === 'transactions';
+                  const declineSegmentColor = (stage: PaymentFunnelStage) => {
+                    if (stage.id === 'preauth') return 'bg-red-300';
+                    if (stage.id === '3ds') return 'bg-red-400';
+                    if (stage.id === 'bank') return 'bg-red-500';
+                    if (stage.id === 'postauth') return 'bg-red-600';
+                    return 'bg-red-500';
+                  };
+                  return (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-4 mb-4">
+                        <h4 className="text-sm font-semibold text-center text-muted-foreground flex-1">
+                          How transactions flow — payments funnel
+                        </h4>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-muted-foreground">%</span>
+                          <Switch
+                            id="funnel-view-mode"
+                            checked={showAsTransactions}
+                            onCheckedChange={(checked) => {
+                              const mode = checked ? 'transactions' : 'percent';
+                              setFunnelViewMode(mode);
+                              onFormDataChange?.('_funnelViewMode' as keyof CalculatorData, mode);
+                            }}
+                          />
+                          <span className="text-xs text-muted-foreground"># of transactions</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-3 items-center text-sm">
+                        <div className="font-medium text-muted-foreground">{showAsTransactions ? 'Current state (# of transactions)' : 'Current state (% of attempts)'}</div>
+                        <div className="font-medium text-muted-foreground text-right">Forter recoverable</div>
+                        {funnelStages.map((stage: PaymentFunnelStage) => {
+                          const isAttempts = stage.id === 'attempts';
+                          const isDecline = stage.isDecline;
+                          const isCompleted = stage.isCompleted;
+                          const pctRemaining = Math.min(100, stage.pctRemaining);
+                          const pctDeducted = Math.min(100, stage.pctOfAttempts);
+                          const countRemaining = Math.round(totalTransactionAttempts * (pctRemaining / 100));
+                          const countDeducted = Math.round(totalTransactionAttempts * (pctDeducted / 100));
+                          const displayVal = showAsTransactions ? (isAttempts ? totalTransactionAttempts : (isCompleted ? countRemaining : countDeducted)) : (isAttempts ? '100' : stage.pctOfAttempts.toFixed(1));
+                          const displaySuffix = showAsTransactions ? '' : '%';
+                          return (
+                            <div key={stage.id} className="contents group">
+                              <div className="flex items-center gap-3">
+                                <div className="w-40 shrink-0 text-sm font-medium">{stage.label}</div>
+                                <div className="flex-1 min-w-0 h-7 rounded overflow-hidden flex">
+                                  {isAttempts && (
+                                    <div className="h-full flex-1 min-w-0 bg-green-400 rounded flex items-center pl-2 text-xs font-medium text-green-900/80" style={{ minWidth: '100%' }}>
+                                      {showAsTransactions ? fmtVol(totalTransactionAttempts) : '100%'}
+                                    </div>
+                                  )}
+                                  {isDecline && (
+                                    <>
+                                      <div className="h-full bg-muted/70 shrink-0 flex items-center rounded" style={{ width: `${pctRemaining}%`, minWidth: 0 }} />
+                                      {pctDeducted > 0 && (
+                                        <div
+                                          className={cn("h-full shrink-0 flex items-center justify-end pr-1.5 rounded-r", declineSegmentColor(stage))}
+                                          style={{ width: `${pctDeducted}%`, minWidth: '2rem' }}
+                                        />
+                                      )}
+                                    </>
+                                  )}
+                                  {isCompleted && !isAttempts && (
+                                    <div className="h-full bg-green-800 rounded flex items-center pl-2 text-xs font-medium text-green-100" style={{ width: `${pctRemaining}%`, minWidth: 0 }}>
+                                      {showAsTransactions ? fmtVol(countRemaining) : `${stage.pctOfAttempts.toFixed(1)}%`}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="w-28 shrink-0 text-right flex flex-col justify-center">
+                                  {isAttempts && (
+                                    <>
+                                      <span className="text-lg font-bold tabular-nums">{showAsTransactions ? fmtVol(totalTransactionAttempts) : '100%'}</span>
+                                      <span className="text-xs text-muted-foreground">baseline</span>
+                                    </>
+                                  )}
+                                  {isDecline && !isAttempts && (
+                                    <>
+                                      <span className="text-lg font-bold tabular-nums text-red-700 dark:text-red-300">{showAsTransactions ? fmtVol(countDeducted) : `${stage.pctOfAttempts.toFixed(1)}%`}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {stage.id === '3ds' ? 'lost' : stage.id === 'bank' ? 'rejected' : 'declined'}
+                                      </span>
+                                    </>
+                                  )}
+                                  {isCompleted && (
+                                    <>
+                                      <span className="text-lg font-bold tabular-nums text-green-800 dark:text-green-200">{showAsTransactions ? fmtVol(countRemaining) : `${stage.pctOfAttempts.toFixed(1)}%`}</span>
+                                      <span className="text-xs text-muted-foreground">converted</span>
+                                    </>
+                                  )}
+                                </div>
+                                <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground/40" aria-hidden />
+                              </div>
+                              <div className="text-right max-w-[200px]">
+                                {isCompleted ? (
+                                  displayTotalRecoverable != null ? (
+                                    displayTotalRecoverable === 0 ? (
+                                      <span className="text-muted-foreground">-</span>
+                                    ) : (
+                                      <span className="block">
+                                        <span className={cn("font-bold", displayTotalRecoverable >= 0 ? "text-green-800 dark:text-green-300 text-base" : "text-red-600 dark:text-red-400 text-sm")}>~{fmtVolSigned(displayTotalRecoverable)} tx</span>
+                                        <span className="block text-xs text-muted-foreground mt-0.5">{displayTotalRecoverable < 0 ? 'additionally impacted' : 'total recoverable'}</span>
+                                      </span>
+                                    )
+                                  ) : null
+                                ) : stage.recoverableVolume != null ? (
+                                  stage.recoverableVolume === 0 ? (
+                                    <span className="text-muted-foreground">-</span>
+                                  ) : showAsTransactions ? (
+                                    <span className="block">
+                                      <span className={cn("font-bold text-sm", stage.recoverableVolume >= 0 ? "text-blue-600 dark:text-blue-400" : "text-red-600 dark:text-red-400")}>~{fmtVolSigned(stage.recoverableVolume)} tx</span>
+                                      <span className="block text-xs text-muted-foreground mt-0.5">{stage.recoverableVolume < 0 ? 'additionally impacted' : (getRecoveryLabel(stage.id) || 'recoverable')}</span>
+                                    </span>
+                                  ) : (
+                                    (() => {
+                                      const declinedCount = totalTransactionAttempts * (stage.pctOfAttempts / 100);
+                                      const recoveryPct = declinedCount > 0 ? Math.round((stage.recoverableVolume / declinedCount) * 100) : 0;
+                                      const isNegative = stage.recoverableVolume < 0;
+                                      const label = isNegative ? 'additionally impacted' : getRecoveryLabel(stage.id);
+                                      return (
+                                        <span className="block">
+                                          <span className={cn("font-bold text-sm", stage.recoverableVolume >= 0 ? "text-blue-600 dark:text-blue-400" : "text-red-600 dark:text-red-400")}>{isNegative ? `(${Math.abs(recoveryPct)}%)` : `${recoveryPct}%`}</span>
+                                          <span className="block text-xs text-muted-foreground mt-0.5">{label}</span>
+                                        </span>
+                                      );
+                                    })()
+                                  )
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div className="col-span-2 pt-2 border-t text-xs text-muted-foreground text-right">
+                          Total opportunity above ~{fmtVolSigned(displayTotalRecoverable)} recoverable transactions
+                        </div>
+                      </div>
+                      {/* Recoverable GMV: horizontal card flow (slide-style) */}
+                      {(() => {
+                        const breakdown = isSegmentationEnabled
+                          ? segmentedDeduplicationBreakdown
+                          : (challenge245Results?.calculator1?.deduplicationBreakdown ?? null);
+                        if (!breakdown || breakdown.aov == null) return null;
+                        const fmtCur = createCurrencyFormatter(formData.baseCurrency || 'USD');
+                        const approvedTx = breakdown.approvedTxImprovement ?? totalRecoverableVol;
+                        const recoveredAov = breakdown.recoveredOrderAOV ?? breakdown.aov;
+                        const dupTx = Math.round(breakdown.duplicateSuccessfulTx ?? 0);
+                        const dupPct = breakdown.retryRate != null && breakdown.successRate != null
+                          ? (breakdown.retryRate * breakdown.successRate) / 100
+                          : 0;
+                        const dedupRecoverableTx = approvedTx + dupTx;
+                        const displayGmv = (isSegmentationEnabled && segmentedC245RevenueTotal != null)
+                          ? segmentedC245RevenueTotal
+                          : (deduplicationEnabled
+                            ? (challenge245Results?.calculator1?.deduplicatedRevenueUplift ?? (approvedTx * recoveredAov + (breakdown.gmvReduction ?? 0)))
+                            : (challenge245Results?.calculator1?.revenueUplift ?? approvedTx * recoveredAov));
+                        const cardClass = "rounded-lg border bg-card px-4 py-3 text-center shadow-sm w-[9.5rem] min-h-[5.25rem] flex flex-col justify-center items-center";
+                        const labelClass = "text-xs text-muted-foreground tracking-wide mb-0.5";
+                        const valueClass = "font-semibold text-foreground";
+                        const hasRecoveredAovMultiplier = breakdown.recoveredOrderAOV != null && breakdown.aovMultiplier != null;
+                        return (
+                          <div className="flex flex-col gap-4 py-2">
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                              <div className={cardClass}>
+                                <div className={labelClass}>Total recoverable</div>
+                                <div className={valueClass}>{Math.round(approvedTx).toLocaleString('en-US')} tx</div>
+                              </div>
+                              {deduplicationEnabled && (
+                                <>
+                                  <ChevronRight className="w-5 h-5 text-muted-foreground/50 flex-shrink-0" aria-hidden />
+                                  <div className={cardClass}>
+                                    <div className={cn("flex items-center justify-center gap-1", labelClass)}>
+                                      Less duplicate attempts
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring" aria-label="How duplicate attempts are calculated">
+                                            <Info className="w-3.5 h-3.5 shrink-0" />
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="max-w-xs p-3">
+                                          <p className="font-medium mb-1">Duplicate attempts</p>
+                                          <p className="text-muted-foreground text-sm">
+                                            Duplicate successful transactions = total recoverable × retry rate × success rate. We assume {breakdown.retryRate?.toFixed(1) ?? '—'}% of declined customers retry and {breakdown.successRate?.toFixed(1) ?? '—'}% of those retries succeed, so about {dupPct.toFixed(1)}% of the recoverable volume are duplicates that would have been recovered anyway.
+                                          </p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </div>
+                                    <div className={valueClass}>{dupPct.toFixed(1)}%</div>
+                                    <div className="text-xs text-muted-foreground">({Math.abs(dupTx).toLocaleString('en-US')} tx)</div>
+                                  </div>
+                                  <ChevronRight className="w-5 h-5 text-muted-foreground/50 flex-shrink-0" aria-hidden />
+                                  <div className={cardClass}>
+                                    <div className={labelClass}>Deduplicated recoverable</div>
+                                    <div className={valueClass}>{Math.round(dedupRecoverableTx).toLocaleString('en-US')} tx</div>
+                                  </div>
+                                </>
+                              )}
+                              <ChevronRight className="w-5 h-5 text-muted-foreground/50 flex-shrink-0" aria-hidden />
+                              <div className={cardClass}>
+                                <div className={cn("flex items-center justify-center gap-1", labelClass)}>
+                                  × Recovered AOV
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring" aria-label="How recovered average order value is calculated">
+                                        <Info className="w-3.5 h-3.5 shrink-0" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-xs p-3">
+                                      <p className="font-medium mb-1">Recovered average order value</p>
+                                      <p className="text-muted-foreground text-sm">
+                                        {hasRecoveredAovMultiplier
+                                          ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from Forter benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
+                                          : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
+                                        }
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                                <div className={valueClass}>{fmtCur(recoveredAov)}</div>
+                              </div>
+                            </div>
+                            <div className="flex justify-center">
+                              <div className={cn(cardClass, "bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-800 w-auto min-w-[12rem]")}>
+                                <div className={labelClass}>Recoverable GMV potential</div>
+                                <div className="font-bold text-lg text-green-800 dark:text-green-300">{fmtCur(displayGmv)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
+              </div>
+            </TabsContent>
+
             {/* Success Story Tab – case study slide image when available */}
             <TabsContent value="success-stories" className="mt-4">
               <div data-benefit-pdf="success-stories" className="min-h-0">
@@ -5115,8 +5469,18 @@ export const ValueSummaryOptionA = ({
               return (
                 <div className="flex justify-between items-center pt-4 mt-4 border-t">
                   <div className="flex items-center">
-{(calculatorModalTab === 'inputs' || calculatorModalTab === 'calculator' || calculatorModalTab === 'success-stories') && (
-                        <Button variant="outline" size="sm" className="gap-1" onClick={() => setCalculatorModalTab('summary')}>
+{(calculatorModalTab === 'inputs' || calculatorModalTab === 'calculator' || calculatorModalTab === 'funnel' || calculatorModalTab === 'success-stories') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => {
+                            if (calculatorModalTab === 'funnel') setCalculatorModalTab('calculator');
+                            else if (calculatorModalTab === 'calculator') setCalculatorModalTab(showInputsTab ? 'inputs' : 'summary');
+                            else if (calculatorModalTab === 'inputs') setCalculatorModalTab('summary');
+                            else if (calculatorModalTab === 'success-stories') setCalculatorModalTab(selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0 ? 'funnel' : 'calculator');
+                          }}
+                        >
                           <ChevronLeft className="w-4 h-4" /> Back
                         </Button>
                       )}
@@ -5130,6 +5494,16 @@ export const ValueSummaryOptionA = ({
                     {calculatorModalTab === 'inputs' && showCalculatorTab && (
                       <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('calculator')}>
                         Go to Calculator <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {calculatorModalTab === 'calculator' && selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0 && (
+                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('funnel')}>
+                        Go to Funnel <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {calculatorModalTab === 'funnel' && hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
+                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('success-stories')}>
+                        Go to Success Story <ArrowRight className="w-4 h-4" />
                       </Button>
                     )}
                   </div>

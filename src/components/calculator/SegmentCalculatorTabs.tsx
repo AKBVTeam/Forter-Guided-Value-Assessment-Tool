@@ -14,6 +14,7 @@ import {
   CalculatorRow,
   createCurrencyFormatter,
   DeduplicationBreakdown,
+  PaymentFunnelStage,
 } from "@/lib/calculations";
 import { getGmvToNetSalesDeductionPct } from "@/lib/gmvToNetSalesDeductionByCountry";
 import { Card } from "@/components/ui/card";
@@ -48,7 +49,7 @@ function calculateSegmentResults(
   deduplicationRetryRate: number,
   deduplicationSuccessRate: number,
   includesFraudCBCoverage: boolean = false
-): { rows: CalculatorRow[]; value: number; deduplicationBreakdown?: DeduplicationBreakdown } | null {
+): { rows: CalculatorRow[]; value: number; deduplicationBreakdown?: DeduplicationBreakdown; funnelBreakdown?: PaymentFunnelStage[] } | null {
   const segmentInputs = segment.inputs;
   const segmentKPIs = segment.kpis;
 
@@ -179,7 +180,7 @@ function calculateSegmentResults(
       threeDSFailureRate,
       issuingBankDeclineRate,
       forter3DSAbandonmentRate: globalForterKPIs.forter3DSAbandonmentRate ?? threeDSFailureRate,
-      forterIssuingBankDeclineRate: globalForterKPIs.forterIssuingBankDeclineRate ?? issuingBankDeclineRate,
+      forterIssuingBankDeclineRate: segmentKPIs.issuingBankDeclineReductionTarget ?? globalForterKPIs.forterIssuingBankDeclineRate ?? issuingBankDeclineRate,
       fraudChargebackRate: currentCBRate,
       isMarketplace,
       commissionRate,
@@ -200,7 +201,7 @@ function calculateSegmentResults(
 
     const results = calculateChallenge245(inputs);
     return calculatorType === "revenue"
-      ? { rows: results.calculator1.rows, value: results.calculator1.revenueUplift, deduplicationBreakdown: results.calculator1.deduplicationBreakdown }
+      ? { rows: results.calculator1.rows, value: results.calculator1.revenueUplift, deduplicationBreakdown: results.calculator1.deduplicationBreakdown, funnelBreakdown: results.calculator1.funnelBreakdown }
       : { rows: results.calculator2.rows, value: results.calculator2.costReduction };
   }
 }
@@ -263,6 +264,12 @@ function buildAggregateRows(
     if (type === "currency") return fmtCur(value);
     return Math.round(value).toLocaleString();
   };
+
+  // Row indices for AOV: aggregate as (sum of b) / (sum of a), not sum of segment values (matches customer inputs)
+  const rowIndexA = firstResult.rows.findIndex((r) => r.formula === "a" && r.label === "Transaction Attempts (#)");
+  const rowIndexB = firstResult.rows.findIndex((r) => r.formula === "b" && r.label === "Transaction Attempts ($)");
+  const isAovRow = (row: CalculatorRow) => row.formula === "c = b/a" && row.label === "Average order value (calculated)";
+  const isCompletedAovRow = (row: CalculatorRow) => row.formula === "c'" && row.label === "Completed AOV (for value of approved transactions)";
 
   // Create aggregated rows across segments (percent rows are weighted averages)
   return firstResult.rows.map((templateRow, rowIndex) => {
@@ -327,34 +334,82 @@ function buildAggregateRows(
       if (customerWeightTotal > 0) customerAgg = customerWeighted / customerWeightTotal;
       if (forterWeightTotal > 0) forterAgg = forterWeighted / forterWeightTotal;
     } else {
-      // Sum currency + numeric rows across segments
-      let customerSum = 0;
-      let forterSum = 0;
-      let hasCustomer = false;
-      let hasForter = false;
+      // AOV: aggregate both columns as (sum of b) / (sum of a). Completed AOV: customer = b/a, Forter = weighted avg (multiplier already in segment)
+      if ((isAovRow(templateRow) || isCompletedAovRow(templateRow)) && rowIndexA >= 0 && rowIndexB >= 0) {
+        let sumA_cust = 0;
+        let sumB_cust = 0;
+        let sumA_fort = 0;
+        let sumB_fort = 0;
+        let hasBoth = false;
+        for (const segment of enabledSegments) {
+          const result = segmentResults[segment.id];
+          if (!result?.rows[rowIndexA] || !result?.rows[rowIndexB]) continue;
+          const rowA = result.rows[rowIndexA];
+          const rowB = result.rows[rowIndexB];
+          const aC = rowA.rawCustomerValue ?? parseDisplayValue(rowA.customerInput, "number");
+          const bC = rowB.rawCustomerValue ?? parseDisplayValue(rowB.customerInput, inferredType);
+          const aF = rowA.rawForterValue ?? parseDisplayValue(rowA.forterOutcome, "number");
+          const bF = rowB.rawForterValue ?? parseDisplayValue(rowB.forterOutcome, inferredType);
+          if (aC !== undefined && bC !== undefined) {
+            sumA_cust += aC;
+            sumB_cust += bC;
+            hasBoth = true;
+          }
+          if (aF !== undefined && bF !== undefined) {
+            sumA_fort += aF;
+            sumB_fort += bF;
+          }
+        }
+        if (hasBoth && sumA_cust > 0) customerAgg = sumB_cust / sumA_cust;
+        if (isAovRow(templateRow) && sumA_fort > 0) forterAgg = sumB_fort / sumA_fort;
+        if (isCompletedAovRow(templateRow)) {
+          // Forter outcome = weighted average of segment Forter Completed AOV (recovered transactions multiplier already applied per segment)
+          let forterWeighted = 0;
+          let forterWeightTotal = 0;
+          for (const segment of enabledSegments) {
+            const w = weightBySegmentId.get(segment.id) ?? 0;
+            if (w <= 0) continue;
+            const result = segmentResults[segment.id];
+            const row = result?.rows[rowIndex];
+            if (!row) continue;
+            const fortVal = row.rawForterValue ?? parseDisplayValue(row.forterOutcome, inferredType);
+            if (fortVal !== undefined) {
+              forterWeighted += fortVal * w;
+              forterWeightTotal += w;
+            }
+          }
+          if (forterWeightTotal > 0) forterAgg = forterWeighted / forterWeightTotal;
+        }
+      } else {
+        // Sum currency + numeric rows across segments
+        let customerSum = 0;
+        let forterSum = 0;
+        let hasCustomer = false;
+        let hasForter = false;
 
-      for (const segment of enabledSegments) {
-        const segmentId = segment.id;
-        const result = segmentResults[segmentId];
-        if (!result || !result.rows[rowIndex]) continue;
+        for (const segment of enabledSegments) {
+          const segmentId = segment.id;
+          const result = segmentResults[segmentId];
+          if (!result || !result.rows[rowIndex]) continue;
 
-        const row = result.rows[rowIndex];
+          const row = result.rows[rowIndex];
 
-        const custVal = row.rawCustomerValue ?? parseDisplayValue(row.customerInput, inferredType);
-        if (custVal !== undefined) {
-          customerSum += custVal;
-          hasCustomer = true;
+          const custVal = row.rawCustomerValue ?? parseDisplayValue(row.customerInput, inferredType);
+          if (custVal !== undefined) {
+            customerSum += custVal;
+            hasCustomer = true;
+          }
+
+          const fortVal = row.rawForterValue ?? parseDisplayValue(row.forterOutcome, inferredType);
+          if (fortVal !== undefined) {
+            forterSum += fortVal;
+            hasForter = true;
+          }
         }
 
-        const fortVal = row.rawForterValue ?? parseDisplayValue(row.forterOutcome, inferredType);
-        if (fortVal !== undefined) {
-          forterSum += fortVal;
-          hasForter = true;
-        }
+        customerAgg = hasCustomer ? customerSum : undefined;
+        forterAgg = hasForter ? forterSum : undefined;
       }
-
-      customerAgg = hasCustomer ? customerSum : undefined;
-      forterAgg = hasForter ? forterSum : undefined;
     }
 
     // Calculate the forterImprovement as the delta between forter and customer
@@ -466,6 +521,90 @@ export function computeSegmentedAggregateRows(
 }
 
 /**
+ * Exported utility to compute aggregated funnel breakdown for the Total view when segment analysis is enabled.
+ * Weighted averages for % (by transaction attempts), sum for recoverable volumes. Aligns funnel "Approved transactions" with aggregate completion rate.
+ */
+export function computeSegmentedAggregateFunnel(
+  formData: CalculatorData,
+  globalForterKPIs: ForterKPIs,
+  deduplicationEnabled: boolean,
+  deduplicationRetryRate: number,
+  deduplicationSuccessRate: number,
+  includesFraudCBCoverage: boolean = false
+): PaymentFunnelStage[] {
+  const segments = formData.segments || [];
+  const enabledSegments = segments.filter(s => s.enabled);
+  if (enabledSegments.length === 0) return [];
+
+  const segmentResults: Record<string, { funnelBreakdown?: PaymentFunnelStage[]; deduplicationBreakdown?: DeduplicationBreakdown } | null> = {};
+  const weightBySegmentId = new Map(enabledSegments.map((s) => [s.id, s.inputs.grossAttempts ?? 0]));
+  let totalWeight = 0;
+  for (const segment of enabledSegments) {
+    const result = calculateSegmentResults(
+      segment,
+      formData,
+      globalForterKPIs,
+      "c245",
+      "revenue",
+      deduplicationEnabled,
+      deduplicationRetryRate,
+      deduplicationSuccessRate,
+      includesFraudCBCoverage
+    );
+    segmentResults[segment.id] = result;
+    totalWeight += weightBySegmentId.get(segment.id) ?? 0;
+  }
+  if (totalWeight <= 0) return [];
+
+  const firstFunnel = Object.values(segmentResults).find((r) => r?.funnelBreakdown?.length)?.funnelBreakdown;
+  if (!firstFunnel?.length) return [];
+
+  const aggregatedStages = firstFunnel.map((templateStage, stageIndex) => {
+    let pctOfAttemptsWeighted = 0;
+    let pctRemainingWeighted = 0;
+    let recoverableVolumeSum = 0;
+    let recoverableVolumeRawSum = 0;
+    let hasRawBank = false;
+    let weightSum = 0;
+
+    for (const segment of enabledSegments) {
+      const result = segmentResults[segment.id];
+      const funnel = result?.funnelBreakdown;
+      const stage = funnel?.[stageIndex];
+      const w = weightBySegmentId.get(segment.id) ?? 0;
+      if (!stage || w <= 0) continue;
+      pctOfAttemptsWeighted += stage.pctOfAttempts * w;
+      pctRemainingWeighted += stage.pctRemaining * w;
+      recoverableVolumeSum += stage.recoverableVolume ?? 0;
+      if (templateStage.id === 'bank' && stage.recoverableVolumeRaw != null) {
+        recoverableVolumeRawSum += stage.recoverableVolumeRaw;
+        hasRawBank = true;
+      }
+      weightSum += w;
+    }
+
+    const pctOfAttempts = weightSum > 0 ? pctOfAttemptsWeighted / weightSum : templateStage.pctOfAttempts;
+    const pctRemaining = weightSum > 0 ? pctRemainingWeighted / weightSum : templateStage.pctRemaining;
+    // For "Issuing bank declines", round the sum of raw values once so funnel matches aggregated calculator
+    const rawRecoverable =
+      templateStage.id === 'bank' && hasRawBank
+        ? Math.round(recoverableVolumeRawSum)
+        : templateStage.recoverableVolume != null
+          ? Math.round(recoverableVolumeSum)
+          : templateStage.recoverableVolume;
+
+    return {
+      ...templateStage,
+      pctOfAttempts,
+      pctRemaining,
+      recoverableVolume: rawRecoverable,
+    };
+  });
+
+  return aggregatedStages;
+}
+
+/**
  * Exported utility to compute aggregated deduplication breakdown across all segments.
  * Sums the deduplication metrics from each segment's calculation.
  */
@@ -535,6 +674,10 @@ export function computeSegmentedAggregateDeduplicationBreakdown(
   
   if (totalWeight === 0) return null;
   
+  const aggregateAov = weightedAov / totalWeight;
+  const aovMultiplier = globalForterKPIs.recoveredAovMultiplier ?? 1.15;
+  const recoveredOrderAOV = aggregateAov * aovMultiplier;
+  
   return {
     approvedTxImprovement: hasSimplifiedBreakdown ? totalApprovedTxImprovement : undefined,
     fraudTxDropOff: totalFraudTxDropOff,
@@ -544,7 +687,9 @@ export function computeSegmentedAggregateDeduplicationBreakdown(
     retryRate: deduplicationRetryRate,
     successRate: deduplicationSuccessRate,
     duplicateSuccessfulTx: totalDuplicateSuccessfulTx,
-    aov: weightedAov / totalWeight,
+    aov: aggregateAov,
+    aovMultiplier,
+    recoveredOrderAOV,
     gmvReduction: totalGmvReduction,
   };
 }
@@ -566,9 +711,7 @@ export const SegmentCalculatorTabs = ({
   const enabledSegments = segments.filter(s => s.enabled);
   const currencySymbol = getCurrencySymbol(formData.baseCurrency || 'USD');
 
-  const [selectedSegmentId, setSelectedSegmentId] = useState<string>(
-    enabledSegments[0]?.id || "global"
-  );
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string>("global");
 
   // Calculate results for each segment (deduplication applied per-segment)
   const segmentResults = useMemo(() => {
@@ -650,6 +793,7 @@ export const SegmentCalculatorTabs = ({
       preAuthApprovalImprovement: 'preAuthApprovalTarget',
       postAuthApprovalImprovement: 'postAuthApprovalTarget',
       threeDSReduction: 'threeDSRateTarget',
+      forterIssuingBankDeclineRate: 'issuingBankDeclineReductionTarget',
       forterCompletedAOV: 'forterCompletedAOV',
     };
 

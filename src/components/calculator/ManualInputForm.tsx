@@ -2385,7 +2385,14 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
             <ChallengeInputs
               formData={formData}
               selectedChallenges={selectedChallenges}
-              onFieldChange={updateField}
+              onFieldChange={(field, value) => {
+                if (field === 'amerIssuingBankDeclineRate' && segmentationEnabled && segments?.length && typeof value === 'number') {
+                  const num = Math.max(0, Math.min(100, value));
+                  const updated = segments.map((seg) => ({ ...seg, inputs: { ...seg.inputs, issuingBankDeclineRate: num } }));
+                  handleSegmentsChange(updated);
+                }
+                updateField(field, value);
+              }}
               segmentationEnabled={segmentationEnabled}
               segments={segments}
               viewMode={inputsLayoutView}

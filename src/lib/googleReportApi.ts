@@ -545,7 +545,7 @@ type SlidesPayload = {
   targetOutcomesSlide: { rows: Array<{ metric: string; current: string; target: string; improvement: string }> };
   roiSlide: { metrics: Array<{ label: string; value: string }>; yearTable: Array<{ year: number; grossEBITDA: string; forterCost: string; netEBITDA: string }>; totalRow: { grossEBITDA: string; forterCost: string; netEBITDA: string } } | null;
   nextStepsSlide: { steps: Array<{ num: string; title: string; body: string }> };
-  appendixSlides: Array<{ title: string; problem: string; solution: string; benefit: string; isTBD: boolean; badge?: string; tableRows: Array<{ cells: string[] }> }>;
+  appendixSlides: Array<{ title: string; problem: string; solution: string; benefit: string; isTBD: boolean; badge?: string; tableRows: Array<{ cells: string[] }>; funnelSlide?: { viewMode: 'percent' | 'transactions'; totalTransactionAttempts: number; totalRecoverable: string; stages: Array<{ label: string; currentVal: string; recoverableVal: string }> } }>;
   /** Optional: customer logo URL (publicly accessible). Shown on title slide next to content area and as small logo on content slides. */
   customerLogoUrl?: string;
   /** Optional: copy these slides from another presentation into the Case Studies section (order = display order). Same length as case study slots. */
@@ -683,7 +683,9 @@ export async function buildGoogleSlides(
     const calculationRows = tableRows.filter((row) =>
       isAppendixCalculationRow((row.cells || []).slice(0, 5).map((c) => String(c ?? "")))
     );
-    return sum + Math.max(1, Math.ceil(calculationRows.length / 12));
+    const calcPages = Math.max(1, Math.ceil(calculationRows.length / 12));
+    const funnelPage = (app as { funnelSlide?: unknown }).funnelSlide ? 1 : 0;
+    return sum + calcPages + funnelPage;
   }, 0);
   // Subset (calculator modal): no title, no appendix divider, no case studies divider — only appendix content + case study image slides
   // Full deck: optionally end with GVA Case Study Deck last slide (when caseStudySourcePresentationId is set)
@@ -2675,6 +2677,43 @@ export async function buildGoogleSlides(
         }
       }
       appendixContentSlideIndex++;
+    }
+    const funnelSlideData = (app as { funnelSlide?: { viewMode: string; totalTransactionAttempts: number; totalRecoverable: string; stages: Array<{ label: string; currentVal: string; recoverableVal: string }> } }).funnelSlide;
+    if (funnelSlideData) {
+      const slide = slides[appendixContentStartIndex + appendixContentSlideIndex];
+      if (slide?.objectId) {
+        const pageNum = isSubset ? String(appendixContentStartIndex + appendixContentSlideIndex) : String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
+        addTextBox(requests, `sfunnel_sec_${a}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+          bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+        });
+        addTextBox(requests, `sfunnel_page_${a}`, slide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
+          fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
+        });
+        addTextBox(requests, `sfunnel_ft_${a}`, slide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+          fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
+        });
+        addTextBox(requests, `sfunnel_title_${a}`, slide.objectId, 0.5, 0.35, CONTENT_W, 0.5, "How transactions flow — Payments funnel", {
+          bold: true, fontSize: 16, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+        });
+        addTextBox(requests, `sfunnel_view_${a}`, slide.objectId, 10.5, 0.35, 2.0, 0.25, funnelSlideData.viewMode === "transactions" ? "# of transactions" : "% of attempts", {
+          fontSize: 9, colorRgb: grayRgb, fontFamily: FONT_BODY,
+        });
+        const funnelStages = funnelSlideData.stages || [];
+        const rowH = 0.38;
+        let y = 0.95;
+        addTextBox(requests, `sfunnel_col1_${a}`, slide.objectId, 0.5, y, 7.0, 0.22, "Stage", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
+        addTextBox(requests, `sfunnel_col2_${a}`, slide.objectId, 7.2, y, 2.8, 0.22, "Current state", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
+        addTextBox(requests, `sfunnel_col3_${a}`, slide.objectId, 10.0, y, 2.5, 0.22, "Forter recoverable", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
+        y += rowH;
+        for (let i = 0; i < funnelStages.length; i++) {
+          const row = funnelStages[i];
+          addTextBox(requests, `sfunnel_r${a}_${i}_l`, slide.objectId, 0.5, y, 7.0, 0.28, truncateForSlide(row.label, 32), { fontSize: 9, colorRgb: grayRgb, fontFamily: FONT_BODY });
+          addTextBox(requests, `sfunnel_r${a}_${i}_c`, slide.objectId, 7.2, y, 2.8, 0.28, row.currentVal, { fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_BODY, alignment: "END" });
+          addTextBox(requests, `sfunnel_r${a}_${i}_r`, slide.objectId, 10.0, y, 2.5, 0.28, row.recoverableVal, { fontSize: 9, colorRgb: blueRgb, fontFamily: FONT_BODY, alignment: "END" });
+          y += rowH;
+        }
+        appendixContentSlideIndex++;
+      }
     }
   }
 

@@ -67,7 +67,7 @@ export const USE_CASES: UseCase[] = [
   {
     id: 'reduce_false_declines',
     name: 'Reduce false fraud declines',
-    description: 'Approve more legitimate transactions by reducing false positives',
+    description: 'Approve more legitimate transactions by reducing false declines',
     challengeIds: ['1'],
     strategicObjectives: ['revenue_growth', 'customer_experience', 'automation'],
   },

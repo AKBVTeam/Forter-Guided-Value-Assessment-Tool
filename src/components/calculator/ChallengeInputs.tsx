@@ -635,7 +635,7 @@ export const ChallengeInputs = ({
                   warning={!isPaymentFieldLocked ? getValidationWarning("amerIssuingBankDeclineRate", formData.amerIssuingBankDeclineRate) : null}
                   max={100}
                   min={0}
-                  readOnly={isPaymentFieldLocked}
+                  readOnly={false}
                 />
               </div>
             </div>
