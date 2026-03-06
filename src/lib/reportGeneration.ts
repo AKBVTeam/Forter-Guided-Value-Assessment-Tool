@@ -143,6 +143,8 @@ export interface ValueDeckPayload {
   } | null;
   nextStepsSlide: { steps: Array<{ num: string; title: string; body: string }> };
   appendixSlides: Array<{
+    /** Exact calculator ID (e.g. 'c1-chargeback', 'c245-chargeback') so visual capture matches the correct rows. */
+    calculatorId?: string;
     title: string;
     problem: string;
     solution: string;
@@ -152,6 +154,8 @@ export interface ValueDeckPayload {
     tableRows: Array<{ cells: string[] }>;
     /** When set, one extra slide is added after this appendix entry with the payments funnel (c245-revenue only). */
     funnelSlide?: FunnelSlideData;
+    /** PNG base64 (no data: prefix), captured via html2canvas for the benefit's visual tab. */
+    visualImageBase64?: string;
   }>;
   caseStudySourceSlides?: Array<{ presentationId: string; pageObjectId: string }>;
   caseStudySourcePresentationId?: string;
@@ -230,8 +234,8 @@ function isCalculatorTBD(rows: CalculatorRow[]): boolean {
 // Use the exact labels from ValueSummaryOptionA.tsx to maintain consistency
 // 'benefitName' is used as the appendix slide title - these must match the tool exactly
 
-// Mapping from calculatorId to exact label and challenge ID used in ValueSummaryOptionA
-const CALCULATOR_ID_TO_LABEL: Record<string, { label: string; challengeIds: string[] }> = {
+// Mapping from calculatorId to exact label and challenge ID used in ValueSummaryOptionA (exported for visual capture matching)
+export const CALCULATOR_ID_TO_LABEL: Record<string, { label: string; challengeIds: string[] }> = {
   'c1-revenue': { label: 'Reduce false declines and approve more transactions', challengeIds: ['1'] },
   'c1-chargeback': { label: 'Reduce fraud chargebacks', challengeIds: ['1'] },
   'c245-revenue': { label: 'Optimize payment funnel', challengeIds: ['2', '4', '5'] },
@@ -348,6 +352,17 @@ function getCategoryForCalculator(calculatorId: string): 'GMV Uplift' | 'Cost Re
   return null;
 }
 
+/** Normalize challenges for report: only one of C1 or C245 can show. If C245 (2/4/5) is selected, treat C1 as false so appendix and value prop match the tool. */
+function normalizeChallengesForReport(challenges: Record<string, boolean>): Record<string, boolean> {
+  const c245 = challenges['2'] || challenges['4'] || challenges['5'];
+  if (c245) {
+    const out = { ...challenges };
+    out['1'] = false;
+    return out;
+  }
+  return challenges;
+}
+
 // Helper to get benefit groups that are active based on selected challenges
 // CRITICAL: Replicates the UI logic where C1 is hidden when C245 is selected
 function getActiveBenefitGroups(challenges: Record<string, boolean>): BenefitGroup[] {
@@ -395,6 +410,21 @@ function getCaseStudySlideNumbersForCalculators(calcIds: Set<string>): number[] 
     }
   }
   return Array.from(slideNums).sort((a, b) => a - b);
+}
+
+/** Resolve which calculator ID in the group matches the appendix slide title (for correct badge e.g. c13-clv = Risk Mitigation). */
+function findCalculatorIdForSlideTitle(group: BenefitGroup, slideTitle: string): string {
+  const calcTitle = (slideTitle || '').trim();
+  if (!calcTitle) return group.calculatorIds[0];
+  const lower = calcTitle.toLowerCase();
+  const match = group.calculatorIds.find((id) => {
+    const content = getChallengeBenefitContent(id);
+    const byBenefitTitle = content?.benefitTitle === calcTitle || (content?.benefitTitle?.toLowerCase().includes(lower) || lower.includes((content?.benefitTitle ?? '').toLowerCase()));
+    if (byBenefitTitle) return true;
+    const label = CALCULATOR_ID_TO_LABEL[id]?.label?.toLowerCase();
+    return !!label && (lower.includes(label) || label.includes(lower));
+  });
+  return match ?? group.calculatorIds[0];
 }
 
 // Get ALL active value drivers with category, sorted by category then value (no limit)
@@ -465,6 +495,22 @@ function getSelectedStandardCalculatorIds(driverLabels: string[]): Set<string> {
     getStandardCalculatorIdsForDriverLabel(label).forEach(id => set.add(id));
   }
   return set;
+}
+
+/** C1 vs C245 mutual exclusivity for report: only one path (Reduce false declines OR Optimize payment funnel + their chargeback) can appear. */
+function applyC1C245ExclusivityToCalculatorSet(set: Set<string>): Set<string> {
+  const hasC245 = set.has('c245-revenue') || set.has('c245-chargeback');
+  const hasC1 = set.has('c1-revenue') || set.has('c1-chargeback');
+  if (!hasC245 && !hasC1) return set;
+  const out = new Set(set);
+  if (hasC245) {
+    out.delete('c1-revenue');
+    out.delete('c1-chargeback');
+  } else {
+    out.delete('c245-revenue');
+    out.delete('c245-chargeback');
+  }
+  return out;
 }
 
 // Get all value drivers for a benefit group
@@ -719,6 +765,74 @@ function getCalculatorRowsForBenefitGroup(
   return calculators;
 }
 
+/** Get live CalculatorRow[] for a single calculator ID (for visual capture). Uses same logic as getCalculatorRowsForBenefitGroup. */
+export function getCalculatorRowsForCalculatorId(
+  calculatorId: string,
+  formData: CalculatorData,
+  includesFraudCBCoverage: boolean = false
+): CalculatorRow[] | null {
+  const label = CALCULATOR_ID_TO_LABEL[calculatorId]?.label;
+  if (!label) return null;
+  const group = BENEFIT_GROUPS.find((g) => g.calculatorIds.includes(calculatorId));
+  if (!group) return null;
+  const tables = getCalculatorRowsForBenefitGroup(group, formData, includesFraudCBCoverage);
+  const calc = tables.find((c) => {
+    const lab = label.toLowerCase();
+    const title = (c.title || '').toLowerCase();
+    return lab.includes(title) || title.includes(lab);
+  });
+  return calc?.rows ?? null;
+}
+
+/** Returns all calculator tables for a benefit group (for c8-returns / c8-inr visual capture: tables[0]=returns, tables[1]=INR). */
+export function getCalculatorTablesForVisual(
+  calculatorId: string,
+  formData: CalculatorData
+): { title: string; rows: CalculatorRow[] }[] {
+  const group = BENEFIT_GROUPS.find((g) => g.calculatorIds.includes(calculatorId));
+  if (!group) return [];
+  return getCalculatorRowsForBenefitGroup(group, formData);
+}
+
+/** Full Challenge245 result for c245-revenue visual capture (funnel chart + value impact). Uses same inputs as getCalculatorRowsForBenefitGroup. */
+export function getChallenge245ResultForCapture(
+  formData: CalculatorData,
+  includesFraudCBCoverage: boolean = false
+): import('@/lib/calculations').Challenge245Results | null {
+  const currencyCode = formData.baseCurrency || 'USD';
+  const forterKPIs: Record<string, number> = (formData.forterKPIs || {}) as Record<string, number>;
+  try {
+    const result = calculateChallenge245({
+      transactionAttempts: formData.amerGrossAttempts || 0,
+      transactionAttemptsValue: formData.amerAnnualGMV || 0,
+      grossMarginPercent: formData.amerGrossMarginPercent || 30,
+      preAuthApprovalRate: formData.amerPreAuthApprovalRate || 95,
+      postAuthApprovalRate: formData.amerPostAuthApprovalRate || 98,
+      creditCardPct: formData.amerCreditCardPct || 60,
+      creditCard3DSPct: formData.amer3DSChallengeRate || 20,
+      threeDSFailureRate: formData.amer3DSAbandonmentRate || 15,
+      issuingBankDeclineRate: formData.amerIssuingBankDeclineRate || 5,
+      fraudChargebackRate: formData.fraudCBRate || 0.5,
+      isMarketplace: formData.isMarketplace || false,
+      commissionRate: formData.commissionRate || 100,
+      currencyCode,
+      completedAOV: formData.completedAOV,
+      forterCompletedAOV: forterKPIs.forterCompletedAOV,
+      recoveredAovMultiplier: forterKPIs.recoveredAovMultiplier ?? 1.15,
+      forterPreAuthImprovement: forterKPIs.preAuthApprovalImprovement || 2,
+      forterPostAuthImprovement: forterKPIs.postAuthApprovalImprovement || 1,
+      forter3DSReduction: forterKPIs.threeDSReduction || 50,
+      forterChargebackReduction: forterKPIs.chargebackReduction || 50,
+      forterTargetCBRate: forterKPIs.targetCBRate || 0.25,
+      deduplication: defaultDeduplicationAssumptions,
+      includesFraudCBCoverage,
+    });
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 // Get strategic objectives with their descriptions
 function getStrategicObjectiveDetails(selectedObjectives: StrategicObjectiveId[]): Array<{ name: string; description: string }> {
   return selectedObjectives
@@ -765,6 +879,69 @@ export function getSolutionApproaches(challenges: Record<string, boolean>): stri
 export function generateHeadline(formData: CalculatorData, valueTotals: ValueTotals): string {
   const totalValue = formatCurrency(valueTotals.ebitdaContribution, formData.baseCurrency || 'USD', true);
   return `Unlocking ${totalValue} in Annual EBITDA Through Identity Risk Managed Revenue Growth`;
+}
+
+// Compute blended abuse catch rate for Challenge 8 (returns + INR weighted by cost reduction). Returns null if not computable.
+function getBlendedAbuseCatchRate(formData: CalculatorData): number | null {
+  const forterKPIs = (formData.forterKPIs || {}) as Record<string, number>;
+  const abuseBenchmarks = (formData.forterKPIs as any)?.abuseBenchmarks ?? formData.abuseBenchmarks ?? {};
+  const benchmarks: Record<string, number> = typeof abuseBenchmarks === 'object' && abuseBenchmarks !== null ? abuseBenchmarks : {};
+  const egrRet = benchmarks.forterEgregiousReturnsReduction ?? 90;
+  const nonEgrRet = benchmarks.forterNonEgregiousReturnsReduction ?? 90;
+  const inrRed = benchmarks.forterEgregiousINRReduction ?? 85;
+  try {
+    const result = calculateChallenge8({
+      expectedRefundsVolume: formData.expectedRefundsVolume ?? 10000,
+      avgRefundValue: formData.avgRefundValue ?? 75,
+      isMarketplace: !!formData.isMarketplace,
+      commissionRate: formData.commissionRate ?? 100,
+      grossMarginPercent: formData.amerGrossMarginPercent ?? 30,
+      avgOneWayShipping: formData.avgOneWayShipping ?? 8,
+      avgFulfilmentCost: formData.avgFulfilmentCost ?? 5,
+      txProcessingFeePct: formData.txProcessingFeePct ?? 2.5,
+      avgCSTicketCost: formData.avgCSTicketCost ?? 8,
+      pctINRClaims: formData.pctINRClaims ?? 10,
+      pctReplacedCredits: formData.pctReplacedCredits ?? 50,
+      forterCatchRate: forterKPIs.forterCatchRate ?? 90,
+      abuseAovMultiplier: forterKPIs.abuseAovMultiplier ?? 1.5,
+      egregiousReturnsAbusePct: benchmarks.egregiousReturnsAbusePct ?? 5,
+      egregiousInventoryLossPct: benchmarks.egregiousInventoryLossPct ?? 50,
+      egregiousINRAbusePct: benchmarks.egregiousINRAbusePct ?? 10,
+      nonEgregiousReturnsAbusePct: benchmarks.nonEgregiousReturnsAbusePct ?? 15,
+      nonEgregiousInventoryLossPct: benchmarks.nonEgregiousInventoryLossPct ?? 20,
+      forterEgregiousReturnsReduction: egrRet,
+      forterEgregiousINRReduction: inrRed,
+      forterNonEgregiousReturnsReduction: nonEgrRet,
+      currencyCode: formData.baseCurrency || 'USD',
+    });
+    const parseCount = (s: string | undefined) => Number(String(s ?? '').replace(/,/g, '')) || 0;
+    const c1Rows = result.calculator1.rows;
+    const rowEgr = c1Rows.find((r: { formula?: string }) => r.formula === 'g = a*f');
+    const rowNonEgr = c1Rows.find((r: { formula?: string }) => r.formula === 'r = a*q');
+    let returnsCatchRate = (egrRet + nonEgrRet) / 2;
+    if (rowEgr && rowNonEgr) {
+      const custEgr = parseCount(rowEgr.customerInput);
+      const fortEgr = parseCount(rowEgr.forterOutcome);
+      const custNonEgr = parseCount(rowNonEgr.customerInput);
+      const fortNonEgr = parseCount(rowNonEgr.forterOutcome);
+      const egrBlocked = Math.max(0, custEgr - fortEgr);
+      const nonEgrBlocked = Math.max(0, custNonEgr - fortNonEgr);
+      const totalBlocked = egrBlocked + nonEgrBlocked;
+      if (totalBlocked > 0) {
+        returnsCatchRate = (egrBlocked * egrRet + nonEgrBlocked * nonEgrRet) / totalBlocked;
+      }
+    }
+    const returnsVal = result.calculator1.costReduction;
+    const inrVal = result.calculator2.costReduction;
+    if (returnsVal > 0 && inrVal > 0) {
+      return (returnsVal * returnsCatchRate + inrVal * inrRed) / (returnsVal + inrVal);
+    }
+    if (returnsVal > 0) return returnsCatchRate;
+    if (inrVal > 0) return inrRed;
+    return (returnsCatchRate + inrRed) / 2;
+  } catch {
+    return null;
+  }
 }
 
 // Build metrics table data from top value drivers
@@ -833,15 +1010,18 @@ function buildPerformanceHighlights(
     });
   }
   
-  // Challenge 8/10/11: Abuse Catch Rate
-  if ((challenges['8'] || challenges['10'] || challenges['11']) && formData.forterKPIs?.forterCatchRate) {
-    const catchRate = formData.forterKPIs.forterCatchRate;
-    highlights.push({
-      metric: 'Abuse Catch Rate',
-      current: '0%',
-      target: `${catchRate}%`,
-      improvement: `${catchRate}%`,
-    });
+  // Challenge 8/10/11: Abuse Catch Rate (blended for C8: returns + INR weighted by cost reduction; fallback for C10/11)
+  if (challenges['8'] || challenges['10'] || challenges['11']) {
+    const blendedRate = challenges['8'] ? getBlendedAbuseCatchRate(formData) : null;
+    const catchRate = blendedRate ?? (formData.forterKPIs as any)?.forterCatchRate ?? 90;
+    if (catchRate > 0) {
+      highlights.push({
+        metric: 'Abuse Catch Rate',
+        current: '0%',
+        target: `${Number(catchRate).toFixed(1)}%`,
+        improvement: `${Number(catchRate).toFixed(1)}%`,
+      });
+    }
   }
   
   // Challenge 9: NPS Increase
@@ -1588,7 +1768,7 @@ export function getCalculatorSubsetPayload(
   formData: CalculatorData,
   segmentData?: Array<{ name: string; rows: CalculatorRow[] }>,
   totalRows?: CalculatorRow[],
-  options?: { caseStudySourcePresentationId?: string }
+  options?: { caseStudySourcePresentationId?: string; funnelSlide?: FunnelSlideData }
 ): CalculatorSubsetPayload {
   const customerName = formData.customerName || 'Customer';
   const currency = formData.baseCurrency || 'USD';
@@ -1623,6 +1803,7 @@ export function getCalculatorSubsetPayload(
     for (const seg of segmentData) {
       const isTBD = isCalculatorTBD(seg.rows);
       appendixSlides.push({
+        calculatorId,
         title: `${calculatorTitle} - ${seg.name}`,
         problem: challengeDescription,
         solution: benefitDescription,
@@ -1634,6 +1815,7 @@ export function getCalculatorSubsetPayload(
     }
     const totalTBD = isCalculatorTBD(totalRows);
     appendixSlides.push({
+      calculatorId,
       title: `${calculatorTitle} - Total`,
       problem: challengeDescription,
       solution: benefitDescription,
@@ -1645,6 +1827,7 @@ export function getCalculatorSubsetPayload(
   } else {
     const isTBD = isCalculatorTBD(calculatorRows);
     appendixSlides.push({
+      calculatorId,
       title: calculatorTitle,
       problem: challengeDescription,
       solution: benefitDescription,
@@ -1653,6 +1836,10 @@ export function getCalculatorSubsetPayload(
       isTBD,
       tableRows: isTBD ? [] : rowsToTableRows(calculatorRows),
     });
+  }
+
+  if (options?.funnelSlide && appendixSlides.length > 0) {
+    (appendixSlides[0] as { funnelSlide?: FunnelSlideData }).funnelSlide = options.funnelSlide;
   }
 
   const caseStudySlideNumbers = hasCaseStudy(calculatorId)
@@ -1678,20 +1865,21 @@ export function getValueDeckPayload(
   roiResults: ROIResults,
   options: ReportOptions
 ): ValueDeckPayload {
+  const challengesForReport = normalizeChallengesForReport(challenges);
   const analysisName = (formData as any)._analysisName || formData.customerName || 'Value Assessment';
   const customerName = formData.customerName || 'Customer';
   const currency = formData.baseCurrency || 'USD';
   const headline = generateHeadline(formData, valueTotals);
-  const allDrivers = getAllValueDrivers(challenges, valueTotals);
-  let performanceHighlights = buildPerformanceHighlights(formData, challenges);
+  const allDrivers = getAllValueDrivers(challengesForReport, valueTotals);
+  let performanceHighlights = buildPerformanceHighlights(formData, challengesForReport);
   if (options.driverStates) {
     performanceHighlights = filterPerformanceHighlightsByDriverState(performanceHighlights, options.driverStates);
   }
   if (options.isCustomPathway) {
     performanceHighlights = [];
   }
-  const problems = getSelectedChallengeProblems(challenges);
-  const solutions = getSolutionApproaches(challenges);
+  const problems = getSelectedChallengeProblems(challengesForReport);
+  const solutions = getSolutionApproaches(challengesForReport);
   const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const valueCategories = [
@@ -1731,16 +1919,14 @@ export function getValueDeckPayload(
   let caseStudySlideNumbersResult: number[];
 
   if (isCustomPathway) {
-    const selectedStandardCalculatorIds = getSelectedStandardCalculatorIds(allDrivers.map((d) => d.label));
+    let selectedStandardCalculatorIds = getSelectedStandardCalculatorIds(allDrivers.map((d) => d.label));
+    selectedStandardCalculatorIds = applyC1C245ExclusivityToCalculatorSet(selectedStandardCalculatorIds);
     caseStudySlideNumbersResult = getCaseStudySlideNumbersForCalculators(selectedStandardCalculatorIds);
     const appendixGroupsCustom = BENEFIT_GROUPS.filter((g) => g.calculatorIds.some((id) => selectedStandardCalculatorIds.has(id)));
     for (const group of appendixGroupsCustom) {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
       for (const calc of calculatorTables) {
-        const calcId = group.calculatorIds.find((id) => {
-          const content = getChallengeBenefitContent(id);
-          return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
-        }) || group.calculatorIds[0];
+        const calcId = findCalculatorIdForSlideTitle(group, calc.title);
         if (!selectedStandardCalculatorIds.has(calcId)) continue;
         const badge = getCategoryForCalculator(calcId);
         const benefitContent = getChallengeBenefitContent(calcId);
@@ -1760,6 +1946,7 @@ export function getValueDeckPayload(
           }
         }
         appendixSlides.push({
+          calculatorId: calcId,
           title: slideTitle,
           problem: challengeDescription,
           solution: benefitDescription,
@@ -1771,26 +1958,13 @@ export function getValueDeckPayload(
       }
     }
   } else {
-    caseStudySlideNumbersResult = getSelectedCaseStudySlideNumbers(challenges);
-    const activeBenefitGroups = getActiveBenefitGroups(challenges);
-    const driverLabels = new Set(allDrivers.map((d) => d.label.trim().toLowerCase()));
-    const appendixGroupIds = new Set(activeBenefitGroups.map((g) => g.id));
-    for (const group of BENEFIT_GROUPS) {
-      if (appendixGroupIds.has(group.id)) continue;
-      const tables = getCalculatorRowsForBenefitGroup(group, formData);
-      const hasMatchingDriver = tables.some((calc) =>
-        driverLabels.has(calc.title.trim().toLowerCase())
-      );
-      if (hasMatchingDriver) appendixGroupIds.add(group.id);
-    }
-    const appendixGroups = BENEFIT_GROUPS.filter((g) => appendixGroupIds.has(g.id));
-    for (const group of appendixGroups) {
+    caseStudySlideNumbersResult = getSelectedCaseStudySlideNumbers(challengesForReport);
+    const activeBenefitGroups = getActiveBenefitGroups(challengesForReport);
+    for (const group of activeBenefitGroups) {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
       for (const calc of calculatorTables) {
-        const calcId = group.calculatorIds.find((id) => {
-          const content = getChallengeBenefitContent(id);
-          return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
-        }) || group.calculatorIds[0];
+        const calcId = findCalculatorIdForSlideTitle(group, calc.title);
+        if (options.driverStates && !isDriverEnabled(calcId, options.driverStates)) continue;
         const badge = getCategoryForCalculator(calcId);
         const benefitContent = getChallengeBenefitContent(calcId);
         const slideTitle = calc.title || group.title;
@@ -1809,6 +1983,7 @@ export function getValueDeckPayload(
           }
         }
         appendixSlides.push({
+          calculatorId: calcId,
           title: slideTitle,
           problem: challengeDescription,
           solution: benefitDescription,
@@ -2004,6 +2179,9 @@ export async function generateValueDeckPptx(
       ...(b[2] ? [{ text: b[2], options: { color: '374151' } }] : []),
     ], { x: 0.5, y: 1.52 + i * 0.38, w: 12.33, h: 0.34, fontSize: 10.5, fontFace: FONT_BODY });
   });
+  const slide6Row = options.hasInvestment
+    ? [{ text: '6 — ROI Summary', options: { fontFace: FONT_BODY } }, { text: '3-year projection (if investment entered)', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }]
+    : [{ text: '6 — Value Proposition Insights', options: { fontFace: FONT_BODY } }, { text: 'Key value visuals and insights', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }];
   const mapRows = [
     [{ text: 'Slide', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD } }, { text: 'Content', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD } }, { text: 'Notes', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD } }],
     [{ text: '1 — Title', options: { fontFace: FONT_BODY } }, { text: 'Customer name, report type, date', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
@@ -2011,7 +2189,7 @@ export async function generateValueDeckPptx(
     [{ text: '3 — Value Summary', options: { fontFace: FONT_BODY } }, { text: 'Active value category cards + KPI pills', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
     [{ text: '4 — Value Drivers', options: { fontFace: FONT_BODY } }, { text: 'Ranked breakdown of value contributors', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
     [{ text: '5 — Target Outcomes', options: { fontFace: FONT_BODY } }, { text: 'Current vs Forter KPI table', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
-    [{ text: '6 — ROI Summary', options: { fontFace: FONT_BODY } }, { text: '3-year projection (if investment entered)', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
+    slide6Row,
     [{ text: '7 — Next Steps ✏️', options: { fontFace: FONT_BODY, bold: true } }, { text: 'Action items and stakeholder names', options: { fontFace: FONT_BODY } }, { text: 'MUST BE EDITED MANUALLY', options: { fontFace: FONT_BODY, color: RED, bold: true } }],
     [{ text: '8+ — Appendix', options: { fontFace: FONT_BODY } }, { text: 'Calculator detail slides (may span multiple pages)', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
   ];
@@ -2389,10 +2567,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     activeBenefitGroups.forEach(group => {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
       calculatorTables.forEach(calc => {
-        const calcId = group.calculatorIds.find(id => {
-          const content = getChallengeBenefitContent(id);
-          return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
-        }) || group.calculatorIds[0];
+        const calcId = findCalculatorIdForSlideTitle(group, calc.title);
         const benefitContent = getChallengeBenefitContent(calcId);
         const slideTitle = calc.title || group.title;
         const benefitDescription = benefitContent?.benefitDescription || group.solution;

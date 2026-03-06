@@ -1280,8 +1280,8 @@ export const ForterKPIConfig = ({
                   : 'Promotion Abuse Prevention'}
             </h4>
             <AbuseBenchmarksModal
-              benchmarks={kpis.abuseBenchmarks || defaultAbuseBenchmarks}
-              onUpdate={(benchmarks) => onUpdate({ ...kpis, abuseBenchmarks: benchmarks })}
+              benchmarks={kpis.abuseBenchmarks ? { ...defaultAbuseBenchmarks, ...kpis.abuseBenchmarks } : defaultAbuseBenchmarks}
+              onUpdate={(benchmarks) => onUpdate({ ...kpis, abuseBenchmarks: { ...defaultAbuseBenchmarks, ...benchmarks } })}
               open={abuseBenchmarksModalOpen}
               onOpenChange={setAbuseBenchmarksModalOpen}
             />

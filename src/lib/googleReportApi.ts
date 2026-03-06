@@ -99,6 +99,56 @@ function isPublicImageUrl(url: string): boolean {
   return u.startsWith("https://") || u.startsWith("http://");
 }
 
+/** Upload base64 PNG to Drive and make it publicly readable; return URL for Slides createImage. */
+async function uploadBase64ImageToDrive(
+  accessToken: string,
+  base64: string,
+  fileName: string
+): Promise<{ url: string; fileId: string }> {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: "image/png" });
+
+  const metadata = JSON.stringify({ name: fileName, mimeType: "image/png" });
+  const form = new FormData();
+  form.append("metadata", new Blob([metadata], { type: "application/json" }));
+  form.append("file", blob);
+
+  const uploadRes = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: form,
+    }
+  );
+  if (!uploadRes.ok) throw new Error(`Drive image upload failed: ${uploadRes.status}`);
+  const { id: fileId } = (await uploadRes.json()) as { id: string };
+
+  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ role: "reader", type: "anyone" }),
+  });
+
+  return {
+    fileId,
+    url: `https://drive.google.com/uc?export=view&id=${fileId}`,
+  };
+}
+
+/** Delete a Drive file (e.g. temporary visual image after presentation is built). */
+async function deleteDriveFile(accessToken: string, fileId: string): Promise<void> {
+  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 /** Create an IMAGE request (x,y,w,h in PPT inches; scaled to Google Slides canvas). URL must be publicly accessible. */
 function createImageRequest(
   objectId: string,
@@ -685,20 +735,52 @@ export async function buildGoogleSlides(
     );
     const calcPages = Math.max(1, Math.ceil(calculationRows.length / 12));
     const funnelPage = (app as { funnelSlide?: unknown }).funnelSlide ? 1 : 0;
-    return sum + calcPages + funnelPage;
+    // Visuals are moved to "Value Proposition Insights" section (full deck only), not in appendix
+    const visualPage = 0;
+    return sum + calcPages + funnelPage + visualPage;
   }, 0);
+  /** Full deck only: visuals moved from appendix into "Value Proposition Insights" section before Next Steps. One visual per unique title (e.g. one "Reduce fraud chargebacks" even if both c1 and c245 are selected). */
+  const valuePropositionVisualSlides: Array<{ title: string; visualImageBase64: string; badge?: string }> = isSubset
+    ? []
+    : (p.appendixSlides ?? [])
+        .filter((app) => (app as { visualImageBase64?: string }).visualImageBase64 && !app.isTBD)
+        .reduce(
+          (acc, app) => {
+            const title = app.title;
+            if (acc.some((a) => a.title === title)) return acc;
+            return [
+              ...acc,
+              {
+                title,
+                visualImageBase64: (app as { visualImageBase64: string }).visualImageBase64,
+                badge: (app as { badge?: string }).badge ?? undefined,
+              },
+            ];
+          },
+          [] as Array<{ title: string; visualImageBase64: string; badge?: string }>
+        );
+  const valuePropositionSlideCount = isSubset ? 0 : 1 + valuePropositionVisualSlides.length; // 1 section title + N visual slides
   // Subset (calculator modal): no title, no appendix divider, no case studies divider — only appendix content + case study image slides
   // Full deck: optionally end with GVA Case Study Deck last slide (when caseStudySourcePresentationId is set)
   // Custom pathway: omit Executive Summary and Target Outcomes slides (two fewer slides)
   const closingGvaSlideCount = !isSubset && caseStudySourcePresentationId ? 1 : 0;
-  const fullDeckSlideCount = 1 + 1 + 1 + 1 + driverPageCount + 1 + (p.roiSlide ? 1 : 0) + 1 + caseStudyCount + appendixDividerCount + totalAppendixContentSlides + closingGvaSlideCount;
+  const fullDeckSlideCount = 1 + 1 + 1 + 1 + driverPageCount + 1 + (p.roiSlide ? 1 : 0) + 1 + caseStudyCount + appendixDividerCount + totalAppendixContentSlides + closingGvaSlideCount + valuePropositionSlideCount;
   const slideCount = isSubset
     ? totalAppendixContentSlides + caseStudySlideNums.length
     : isCustomPathwayEarly ? fullDeckSlideCount - 2 : fullDeckSlideCount;
+  const contentSlideOffsetEarly = isCustomPathwayEarly ? 1 : 0;
+  const nextStepsIndexForCreation = 4 - contentSlideOffsetEarly + driverPageCount + (isCustomPathwayEarly ? 1 : 2);
   for (let i = 0; i < slideCount; i++) {
+    const insertionIndex = isSubset
+      ? i
+      : i < nextStepsIndexForCreation
+        ? i
+        : i < nextStepsIndexForCreation + valuePropositionSlideCount
+          ? nextStepsIndexForCreation + (i - nextStepsIndexForCreation)
+          : nextStepsIndexForCreation + valuePropositionSlideCount + (i - nextStepsIndexForCreation - valuePropositionSlideCount);
     createRequests.push({
       createSlide: {
-        insertionIndex: i,
+        insertionIndex,
         slideLayoutReference: { predefinedLayout: "BLANK" },
       },
     });
@@ -756,6 +838,7 @@ export async function buildGoogleSlides(
   const lightBgRgb = hexToRgb(LIGHT_BG);
 
   const requests: Record<string, unknown>[] = [];
+  const uploadedVisualImageIds: string[] = [];
 
   /** Only push updateParagraphStyle for table cells when the cell has text (API 400 on empty cells). */
   function safeParagraphAlign(
@@ -869,13 +952,19 @@ export async function buildGoogleSlides(
         fontSize: 14.5, colorRgb: bodyGrayRgb, fontFamily: FONT_BODY,
       });
     });
-    // Slide map table (PPT inches; scale for Slides canvas)
+    // Slide map table (PPT inches; scale for Slides canvas). When ROI is not in deck, show Value Proposition Insights instead of ROI Summary.
+    const roiRowCustom: [string, string, string] = p.roiSlide
+      ? ["4 — ROI Summary", "3-year projection (if investment entered)", "Auto-populated"]
+      : ["4 — Value Proposition Insights", "Key value visuals and insights", "Auto-populated"];
+    const roiRowFull: [string, string, string] = p.roiSlide
+      ? ["6 — ROI Summary", "3-year projection (if investment entered)", "Auto-populated"]
+      : ["6 — Value Proposition Insights", "Key value visuals and insights", "Auto-populated"];
     const howtoDataRows: [string, string, string][] = isCustomPathway
       ? [
           ["1 — Title", "Customer name, report type, date", "Auto-populated"],
           ["2 — Value Summary", "Active value category cards (no KPI pills)", "Auto-populated"],
           ["3 — Value Drivers", "Ranked breakdown of value contributors", "Auto-populated"],
-          ["4 — ROI Summary", "3-year projection (if investment entered)", "Auto-populated"],
+          roiRowCustom,
           ["5 — Next Steps ✏️", "Action items and stakeholder names", "MUST BE EDITED MANUALLY"],
           ["6+ — Appendix", "Standard benefit calculator slides only", "Auto-populated"],
         ]
@@ -885,7 +974,7 @@ export async function buildGoogleSlides(
           ["3 — Value Summary", "Active value category cards + KPI pills", "Auto-populated"],
           ["4 — Value Drivers", "Ranked breakdown of value contributors", "Auto-populated"],
           ["5 — Target Outcomes", "Current vs Forter KPI table", "Auto-populated"],
-          ["6 — ROI Summary", "3-year projection (if investment entered)", "Auto-populated"],
+          roiRowFull,
           ["7 — Next Steps ✏️", "Action items and stakeholder names", "MUST BE EDITED MANUALLY"],
           ["8+ — Appendix", "Calculator detail slides (may span multiple pages)", "Auto-populated"],
         ];
@@ -1006,7 +1095,9 @@ export async function buildGoogleSlides(
       }
       for (let c = 0; c < 3; c++) {
         const isNotesCol = c === 2;
-        const isRedNotes = r === howtoTableRows - 1 && isNotesCol; // "MUST BE EDITED MANUALLY" on last data row
+        // Only Next Steps row (Notes col) is red "MUST BE EDITED MANUALLY"; all other notes stay green "Auto-populated"
+        const nextStepsRowIndex = isCustomPathway ? 5 : 7; // table row (1-based): custom = row 5, full = row 7
+        const isRedNotes = isNotesCol && r === nextStepsRowIndex;
         requests.push({
           updateTextStyle: {
             objectId: "table_howto",
@@ -2074,6 +2165,94 @@ export async function buildGoogleSlides(
     slideIdx = baseAfterDrivers + (isCustomPathway ? 1 : 2);
   }
 
+  const valuePropStartIndex = baseAfterDrivers + (isCustomPathway ? 1 : 2);
+  // ----- Value Proposition Insights (full deck only): divider (Case Studies style) + visual slides, before Next Steps -----
+  if (!isSubset && valuePropositionSlideCount > 0) {
+    const sValuePropTitle = slides[valuePropStartIndex]?.objectId;
+    if (sValuePropTitle) {
+      requests.push({
+        updatePageProperties: {
+          objectId: sValuePropTitle,
+          pageProperties: {
+            pageBackgroundFill: {
+              solidFill: { color: { rgbColor: navyRgb }, alpha: 1 },
+            },
+          },
+          fields: "pageBackgroundFill",
+        },
+      });
+      addTextBox(requests, "svp_title", sValuePropTitle, 0.5, 2.4, CONTENT_W, 0.5, "Value Proposition Insights", {
+        bold: true, fontSize: 40, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
+      });
+      const merchantName = titleSlide.customerName || "Customer";
+      addTextBox(requests, "svp_subtitle", sValuePropTitle, 0.5, 3.2, CONTENT_W, 0.3, truncateForSlide(`How ${merchantName}'s business benefits from a Forter partnership`, 80), {
+        fontSize: 14, colorRgb: lightBlueRgb, fontFamily: FONT_BODY,
+      });
+    }
+    const badgeColors: Record<string, { bg: string; text: string }> = {
+      "GMV Uplift": { bg: "DBEAFE", text: "1D4ED8" },
+      "Cost Reduction": { bg: "FEF3C7", text: "92400E" },
+      "Risk Mitigation": { bg: "FCE7F3", text: "9D174D" },
+    };
+    const lightBorderRgb = hexToRgb("E8EAED");
+    const badgeH = 0.56;
+    for (let v = 0; v < valuePropositionVisualSlides.length; v++) {
+      const item = valuePropositionVisualSlides[v];
+      const visualSlide = slides[valuePropStartIndex + 1 + v]?.objectId;
+      if (!visualSlide) continue;
+      const pageNum = String(valuePropStartIndex + 2 + v);
+      const { url: visualUrl, fileId: visualFileId } = await uploadBase64ImageToDrive(
+        accessToken,
+        item.visualImageBase64,
+        `valueprop_visual_${v}_${Date.now()}.png`
+      );
+      uploadedVisualImageIds.push(visualFileId);
+      addTextBox(requests, `svp_vis_sec_${v}`, visualSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+        bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
+      });
+      addTextBox(requests, `svp_vis_title_${v}`, visualSlide, 0.5, 0.38, CONTENT_W, 0.38, truncateForSlide(item.title, 55), {
+        bold: true, fontSize: 18, colorRgb: navyRgb, fontFamily: FONT_HEAD,
+      });
+      addTextBox(requests, `svp_vis_page_${v}`, visualSlide, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
+        fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
+      });
+      addTextBox(requests, `svp_vis_ft_${v}`, visualSlide, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+        fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
+      });
+      if (item.badge && badgeColors[item.badge]) {
+        const bc = badgeColors[item.badge];
+        requests.push(createRectRequest(`svp_vis_badge_bg_${v}`, visualSlide, 10.8, 0.08, 1.9, badgeH));
+        requests.push({
+          updateShapeProperties: {
+            objectId: `svp_vis_badge_bg_${v}`,
+            shapeProperties: {
+              shapeBackgroundFill: { solidFill: { color: { rgbColor: hexToRgb(bc.bg) }, alpha: 1 } },
+              outline: {
+                outlineFill: { solidFill: { color: { rgbColor: lightBorderRgb } } },
+                weight: { magnitude: 0.5, unit: "PT" },
+              },
+            },
+            fields: "shapeBackgroundFill.solidFill.color,outline.outlineFill.solidFill.color,outline.weight",
+          },
+        });
+        addTextBox(requests, `svp_vis_badge_txt_${v}`, visualSlide, 10.8, 0.08 + (badgeH - 0.2) / 2, 1.9, 0.2, item.badge, {
+          bold: true, fontSize: 9, colorRgb: hexToRgb(bc.text), fontFamily: FONT_HEAD, alignment: "CENTER",
+        });
+        requests.push({
+          updateParagraphStyle: {
+            objectId: `svp_vis_badge_txt_${v}`,
+            textRange: { type: "ALL" },
+            style: { alignment: "CENTER" },
+            fields: "alignment",
+          },
+        });
+      }
+      // Image starts below title (title y=0.38, h=0.38 → ends 0.76); slightly reduced height
+      requests.push(createImageRequest(`svp_vis_img_${v}`, visualSlide, 0.1, 0.80, 13.13, 5.95, visualUrl));
+    }
+    slideIdx = valuePropStartIndex + valuePropositionSlideCount;
+  }
+
   // ----- Next Steps -----
   const sNext = slides[slideIdx]?.objectId;
   if (sNext) {
@@ -2715,6 +2894,7 @@ export async function buildGoogleSlides(
         appendixContentSlideIndex++;
       }
     }
+    // Visuals are in "Value Proposition Insights" section (full deck), not in appendix
   }
 
   // Full deck: last slide = GVA Case Study Deck last slide (when caseStudySourcePresentationId is set)
@@ -2800,5 +2980,11 @@ export async function buildGoogleSlides(
       }
       throw new Error(errMsg);
     }
+  }
+
+  if (uploadedVisualImageIds.length > 0) {
+    Promise.all(uploadedVisualImageIds.map((id) => deleteDriveFile(accessToken, id))).catch((e) =>
+      console.warn("[Visual cleanup] Failed to delete temp Drive images:", e)
+    );
   }
 }

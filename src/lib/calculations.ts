@@ -1102,10 +1102,11 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
   const abusiveAov = aov * abuseAovMultiplier;
   const grossMarginDecimal = grossMarginPercent / 100;
   const commissionDecimal = commissionRate / 100;
-  // COGS: 0 for marketplaces (no inventory liability), otherwise based on gross margin
-  const cogs = isMarketplace ? 0 : abusiveAov * grossMarginDecimal;
-  // For marketplaces, indirect lost profit = commission amount × gross margin
+  // COGS: 0 for marketplaces (no inventory liability); for retailers: negative of Abusive AOV × (1 - gross margin)
+  const cogs = isMarketplace ? 0 : abusiveAov * (1 - grossMarginDecimal);
+  // Indirect lost profit: for marketplaces = commission × gross margin; for retailers = Abusive AOV × gross margin
   const marketplaceIndirectLoss = abusiveAov * commissionDecimal * grossMarginDecimal;
+  const retailerIndirectLoss = abusiveAov * grossMarginDecimal;
   const txFee = abusiveAov * (txProcessingFeePct / 100);
   const twoWayShipping = avgOneWayShipping * 2;
   
@@ -1115,9 +1116,8 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
 
   // === CALCULATOR 1: Returns Abuse ===
   // Egregious returns abuse - use expectedReturnsOnlyVolume (returns only, excluding INR)
-  // Use forterCatchRate for egregious returns (sync with forterEgregiousReturnsReduction)
-  // The catch rate IS the reduction percentage for egregious returns
-  const egregiousCatchRate = forterCatchRate; // Use catch rate directly
+  // Forter egregious returns reduction (%) drives Forter outcome: outcome = customerPct * (1 - reduction/100)
+  const egregiousCatchRate = forterEgregiousReturnsReduction;
   const custEgregiousPct = egregiousReturnsAbusePct / 100;
   const fortEgregiousPct = custEgregiousPct * (1 - egregiousCatchRate / 100);
   const custEgregiousCount = expectedReturnsOnlyVolume * custEgregiousPct;
@@ -1128,11 +1128,8 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
 
   // Unit cost of egregious abuse per spreadsheet:
   // Formula: o = e+sum(i:n) where e = abusive AOV, i:n = COGS + shipping + fulfilment + TX fee + indirect loss
-  // Per spreadsheet row o: unit loss is THE SAME for both customer and Forter outcome ($237)
-  // For marketplaces: use commission-based indirect loss; for retailers: use inventory loss percentage
-  const egregiousIndirectLoss = isMarketplace 
-    ? marketplaceIndirectLoss 
-    : cogs * (egregiousInventoryLossPct / 100);
+  // Indirect = (lost commission profit or lost profit due to inventory loss) × inventory lost on returns abuse (egregious %)
+  const egregiousIndirectLoss = (isMarketplace ? marketplaceIndirectLoss : retailerIndirectLoss) * (egregiousInventoryLossPct / 100);
   // Unit loss = sum of all costs (same for both customer and Forter per spreadsheet)
   const egregiousUnitLoss =
     cogs + twoWayShipping + avgFulfilmentCost + txFee + egregiousIndirectLoss;
@@ -1140,8 +1137,8 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
   const fortEgregiousTotalLoss = fortEgregiousCount * egregiousUnitLoss;
 
   // Non-egregious returns abuse - use expectedReturnsOnlyVolume (returns only, excluding INR)
-  // Use forterCatchRate for non-egregious returns (same as egregious - always match)
-  const nonEgregiousCatchRate = forterCatchRate; // Use catch rate directly (same as egregious)
+  // Forter non-egregious returns reduction (%) drives Forter outcome: outcome = customerPct * (1 - reduction/100)
+  const nonEgregiousCatchRate = forterNonEgregiousReturnsReduction;
   const custNonEgregiousPct = nonEgregiousReturnsAbusePct / 100;
   const fortNonEgregiousPct = custNonEgregiousPct * (1 - nonEgregiousCatchRate / 100);
   const custNonEgregiousCount = expectedReturnsOnlyVolume * custNonEgregiousPct;
@@ -1149,11 +1146,8 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
 
   // Non-egregious COGS is 50% of full COGS (per spreadsheet logic)
   const custNonEgregiousCogs = isMarketplace ? 0 : cogs * 0.5;
-  // For marketplaces: use commission-based indirect loss; for retailers: use inventory loss percentage
-  // Row y should use custNonEgregiousCogs (not full cogs) for non-egregious indirect loss
-  const nonEgregiousIndirectLoss = isMarketplace 
-    ? marketplaceIndirectLoss 
-    : custNonEgregiousCogs * (nonEgregiousInventoryLossPct / 100);
+  // Indirect = (lost commission profit or lost profit due to inventory loss) × non-egregious abuse assumption: inventory lost on returns abuse (%)
+  const nonEgregiousIndirectLoss = (isMarketplace ? marketplaceIndirectLoss : retailerIndirectLoss) * (nonEgregiousInventoryLossPct / 100);
   // Inventory recouped = 20% of non-egregious COGS (per spreadsheet: $4.50 = 20% of $22.50)
   const inventoryRecouped = custNonEgregiousCogs * 0.2; // This offsets some of the loss
   // Unit loss formula: z = e+sum(s:y) - SAME for both customer and Forter
@@ -1174,7 +1168,7 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
     { formula: 'c = b/a', label: 'Average Refunds Value ($)', customerInput: fmtCur(aov), forterImprovement: '', forterOutcome: fmtCur(aov), editableCustomerField: 'avgRefundValue', rawCustomerValue: avgRefundValue, valueType: 'currency' },
     { formula: 'd', label: 'Abuse AoV multiplier (x)', customerInput: `${abuseAovMultiplier}x`, forterImprovement: '', forterOutcome: `${abuseAovMultiplier}x`, editableCustomerField: 'abuseAovMultiplier', rawCustomerValue: abuseAovMultiplier, editableForterField: 'abuseAovMultiplier', rawForterValue: abuseAovMultiplier, valueType: 'number' },
     { formula: 'e = c*d', label: 'Estimated Abusive AoV ($)', customerInput: fmtCur(abusiveAov), forterImprovement: '', forterOutcome: fmtCur(abusiveAov), isCalculation: true },
-    { formula: 'f', label: 'Egregious returns abuse population (%)', customerInput: fmtPct(egregiousReturnsAbusePct), forterImprovement: `(${egregiousCatchRate.toFixed(1)}%)`, forterOutcome: fmtPct(fortEgregiousPct * 100), editableCustomerField: 'egregiousReturnsAbusePct', rawCustomerValue: egregiousReturnsAbusePct, editableForterField: 'forterCatchRate', rawForterValue: egregiousCatchRate, valueType: 'percent', footnote: 'abuse-catch-rate-outcome', readOnlyForterOutcome: true },
+    { formula: 'f', label: 'Egregious returns abuse population (%)', customerInput: fmtPct(egregiousReturnsAbusePct), forterImprovement: `(${egregiousCatchRate.toFixed(1)}%)`, forterOutcome: fmtPct(fortEgregiousPct * 100), editableCustomerField: 'egregiousReturnsAbusePct', rawCustomerValue: egregiousReturnsAbusePct, editableForterField: 'forterEgregiousReturnsReduction', rawForterValue: egregiousCatchRate, valueType: 'percent', footnote: 'abuse-catch-rate-outcome', readOnlyForterOutcome: true },
     { formula: 'g = a*f', label: 'Estimated # of egregious returns abusers (#)', customerInput: fmt(Math.round(custEgregiousCount)), forterImprovement: fmt(Math.round(fortEgregiousCount - custEgregiousCount)), forterOutcome: fmt(Math.round(fortEgregiousCount)), isCalculation: true },
     { formula: 'h = e*g', label: 'GMV of egregious returns abusers ($)', customerInput: fmtCur(custEgregiousGMV), forterImprovement: fmtCur(fortEgregiousGMV - custEgregiousGMV), forterOutcome: fmtCur(fortEgregiousGMV), isCalculation: true },
     { formula: '', label: 'Unit cost of egregious abuse', customerInput: '', forterImprovement: '', forterOutcome: '' },
@@ -1187,7 +1181,7 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
     { formula: 'o = e+sum(i:n)', label: 'Unit loss of egregious returns abusers ($)', customerInput: fmtCur2(-egregiousUnitLoss), forterImprovement: '-', forterOutcome: fmtCur2(-egregiousUnitLoss), isCalculation: true },
     { formula: 'p = g*o', label: 'Total loss due to egregious returns abusers ($)', customerInput: fmtCur(-custEgregiousTotalLoss), forterImprovement: fmtCur(custEgregiousTotalLoss - fortEgregiousTotalLoss), forterOutcome: fmtCur(-fortEgregiousTotalLoss), isCalculation: true },
     { formula: '', label: 'Unit cost of non-egregious abuse', customerInput: '', forterImprovement: '', forterOutcome: '' },
-    { formula: 'q', label: 'Non-egregious returns abuse population (%)', customerInput: fmtPct(nonEgregiousReturnsAbusePct), forterImprovement: `(${nonEgregiousCatchRate.toFixed(1)}%)`, forterOutcome: fmtPct(fortNonEgregiousPct * 100), editableCustomerField: 'nonEgregiousReturnsAbusePct', rawCustomerValue: nonEgregiousReturnsAbusePct, editableForterField: 'forterCatchRate', rawForterValue: nonEgregiousCatchRate, valueType: 'percent', footnote: 'abuse-catch-rate-outcome', readOnlyForterOutcome: true },
+    { formula: 'q', label: 'Non-egregious returns abuse population (%)', customerInput: fmtPct(nonEgregiousReturnsAbusePct), forterImprovement: `(${nonEgregiousCatchRate.toFixed(1)}%)`, forterOutcome: fmtPct(fortNonEgregiousPct * 100), editableCustomerField: 'nonEgregiousReturnsAbusePct', rawCustomerValue: nonEgregiousReturnsAbusePct, editableForterField: 'forterNonEgregiousReturnsReduction', rawForterValue: nonEgregiousCatchRate, valueType: 'percent', footnote: 'abuse-catch-rate-outcome', readOnlyForterOutcome: true },
     { formula: 'r = a*q', label: 'Estimated # of non-egregious returns abusers (#)', customerInput: fmt(Math.round(custNonEgregiousCount)), forterImprovement: fmt(Math.round(fortNonEgregiousCount - custNonEgregiousCount)), forterOutcome: fmt(Math.round(fortNonEgregiousCount)), isCalculation: true },
     { formula: 's', label: 'Cost of goods sold ($)', customerInput: fmtCur2(-custNonEgregiousCogs), forterImprovement: '', forterOutcome: fmtCur2(-custNonEgregiousCogs) },
     { formula: 't', label: 'Refunds ($)', customerInput: fmtCur2(-abusiveAov), forterImprovement: '', forterOutcome: fmtCur2(-abusiveAov) },
@@ -1218,8 +1212,8 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
   // In the UI, i:n are shown as negative unit costs (loss components), while e is positive.
   // So: o = e + (-(COGS + Refunds + shipping + fulfilment + fees + indirect))
   // Since Refunds == e, Refunds cancels with e, leaving only the incremental cost components.
-  // For marketplaces: indirect loss is commission × gross margin; for retailers: use COGS (full inventory loss)
-  const inrIndirectLoss = isMarketplace ? marketplaceIndirectLoss : cogs;
+  // Indirect: lost profit = Abusive AOV × gross margin (retailers) or commission × gross margin (marketplaces)
+  const inrIndirectLoss = isMarketplace ? marketplaceIndirectLoss : retailerIndirectLoss;
   // Unit loss magnitude (shown as negative in the table):
   // exclude Refunds/abusiveAov here because it is cancelled by the +e add-back.
   const inrUnitLoss = cogs + avgOneWayShipping + avgFulfilmentCost + txFee + inrIndirectLoss;
@@ -1235,7 +1229,7 @@ export function calculateChallenge8(inputs: Challenge8Inputs): Challenge8Results
     { formula: 'c = b/a', label: 'Average order value', customerInput: fmtCur(aov), forterImprovement: '', forterOutcome: fmtCur(aov), isCalculation: true },
     { formula: 'd', label: 'Abuse AoV multiplier (x)', customerInput: `${abuseAovMultiplier}x`, forterImprovement: '', forterOutcome: `${abuseAovMultiplier}x`, editableCustomerField: 'abuseAovMultiplier', rawCustomerValue: abuseAovMultiplier, valueType: 'number', readOnlyForterOutcome: true },
     { formula: 'e = c*d', label: 'Estimated Abusive AoV ($)', customerInput: fmtCur(abusiveAov), forterImprovement: '', forterOutcome: fmtCur(abusiveAov), isCalculation: true },
-    { formula: 'f', label: 'INR abuse population (%)', customerInput: fmtPct(egregiousINRAbusePct), forterImprovement: formatPctImprovementRel(egregiousINRAbusePct, fortINRAbusePct * 100), forterOutcome: fmtPct(fortINRAbusePct * 100), editableCustomerField: 'egregiousINRAbusePct', rawCustomerValue: egregiousINRAbusePct, editableForterField: 'forterEgregiousINRReduction', rawForterValue: fortINRAbusePct * 100, valueType: 'percent', footnote: 'abuse-benchmark-outcome' },
+    { formula: 'f', label: 'INR abuse population (%)', customerInput: fmtPct(egregiousINRAbusePct), forterImprovement: formatPctImprovementRel(egregiousINRAbusePct, fortINRAbusePct * 100), forterOutcome: fmtPct(fortINRAbusePct * 100), editableCustomerField: 'egregiousINRAbusePct', rawCustomerValue: egregiousINRAbusePct, editableForterField: 'forterEgregiousINRReduction', rawForterValue: forterEgregiousINRReduction, valueType: 'percent', footnote: 'abuse-benchmark-outcome' },
     { formula: 'g = a*f', label: 'Estimated # of INR abusers (#)', customerInput: fmt(Math.round(custINRAbusers)), forterImprovement: fmt(Math.round(fortINRAbusers - custINRAbusers)), forterOutcome: fmt(Math.round(fortINRAbusers)), isCalculation: true },
     { formula: 'h = e*g', label: 'GMV of INR abusers ($)', customerInput: fmtCur(custINRAbusersGMV), forterImprovement: fmtCur(fortINRAbusersGMV - custINRAbusersGMV), forterOutcome: fmtCur(fortINRAbusersGMV), isCalculation: true },
     { formula: '', label: 'Unit cost of INR abuse', customerInput: '', forterImprovement: '', forterOutcome: '' },

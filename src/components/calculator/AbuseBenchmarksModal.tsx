@@ -53,7 +53,7 @@ export const AbuseBenchmarksModal = ({ benchmarks, onUpdate, open: controlledOpe
   const open = isControlled ? (controlledOpen ?? false) : internalOpen;
   const setOpen = isControlled ? (controlledOnOpenChange!) : setInternalOpen;
 
-  const [localBenchmarks, setLocalBenchmarks] = useState<AbuseBenchmarks>(benchmarks);
+  const [localBenchmarks, setLocalBenchmarks] = useState<AbuseBenchmarks>(() => ({ ...defaultAbuseBenchmarks, ...benchmarks }));
 
   const updateField = (field: keyof AbuseBenchmarks, value: number) => {
     setLocalBenchmarks(prev => ({ ...prev, [field]: value }));
@@ -66,7 +66,8 @@ export const AbuseBenchmarksModal = ({ benchmarks, onUpdate, open: controlledOpe
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen) {
-      setLocalBenchmarks(benchmarks);
+      // Merge with defaults so all keys (e.g. egregiousInventoryLossPct, nonEgregiousInventoryLossPct) are present and edits persist
+      setLocalBenchmarks({ ...defaultAbuseBenchmarks, ...benchmarks });
     }
     setOpen(isOpen);
   };

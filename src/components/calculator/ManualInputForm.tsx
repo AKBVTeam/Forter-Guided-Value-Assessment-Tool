@@ -20,6 +20,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { CalculatorData, CustomCalculation } from "@/pages/Index";
 import { ForterKPIConfig, defaultForterKPIs, ForterKPIs, type ForterKPIFocusSection } from "@/components/calculator/ForterKPIConfig";
+import { defaultAbuseBenchmarks } from "@/components/calculator/AbuseBenchmarksModal";
 import { ChallengeSelection } from "@/components/calculator/ChallengeSelection";
 import { ChallengeInputs } from "@/components/calculator/ChallengeInputs";
 import { ValueSummaryOptionA, ValueTotals } from "@/components/calculator/ValueSummaryOptionA";
@@ -923,12 +924,17 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   // Stable updateField that notifies parent of individual field changes
   // Coerce numeric customer inputs (e.g. from calculator table) so they persist as numbers
   const updateField = useCallback((field: keyof CalculatorData, value: any) => {
-    const isNumeric = typeof value === 'number' && !Number.isNaN(value);
-    const parsed = typeof value === 'string' ? parseFloat(value) : value;
-    const toStore = isNumeric ? value : (typeof parsed === 'number' && !Number.isNaN(parsed) ? parsed : value);
-    setFormData((prev) => ({ ...prev, [field]: toStore }));
+    let toStore = value;
+    if (field === 'forterKPIs' && value && typeof value === 'object' && value.abuseBenchmarks != null) {
+      // Always persist a full abuseBenchmarks object so inventory-loss and other advanced abuse values never revert
+      toStore = { ...value, abuseBenchmarks: { ...defaultAbuseBenchmarks, ...value.abuseBenchmarks } };
+    }
+    const isNumeric = typeof toStore === 'number' && !Number.isNaN(toStore);
+    const parsed = typeof toStore === 'string' ? parseFloat(toStore) : toStore;
+    const final = isNumeric ? toStore : (typeof parsed === 'number' && !Number.isNaN(parsed) ? parsed : toStore);
+    setFormData((prev) => ({ ...prev, [field]: final }));
     if (onFieldChange) {
-      onFieldChange(field, toStore);
+      onFieldChange(field, final);
     }
   }, [onFieldChange]);
 
@@ -971,9 +977,12 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
           absoluteFlags.chargebackReductionIsAbsolute = true;
           absoluteFlags.chargebackReductionUserOverride = true;
         } else if (field === 'manualReviewReduction') absoluteFlags.manualReviewIsAbsolute = true;
+        const fieldValue = field === 'abuseBenchmarks' && value && typeof value === 'object'
+          ? { ...defaultAbuseBenchmarks, ...value }
+          : value;
         const updatedKPIs = {
           ...base,
-          [field]: value,
+          [field]: fieldValue,
           ...absoluteFlags,
         };
 

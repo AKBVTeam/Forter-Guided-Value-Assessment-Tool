@@ -15,7 +15,8 @@ import { ValueTotals } from "@/components/calculator/ValueSummaryOptionA";
 import { InvestmentInputs, calculateROI, calculateInvestmentCosts } from "@/lib/roiCalculations";
 import { StrategicObjectiveId } from "@/lib/useCaseMapping";
 import type { CalculatorRow } from "@/lib/calculations";
-import { getValueDeckPayload, getExecutiveSummaryPayload, getCalculatorSubsetPayload } from "@/lib/reportGeneration";
+import { getValueDeckPayload, getExecutiveSummaryPayload, getCalculatorSubsetPayload, type ValueDeckPayload, type FunnelSlideData } from "@/lib/reportGeneration";
+import { captureVisualImages } from "@/lib/captureVisualImages";
 import {
   googleReportFileName,
   googleReportExecutiveSummaryFileName,
@@ -32,6 +33,8 @@ export interface CalculatorSubsetForReport {
   rows: CalculatorRow[];
   segmentData?: Array<{ name: string; rows: CalculatorRow[] }>;
   totalRows?: CalculatorRow[];
+  /** Payment funnel slide data (c245-revenue). When set, one extra slide is added after the first appendix entry. */
+  funnelSlide?: FunnelSlideData;
 }
 
 interface GenerateReportModalProps {
@@ -80,6 +83,7 @@ function GenerateReportModalWithGoogle({
   onValueDeckGenerated,
 }: GenerateReportModalProps) {
   const [generating, setGenerating] = useState(false);
+  const [generatingDocType, setGeneratingDocType] = useState<"slides" | "docs" | null>(null);
   const [reportUrl, setReportUrl] = useState<string | null>(null);
   const pendingDocTypeRef = useRef<"slides" | "docs" | null>(null);
   const pendingSubsetRef = useRef<CalculatorSubsetForReport | null>(null);
@@ -109,6 +113,9 @@ function GenerateReportModalWithGoogle({
         ),
         ...(customerLogoUrl ? { customerLogoUrl } : {}),
       };
+      if (reportData.appendixSlides?.length) {
+        reportData.appendixSlides = await captureVisualImages(reportData.appendixSlides, formData);
+      }
       const fileName = googleReportCalculatorSubsetFileName(merchantName, subset.calculatorTitle);
       const file = await driveCreateFile(accessToken, fileName, "application/vnd.google-apps.presentation");
       await buildGoogleSlides(accessToken, file.id, reportData);
@@ -145,6 +152,10 @@ function GenerateReportModalWithGoogle({
         ...getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, options),
         ...(customerLogoUrl ? { customerLogoUrl } : {}),
       };
+      const slidesData = reportData as { appendixSlides?: ValueDeckPayload["appendixSlides"] };
+      if (slidesData.appendixSlides?.length) {
+        slidesData.appendixSlides = await captureVisualImages(slidesData.appendixSlides, formData);
+      }
     } else {
       const docPayload = getExecutiveSummaryPayload(formData, valueTotals, selectedChallenges, roiResults, options);
       const deckPayload = getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, options);
@@ -190,10 +201,12 @@ function GenerateReportModalWithGoogle({
 
       if (!docType || !token) {
         setGenerating(false);
+        setGeneratingDocType(null);
         console.log("ERROR: Missing docType or token after OAuth");
         return;
       }
 
+      setGeneratingDocType(docType);
       setGenerating(true);
       try {
         const url = await createAndGetUrl(token, docType);
@@ -206,12 +219,14 @@ function GenerateReportModalWithGoogle({
         console.error("Report generation failed:", msg);
         toast.error(msg.length > 400 ? `Failed: ${msg.slice(0, 397)}…` : msg);
       } finally {
+        setGeneratingDocType(null);
         setGenerating(false);
       }
     },
     onError: (err) => {
       pendingDocTypeRef.current = null;
       pendingSubsetRef.current = null;
+      setGeneratingDocType(null);
       setGenerating(false);
       console.log("ERROR: OAuth failed or cancelled - " + (err?.message ?? String(err)));
       toast.error("Google sign-in was cancelled or failed. Please try again.");
@@ -323,7 +338,9 @@ function GenerateReportModalWithGoogle({
           {generating && (
             <p className="text-sm text-muted-foreground flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-              Generating your report...
+              {generatingDocType === "slides"
+                ? "Generating your report, this may take a few minutes to prepare"
+                : "Generating your report..."}
             </p>
           )}
 
