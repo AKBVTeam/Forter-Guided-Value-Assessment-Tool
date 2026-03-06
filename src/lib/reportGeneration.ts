@@ -553,7 +553,9 @@ function getCalculatorRowsForBenefitGroup(
   const calculators: { title: string; rows: CalculatorRow[] }[] = [];
   const currencyCode = formData.baseCurrency || 'USD';
   const forterKPIs: Record<string, number> = (formData.forterKPIs || {}) as Record<string, number>;
-  const abuseBenchmarks: Record<string, number> = (formData.abuseBenchmarks || {}) as Record<string, number>;
+  // Use same source as tool (forterKPIs.abuseBenchmarks) so report visuals match the calculator modal
+  const abuseBenchmarksSource = (formData.forterKPIs as { abuseBenchmarks?: Record<string, number> } | undefined)?.abuseBenchmarks ?? (formData as { abuseBenchmarks?: Record<string, number> }).abuseBenchmarks;
+  const abuseBenchmarks: Record<string, number> = abuseBenchmarksSource && typeof abuseBenchmarksSource === 'object' ? abuseBenchmarksSource : {};
   
   try {
     if (group.id === 'payment-fraud-c1') {

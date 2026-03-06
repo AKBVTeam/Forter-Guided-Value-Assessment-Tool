@@ -160,19 +160,23 @@ export async function captureVisualImages(
       }, visualElement);
       root.render(React.createElement(TooltipProvider, null, wrapper));
 
+      // Wait for Recharts/SVG to paint before capture. Chart-heavy visuals need longer.
       const waitMs =
-        calculatorId === "c8-returns"
-          ? 900
+        calculatorId === "c8-returns" || calculatorId === "c8-inr"
+          ? 1600
           : calculatorId === "c12-ato-opex"
-            ? 900
+            ? 1200
             : calculatorId === "c13-clv"
-              ? 700
+              ? 1100
               : calculatorId === "c14-marketing"
-                ? 700
+                ? 1100
                 : calculatorId === "c245-revenue"
-                  ? 700
-                  : 500;
+                  ? 1100
+                  : 900;
       await new Promise((r) => setTimeout(r, waitMs));
+
+      // Let the browser complete a paint cycle so SVG/charts are in the DOM for html2canvas
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
       const html2canvas = (await import("html2canvas")).default;
       const canvas = await html2canvas(container, {

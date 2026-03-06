@@ -87,6 +87,8 @@ function GenerateReportModalWithGoogle({
   const [reportUrl, setReportUrl] = useState<string | null>(null);
   const pendingDocTypeRef = useRef<"slides" | "docs" | null>(null);
   const pendingSubsetRef = useRef<CalculatorSubsetForReport | null>(null);
+  /** True when this generation is for a single calculator (subset); we do not update lastValueDeckUrl in that case. */
+  const pendingIsSubsetRef = useRef(false);
 
   const merchantName = formData.customerName || "Customer";
 
@@ -211,14 +213,18 @@ function GenerateReportModalWithGoogle({
       try {
         const url = await createAndGetUrl(token, docType);
         setReportUrl(url);
-        if (docType === "docs") onExecutiveSummaryGenerated?.(url);
-        else onValueDeckGenerated?.(url);
+        if (docType === "docs") {
+          onExecutiveSummaryGenerated?.(url);
+        } else if (!pendingIsSubsetRef.current) {
+          onValueDeckGenerated?.(url);
+        }
         toast.success("Report created! Click the link below to open it.");
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error("Report generation failed:", msg);
         toast.error(msg.length > 400 ? `Failed: ${msg.slice(0, 397)}…` : msg);
       } finally {
+        pendingIsSubsetRef.current = false;
         setGeneratingDocType(null);
         setGenerating(false);
       }
@@ -226,6 +232,7 @@ function GenerateReportModalWithGoogle({
     onError: (err) => {
       pendingDocTypeRef.current = null;
       pendingSubsetRef.current = null;
+      pendingIsSubsetRef.current = false;
       setGeneratingDocType(null);
       setGenerating(false);
       console.log("ERROR: OAuth failed or cancelled - " + (err?.message ?? String(err)));
@@ -236,6 +243,7 @@ function GenerateReportModalWithGoogle({
   const handleOpenSlides = () => {
     setReportUrl(null);
     pendingDocTypeRef.current = "slides";
+    pendingIsSubsetRef.current = !!calculatorSubset;
     if (calculatorSubset) pendingSubsetRef.current = calculatorSubset;
     login();
   };

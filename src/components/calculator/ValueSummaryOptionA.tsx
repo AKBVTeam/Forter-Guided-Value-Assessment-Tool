@@ -1147,7 +1147,7 @@ export function INRAbuseVisual({ rows, showInMillions, currencyCode }: { rows: C
             </div>
           </div>
           <ResponsiveContainer width="100%" height={100}>
-            <BarChart data={volumeData} margin={{ top: 36, right: 16, left: 16, bottom: 4 }} barCategoryGap="70%">
+            <BarChart data={volumeData} margin={{ top: 42, right: 16, left: 16, bottom: 4 }} barCategoryGap="70%">
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 600, fill: 'hsl(var(--foreground))' }} />
               <YAxis hide />
               <ReferenceLine y={0} stroke="hsl(var(--border))" />
