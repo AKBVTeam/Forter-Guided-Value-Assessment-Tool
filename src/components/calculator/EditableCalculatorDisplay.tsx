@@ -74,6 +74,7 @@ const FIELD_LABELS: Record<string, string> = {
   forter3DSAbandonmentRate: "3DS failure & abandonment rate %",
   forterIssuingBankDeclineRate: "Issuing bank decline rate %",
   gmvToNetSalesDeductionPct: "GMV to Net sales deductions (sales tax/cancellations) %",
+  currentAtoCatchRate: "ATO catch rate today (%)",
   pctFraudulentLogins: "% fraudulent logins",
   pctFraudulentSignups: "% fraudulent sign-ups",
   // Challenge 7 Forter KPIs

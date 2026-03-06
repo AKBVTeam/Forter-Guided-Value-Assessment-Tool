@@ -280,6 +280,14 @@ const BENEFIT_GROUPS: BenefitGroup[] = [
     benefit: 'Reduce 3DS challenges while maintaining strong authentication',
   },
   {
+    id: 'promotion-abuse-c10',
+    title: 'GMV Uplift',
+    calculatorIds: ['c10-promotions'],
+    problem: 'Promotion and coupon abuse draining marketing budgets',
+    solution: 'Identify serial abusers and block misuse in real-time',
+    benefit: 'Protect promotional ROI and marketing spend',
+  },
+  {
     id: 'manual-review-c3',
     title: 'Reduce manual review costs',
     calculatorIds: ['c3-review'],
@@ -312,14 +320,6 @@ const BENEFIT_GROUPS: BenefitGroup[] = [
     benefit: 'Improve NPS and reduce support costs',
   },
   {
-    id: 'promotion-abuse-c10',
-    title: 'Protect profitability from promotion abuse',
-    calculatorIds: ['c10-promotions'],
-    problem: 'Promotion and coupon abuse draining marketing budgets',
-    solution: 'Identify serial abusers and block misuse in real-time',
-    benefit: 'Protect promotional ROI and marketing spend',
-  },
-  {
     id: 'ato-protection-c12-13',
     title: 'Account takeover protection',
     calculatorIds: ['c12-ato-opex', 'c13-clv'],
@@ -336,6 +336,17 @@ const BENEFIT_GROUPS: BenefitGroup[] = [
     benefit: 'Protect acquisition costs and maintain data quality',
   },
 ];
+
+/** Single source of truth: appendix/PDF category pill per calculator ID. */
+function getCategoryForCalculator(calculatorId: string): 'GMV Uplift' | 'Cost Reduction' | 'Risk Mitigation' | null {
+  const gmvUplift = ['c1-revenue', 'c245-revenue', 'c10-promotions', 'c9-cx-uplift'];
+  const costReduction = ['c1-chargeback', 'c245-chargeback', 'c3-review', 'c7-disputes', 'c7-opex', 'c9-cs-opex', 'c12-ato-opex', 'c14-marketing', 'c14-reactivation', 'c14-kyc'];
+  const riskMitigation = ['c8-returns', 'c8-inr', 'c13-clv'];
+  if (gmvUplift.includes(calculatorId)) return 'GMV Uplift';
+  if (costReduction.includes(calculatorId)) return 'Cost Reduction';
+  if (riskMitigation.includes(calculatorId)) return 'Risk Mitigation';
+  return null;
+}
 
 // Helper to get benefit groups that are active based on selected challenges
 // CRITICAL: Replicates the UI logic where C1 is hidden when C245 is selected
@@ -647,12 +658,14 @@ function getCalculatorRowsForBenefitGroup(
       const result = calculateChallenge10({
         transactionAttemptsValue: formData.amerAnnualGMV || 0,
         avgDiscountByAbusers: formData.avgDiscountByAbusers || 25,
+        promotionAbuseCatchRateToday: formData.promotionAbuseCatchRateToday ?? 0,
         isMarketplace: formData.isMarketplace || false,
         commissionRate: formData.commissionRate || 100,
         grossMarginPercent: formData.amerGrossMarginPercent || 30,
         forterCatchRate: (forterKPIs.forterCatchRate ?? abuseBenchmarks.forterCatchRate) || 90,
         abuseAovMultiplier: (forterKPIs.abuseAovMultiplier ?? abuseBenchmarks.abuseAovMultiplier) || 1.5,
         promotionAbuseAsGMVPct: abuseBenchmarks.promotionAbuseAsGMVPct || 2,
+        gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
         currencyCode,
       });
       calculators.push({ title: 'Protect profitability from promotion abuse', rows: result.calculator1.rows });
@@ -673,6 +686,7 @@ function getCalculatorRowsForBenefitGroup(
         pctFraudulentLogins: forterKPIs.pctFraudulentLogins || 1,
         churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO || 30,
         atoCatchRate: forterKPIs.atoCatchRate || 95,
+        currentAtoCatchRate: formData.currentAtoCatchRate ?? 0,
         currencyCode,
         gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
       });
@@ -1581,17 +1595,10 @@ export function getCalculatorSubsetPayload(
   const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const group = BENEFIT_GROUPS.find((g) => g.calculatorIds.includes(calculatorId));
-  const getCategoryBadge = (g: BenefitGroup): string | null => {
-    if (!g) return null;
-    if (['payment-fraud-c1', 'payment-optimization-c245'].includes(g.id)) return 'GMV Uplift';
-    if (['manual-review-c3', 'chargeback-recovery-c7', 'instant-refunds-c9', 'ato-protection-c12-13', 'signup-protection-c14-15'].includes(g.id)) return 'Cost Reduction';
-    if (['returns-abuse-c8', 'promotion-abuse-c10'].includes(g.id)) return 'Risk Mitigation';
-    return null;
-  };
   const benefitContent = getChallengeBenefitContent(calculatorId);
   const challengeDescription = benefitContent?.challengeDescription || group?.problem || '';
   const benefitDescription = benefitContent?.benefitDescription || group?.solution || '';
-  const badge = group ? getCategoryBadge(group) : null;
+  const badge = getCategoryForCalculator(calculatorId);
 
   const rowsToTableRows = (rows: CalculatorRow[]): Array<{ cells: string[] }> => {
     const dataRows: Array<{ isSection: boolean; row: CalculatorRow }> = [];
@@ -1719,13 +1726,6 @@ export function getValueDeckPayload(
         { num: '4', title: 'Executive Alignment & Sign-off', body: 'Present to [Executive Sponsor] by [Date] and initiate contract review.' },
       ];
 
-  const getCategoryBadge = (group: BenefitGroup): string | null => {
-    if (['payment-fraud-c1', 'payment-optimization-c245'].includes(group.id)) return 'GMV Uplift';
-    if (['manual-review-c3', 'chargeback-recovery-c7', 'instant-refunds-c9', 'ato-protection-c12-13', 'signup-protection-c14-15'].includes(group.id)) return 'Cost Reduction';
-    if (['returns-abuse-c8', 'promotion-abuse-c10'].includes(group.id)) return 'Risk Mitigation';
-    return null;
-  };
-
   const appendixSlides: ValueDeckPayload['appendixSlides'] = [];
   const isCustomPathway = !!options.isCustomPathway;
   let caseStudySlideNumbersResult: number[];
@@ -1736,13 +1736,13 @@ export function getValueDeckPayload(
     const appendixGroupsCustom = BENEFIT_GROUPS.filter((g) => g.calculatorIds.some((id) => selectedStandardCalculatorIds.has(id)));
     for (const group of appendixGroupsCustom) {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
-      const badge = getCategoryBadge(group);
       for (const calc of calculatorTables) {
         const calcId = group.calculatorIds.find((id) => {
           const content = getChallengeBenefitContent(id);
           return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
         }) || group.calculatorIds[0];
         if (!selectedStandardCalculatorIds.has(calcId)) continue;
+        const badge = getCategoryForCalculator(calcId);
         const benefitContent = getChallengeBenefitContent(calcId);
         const slideTitle = calc.title || group.title;
         const benefitDescription = benefitContent?.benefitDescription || group.solution;
@@ -1786,12 +1786,12 @@ export function getValueDeckPayload(
     const appendixGroups = BENEFIT_GROUPS.filter((g) => appendixGroupIds.has(g.id));
     for (const group of appendixGroups) {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
-      const badge = getCategoryBadge(group);
       for (const calc of calculatorTables) {
         const calcId = group.calculatorIds.find((id) => {
           const content = getChallengeBenefitContent(id);
           return content?.benefitTitle === calc.title || (content?.benefitTitle?.toLowerCase().includes(calc.title.toLowerCase()) || calc.title.toLowerCase().includes(content?.benefitTitle?.toLowerCase() || ''));
         }) || group.calculatorIds[0];
+        const badge = getCategoryForCalculator(calcId);
         const benefitContent = getChallengeBenefitContent(calcId);
         const slideTitle = calc.title || group.title;
         const benefitDescription = benefitContent?.benefitDescription || group.solution;
@@ -2150,8 +2150,8 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     slide3.addText(cat.value, { x: xPos + 0.18, y: 1.6, w: cardW - 0.36, h: 0.6, fontSize: 28, bold: true, color: GREEN, fontFace: FONT_HEAD });
     slide3.addShape('line', { x: xPos + 0.18, y: 2.25, w: cardW - 0.36, h: 0, line: { color: 'E5E7EB', pt: 0.5 } });
     cat.items.slice(0, 3).forEach((item, j) => {
-      slide3.addText(item.label, { x: xPos + 0.18, y: 2.34 + j * 0.34, w: cardW - 1.0, h: 0.3, fontSize: 9, color: GRAY, fontFace: FONT_BODY });
-      slide3.addText(formatCurrency(item.value, currency), { x: xPos + cardW - 1.1, y: 2.34 + j * 0.34, w: 0.9, h: 0.3, fontSize: 9, bold: true, color: NAVY, align: 'right', fontFace: FONT_BODY });
+      slide3.addText(item.label, { x: xPos + 0.18, y: 2.34 + j * 0.34, w: cardW - 1.0, h: 0.3, fontSize: 7, color: GRAY, fontFace: FONT_BODY, shrinkText: true });
+      slide3.addText(formatCurrency(item.value, currency), { x: xPos + cardW - 1.1, y: 2.34 + j * 0.34, w: 0.9, h: 0.3, fontSize: 7, bold: true, color: NAVY, align: 'right', fontFace: FONT_BODY, shrinkText: true });
     });
   });
   slide3.addShape('rect', { x: 0.5, y: 4.08, w: 12.33, h: 0.72, fill: { color: NAVY } });
@@ -2379,16 +2379,11 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
       { text: 'Forter Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
     ];
 
-    const getCategoryBadge = (group: BenefitGroup): { label: string; bgColor: string; textColor: string } | null => {
-      if (['payment-fraud-c1', 'payment-optimization-c245'].includes(group.id)) {
-        return { label: 'GMV Uplift', bgColor: 'DBEAFE', textColor: '1D4ED8' };
-      }
-      if (['manual-review-c3', 'chargeback-recovery-c7', 'instant-refunds-c9', 'ato-protection-c12-13', 'signup-protection-c14-15'].includes(group.id)) {
-        return { label: 'Cost Reduction', bgColor: 'FEF3C7', textColor: '92400E' };
-      }
-      if (['returns-abuse-c8', 'promotion-abuse-c10'].includes(group.id)) {
-        return { label: 'Risk Mitigation', bgColor: 'FCE7F3', textColor: '9D174D' };
-      }
+    const getCategoryBadgeStyle = (calculatorId: string): { label: string; bgColor: string; textColor: string } | null => {
+      const cat = getCategoryForCalculator(calculatorId);
+      if (cat === 'GMV Uplift') return { label: 'GMV Uplift', bgColor: 'DBEAFE', textColor: '1D4ED8' };
+      if (cat === 'Cost Reduction') return { label: 'Cost Reduction', bgColor: 'FEF3C7', textColor: '92400E' };
+      if (cat === 'Risk Mitigation') return { label: 'Risk Mitigation', bgColor: 'FCE7F3', textColor: '9D174D' };
       return null;
     };
     activeBenefitGroups.forEach(group => {
@@ -2407,7 +2402,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
         if (isTBD) {
           const slideCalc = pptx.addSlide();
           applyContentSlide(slideCalc, appendixPageNum++);
-          const badge = getCategoryBadge(group);
+          const badge = getCategoryBadgeStyle(calcId);
           if (badge) {
             slideCalc.addShape('rect', {
               x: 11.5, y: 0.1, w: 1.6, h: 0.26,
@@ -2448,7 +2443,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
           for (let page = 0; page < totalPages; page++) {
             const slideCalc = pptx.addSlide();
             applyContentSlide(slideCalc, appendixPageNum++);
-            const badge = getCategoryBadge(group);
+            const badge = getCategoryBadgeStyle(calcId);
             if (badge) {
               slideCalc.addShape('rect', {
                 x: 11.5, y: 0.1, w: 1.6, h: 0.26,

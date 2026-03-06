@@ -151,7 +151,7 @@ export const ValueSummaryWithCalculators = ({
     "c8-inr": ShieldAlert,
     "c9-cx-uplift": TrendingUp,
     "c9-cs-opex": Zap,
-    "c10-promotion": BadgeDollarSign,
+    "c10-promotions": BadgeDollarSign,
     "c12-ato-opex": UserCheck,
     "c13-clv": UserCheck,
     "c14-marketing": BadgeDollarSign,
@@ -196,7 +196,7 @@ export const ValueSummaryWithCalculators = ({
     "c8-inr": ["policy-abuse-prevention"],
     "c9-cx-uplift": ["policy-abuse-prevention"],
     "c9-cs-opex": ["policy-abuse-prevention"],
-    "c10-promotion": ["policy-abuse-prevention"],
+    "c10-promotions": ["policy-abuse-prevention"],
     "c12-ato-opex": ["account-protection"],
     "c13-clv": ["account-protection"],
     "c14-marketing": ["account-protection"],
@@ -594,6 +594,7 @@ export const ValueSummaryWithCalculators = ({
     const inputs: Challenge10Inputs = {
       transactionAttemptsValue: formData.amerAnnualGMV ?? 0,
       avgDiscountByAbusers: formData.avgDiscountByAbusers ?? 0,
+      promotionAbuseCatchRateToday: formData.promotionAbuseCatchRateToday ?? 0,
       isMarketplace: formData.isMarketplace ?? false,
       commissionRate: formData.commissionRate ?? 100,
       grossMarginPercent: formData.amerGrossMarginPercent ?? 0,
@@ -601,6 +602,7 @@ export const ValueSummaryWithCalculators = ({
       forterCatchRate: forterKPIs.forterCatchRate || 90,
       abuseAovMultiplier: forterKPIs.abuseAovMultiplier || 1.5,
       promotionAbuseAsGMVPct: benchmarks.promotionAbuseAsGMVPct || 2,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     return calculateChallenge10(inputs);
@@ -624,6 +626,7 @@ export const ValueSummaryWithCalculators = ({
       pctFraudulentLogins: forterKPIs.pctFraudulentLogins || 1,
       churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO || 50,
       atoCatchRate: forterKPIs.atoCatchRate || 90,
+      currentAtoCatchRate: formData.currentAtoCatchRate ?? 0,
       gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
@@ -688,13 +691,13 @@ export const ValueSummaryWithCalculators = ({
       });
     }
 
-    // Challenge 10/11: Promotion abuse protection (revenue uplift)
+    // Challenge 10/11: Promotion abuse protection (GMV uplift – value is GMV recovered; deduction to net sales applied in EBITDA)
     if (challenge10Results) {
       drivers.push({
-        id: "c10-promotion",
+        id: "c10-promotions",
         label: "Protect profitability from promotion abuse",
         value: challenge10Results.calculator1.revenueUplift,
-        enabled: driverStates["c10-promotion"] !== false,
+        enabled: driverStates["c10-promotions"] !== false,
         calculatorTitle: "Protect profitability from promotion abuse",
         calculatorRows: challenge10Results.calculator1.rows,
       });

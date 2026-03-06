@@ -1280,6 +1280,8 @@ export interface Challenge10Inputs {
   abuseAovMultiplier: number; // Abuse AoV multiplier (x)
   // From AbuseBenchmarks
   promotionAbuseAsGMVPct: number; // Promotion abuse as % of GMV (%)
+  /** GMV to Net sales deductions (%); default 20. Applied to lost GMV before margin/EBITDA. */
+  gmvToNetSalesDeductionPct?: number;
 }
 
 export interface Challenge10Results {
@@ -1306,7 +1308,10 @@ export function calculateChallenge10(inputs: Challenge10Inputs): Challenge10Resu
     forterCatchRate,
     abuseAovMultiplier,
     promotionAbuseAsGMVPct,
+    gmvToNetSalesDeductionPct: gmvToNetSalesDeductionPctInput,
   } = inputs;
+  const gmvToNetSalesDeductionPct = gmvToNetSalesDeductionPctInput ?? 20;
+  const netSalesMultiplier = 1 - gmvToNetSalesDeductionPct / 100;
 
   // Derived values
   const promotionAbusePctDecimal = promotionAbuseAsGMVPct / 100;
@@ -1355,12 +1360,15 @@ export function calculateChallenge10(inputs: Challenge10Inputs): Challenge10Resu
   const fortLostGMV = fortPromotionAbuseGMVWithoutDiscount - fortPromotionAbuseGMV;
   // Revenue uplift = reduction in loss (positive value for savings)
   const revenueUplift = Math.abs(custLostGMV) - Math.abs(fortLostGMV);
-  
-  // j: Commission / take rate (%) - 100% for retailers, actual rate for marketplaces
-  // k: Gross margin (%)
-  // l = i*j*k: Lost profitability due to promotion abuse ($) → stays negative
-  const custLostProfitability = custLostGMV * effectiveCommissionDecimal * grossMarginDecimal;
-  const fortLostProfitability = fortLostGMV * effectiveCommissionDecimal * grossMarginDecimal;
+
+  // GMV to Net sales deductions (%) then Net sales ($) = Lost GMV × (1 - deduction%)
+  const custNetSalesLost = custLostGMV * netSalesMultiplier;
+  const fortNetSalesLost = fortLostGMV * netSalesMultiplier;
+  const netSalesImprovement = fortNetSalesLost - custNetSalesLost;
+
+  // Lost profitability = Net sales (lost) × commission × gross margin
+  const custLostProfitability = custNetSalesLost * effectiveCommissionDecimal * grossMarginDecimal;
+  const fortLostProfitability = fortNetSalesLost * effectiveCommissionDecimal * grossMarginDecimal;
   // Profit uplift = reduction in loss (positive value for savings)
   const profitUplift = Math.abs(custLostProfitability) - Math.abs(fortLostProfitability);
 
@@ -1372,15 +1380,17 @@ export function calculateChallenge10(inputs: Challenge10Inputs): Challenge10Resu
     { formula: 'a', label: 'eCommerce sales attempts / transaction attempts ($)', customerInput: fmtCur(a), forterImprovement: '', forterOutcome: fmtCur(a), editableCustomerField: 'amerAnnualGMV', rawCustomerValue: a, valueType: 'currency' },
     { formula: 'b', label: 'Promotion abuse as % of GMV (%)', customerInput: fmtPct(b), forterImprovement: '', forterOutcome: fmtPct(b) },
     { formula: 'c = -(a*b)', label: 'Estimated promotion abuse attempts', customerInput: fmtCur(c), forterImprovement: '-', forterOutcome: fmtCur(c), isCalculation: true },
-    { formula: 'd', label: 'Estimated Promotion Abuse Catch Rate Today (%)', customerInput: fmtPct(custCatchRate), forterImprovement: formatPctImprovementRel(custCatchRate, fortCatchRate), forterOutcome: fmtPct(fortCatchRate), editableCustomerField: 'promotionAbuseCatchRateToday', rawCustomerValue: custCatchRate, editableForterField: 'forterCatchRate', rawForterValue: fortCatchRate, valueType: 'percent' },
+    { formula: 'd', label: 'Estimated Promotion Abuse Catch Rate Today (%)', customerInput: fmtPct(custCatchRate), forterImprovement: (fortCatchRate >= custCatchRate ? '+' : '') + (fortCatchRate - custCatchRate).toFixed(1) + '% pts', forterOutcome: fmtPct(fortCatchRate), editableCustomerField: 'promotionAbuseCatchRateToday', rawCustomerValue: custCatchRate, editableForterField: 'forterCatchRate', rawForterValue: fortCatchRate, valueType: 'percent' },
     { formula: 'e', label: 'Abuse AoV multiplier (x)', customerInput: `${e}x`, forterImprovement: '', forterOutcome: `${e}x`, editableCustomerField: 'abuseAovMultiplier', rawCustomerValue: e, valueType: 'number', readOnlyForterOutcome: true },
     { formula: 'f = c*(1-d)*e', label: 'Promotion abuse GMV ($)', customerInput: fmtCur(custPromotionAbuseGMV), forterImprovement: fmtCur(fortPromotionAbuseGMV - custPromotionAbuseGMV), forterOutcome: fmtCur(fortPromotionAbuseGMV), isCalculation: true },
     { formula: 'g', label: 'Average discount achieved by abusers (%)', customerInput: fmtPct(g), forterImprovement: '0% pts', forterOutcome: fmtPct(g), editableCustomerField: 'avgDiscountByAbusers', rawCustomerValue: g, valueType: 'percent' },
     { formula: 'h = f/(1-g)', label: 'Promotion abuse GMV (without discount) ($)', customerInput: fmtCur(custPromotionAbuseGMVWithoutDiscount), forterImprovement: fmtCur(fortPromotionAbuseGMVWithoutDiscount - custPromotionAbuseGMVWithoutDiscount), forterOutcome: fmtCur(fortPromotionAbuseGMVWithoutDiscount), isCalculation: true },
     { formula: 'i = h-f', label: 'Lost GMV due to promotion abuse ($)', customerInput: fmtCur(custLostGMV), forterImprovement: fmtCur(gmvImprovement), forterOutcome: fmtCur(fortLostGMV), valueDriver: 'revenue', isCalculation: true },
-    ...(isMarketplace ? [{ formula: 'j', label: 'Commission / take rate (%)', customerInput: fmtPct(effectiveCommissionRate), forterImprovement: '', forterOutcome: fmtPct(effectiveCommissionRate), editableCustomerField: 'commissionRate' as const, rawCustomerValue: effectiveCommissionRate, valueType: 'percent' as const }] : []),
-    { formula: isMarketplace ? 'k' : 'j', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' },
-    { formula: isMarketplace ? 'l = i*j*k' : 'k = i*j', label: 'Lost profitability due to promotion abuse ($)', customerInput: fmtCur(custLostProfitability), forterImprovement: fmtCur(profitImprovement), forterOutcome: fmtCur(fortLostProfitability), valueDriver: 'profit', isCalculation: true },
+    { formula: 'j', label: 'GMV to Net sales deductions (sales tax/cancellations) (%)', customerInput: fmtPct(gmvToNetSalesDeductionPct), forterImprovement: '', forterOutcome: fmtPct(gmvToNetSalesDeductionPct), editableCustomerField: 'gmvToNetSalesDeductionPct', rawCustomerValue: gmvToNetSalesDeductionPct, valueType: 'percent' },
+    { formula: 'k = i×(1-j)', label: 'Net sales ($)', customerInput: fmtCur(custNetSalesLost), forterImprovement: fmtCur(netSalesImprovement), forterOutcome: fmtCur(fortNetSalesLost), isCalculation: true },
+    ...(isMarketplace ? [{ formula: 'l', label: 'Commission / take rate (%)', customerInput: fmtPct(effectiveCommissionRate), forterImprovement: '', forterOutcome: fmtPct(effectiveCommissionRate), editableCustomerField: 'commissionRate' as const, rawCustomerValue: effectiveCommissionRate, valueType: 'percent' as const }] : []),
+    { formula: isMarketplace ? 'm' : 'l', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' },
+    { formula: isMarketplace ? 'n = k*l*m' : 'm = k*l', label: 'Lost profitability due to promotion abuse ($)', customerInput: fmtCur(custLostProfitability), forterImprovement: fmtCur(profitImprovement), forterOutcome: fmtCur(fortLostProfitability), valueDriver: 'profit', isCalculation: true },
   ];
 
   return {
@@ -1541,6 +1551,8 @@ export interface Challenge12_13Inputs {
   pctFraudulentLogins: number;
   churnLikelihoodFromATO: number;
   atoCatchRate: number;
+  /** Current/today ATO catch rate (%) for customer inputs — used in calculator2 (Mitigate CLV loss). Default 0. */
+  currentAtoCatchRate?: number;
   /** GMV to Net sales deductions (%); default 20. Applied to GMV CLV churn before margin/EBITDA. */
   gmvToNetSalesDeductionPct?: number;
 }
@@ -1560,6 +1572,7 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
     monthlyLogins, customerLTV, avgAppeasementValue, avgSalaryPerCSMember,
     avgHandlingTimePerATOClaim, commissionRate, grossMarginPercent,
     pctFraudulentLogins, churnLikelihoodFromATO, atoCatchRate,
+    currentAtoCatchRate: currentAtoCatchRateInput = 0,
     isMarketplace = false,
     gmvToNetSalesDeductionPct = 20,
   } = inputs;
@@ -1617,9 +1630,10 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
   // Calculator 2: Mitigate CLV loss due to ATO brand risk
   // Per spreadsheet: h = e*f*g is NEGATIVE, k = -h*i*j is also NEGATIVE
   const churnLikelihoodDecimal = churnLikelihoodFromATO / 100;
-  
+  const currentCatchRateDecimal = Math.min(100, Math.max(0, currentAtoCatchRateInput)) / 100;
+
   // Use positive custSuccessfulATO for the calculation (we negate custCostToAppease but need the base value)
-  const custSuccessfulATOPositive = estimatedATOAttempts; // 0% catch rate
+  const custSuccessfulATOPositive = estimatedATOAttempts * (1 - currentCatchRateDecimal);
   const forterSuccessfulATOPositive = estimatedATOAttempts * (1 - catchRateDecimal);
   
   // GMV CLV churn - displayed as NEGATIVE per spreadsheet
@@ -1647,7 +1661,7 @@ export function calculateChallenge12_13(inputs: Challenge12_13Inputs): Challenge
     { formula: 'a', label: 'Annual number of logins (#)', customerInput: fmt(Math.round(annualLogins)), forterImprovement: '', forterOutcome: fmt(Math.round(annualLogins)), editableCustomerField: 'monthlyLogins', rawCustomerValue: monthlyLogins, valueType: 'number' },
     { formula: 'b', label: 'Percent of fraudulent logins (%)', customerInput: fmtPct(pctFraudulentLogins), forterImprovement: '', forterOutcome: fmtPct(pctFraudulentLogins), editableForterField: 'pctFraudulentLogins', rawForterValue: pctFraudulentLogins, valueType: 'percent' },
     { formula: 'c = a*b', label: 'Estimated ATO attempts (#)', customerInput: fmt(Math.round(estimatedATOAttempts)), forterImprovement: '', forterOutcome: fmt(Math.round(estimatedATOAttempts)), isCalculation: true },
-    { formula: 'd', label: 'ATO catch rate (%)', customerInput: '0%', forterImprovement: `+${atoCatchRate}% pts`, forterOutcome: fmtPct(atoCatchRate), editableForterField: 'atoCatchRate', rawForterValue: atoCatchRate, valueType: 'percent' },
+    { formula: 'd', label: 'ATO catch rate (%)', customerInput: fmtPct(currentAtoCatchRateInput), forterImprovement: (atoCatchRate !== currentAtoCatchRateInput ? `+${(atoCatchRate - currentAtoCatchRateInput).toFixed(1)}% pts` : '0% pts'), forterOutcome: fmtPct(atoCatchRate), editableCustomerField: 'currentAtoCatchRate', rawCustomerValue: currentAtoCatchRateInput, editableForterField: 'atoCatchRate', rawForterValue: atoCatchRate, valueType: 'percent' },
     { formula: 'e = c*(1-d)', label: 'Successful ATO (#)', customerInput: fmt(Math.round(custSuccessfulATOPositive)), forterImprovement: fmt(Math.round(forterSuccessfulATOPositive - custSuccessfulATOPositive)), forterOutcome: fmt(Math.round(forterSuccessfulATOPositive)), isCalculation: true },
     { formula: 'f', label: 'Customer lifetime value (CLV) - GMV ($)', customerInput: fmtCur(customerLTV), forterImprovement: '', forterOutcome: fmtCur(customerLTV), editableCustomerField: 'customerLTV', rawCustomerValue: customerLTV, valueType: 'currency' },
     { formula: 'g', label: 'Churn likelihood from ATO (%)', customerInput: fmtPct(churnLikelihoodFromATO), forterImprovement: '', forterOutcome: fmtPct(churnLikelihoodFromATO), editableForterField: 'churnLikelihoodFromATO', rawForterValue: churnLikelihoodFromATO, valueType: 'percent' },

@@ -108,6 +108,8 @@ import {
   Cell,
   ReferenceLine,
   LabelList,
+  Legend,
+  DefaultLegendContent,
 } from "recharts";
 
 interface PerformanceHighlight {
@@ -625,6 +627,874 @@ function KYCVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow
             <div className="text-xs text-muted-foreground">annual KYC spend saved</div>
           </div>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab content for c3-review: Two cards Current / With Forter + badge */
+function ManualReviewVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
+  const reviewPctRow = matchFormula('b');
+  const reviewCountRow = matchFormula('c');
+  const hoursRow = matchFormula('e');
+  const hourlyRow = matchFormula('f');
+  const costRow = matchFormula('g');
+  const custReviewPct = (reviewPctRow?.rawCustomerValue ?? 0) as number;
+  const fortReviewPct = (reviewPctRow?.rawForterValue ?? 0) as number;
+  const reviewDecreasePct = custReviewPct > 0 ? Math.round(((custReviewPct - fortReviewPct) / custReviewPct) * 100) : 0;
+  const LineItem = ({ label, current, forter, formula }: { label: string; current: string; forter: string; formula?: string }) => (
+    <div className="flex justify-between items-center gap-6 py-2 border-b border-border/50 last:border-0">
+      <span className="text-sm text-muted-foreground shrink-0">
+        {label}
+        {formula != null && <span className="block italic text-xs mt-0.5">{formula}</span>}
+      </span>
+      <span className="text-sm font-medium tabular-nums text-right min-w-[6rem]">{current || forter}</span>
+    </div>
+  );
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-stretch gap-4 justify-center">
+        <Card className="p-4 min-w-[300px] border-slate-200 dark:border-slate-700">
+          <div className="text-sm font-semibold text-muted-foreground mb-3">Current state</div>
+          <LineItem label="Review rate" current={reviewPctRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="Reviews per year" current={reviewCountRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="Total review hours" current={hoursRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="Hourly cost per reviewer" current={hourlyRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="Total annual review cost" current={costRow?.customerInput ?? '—'} forter="" />
+        </Card>
+        <div className="flex flex-col items-center justify-center gap-1">
+          <ArrowRight className="w-6 h-6 text-muted-foreground" aria-hidden />
+          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{reviewDecreasePct}% review rate reduction</Badge>
+        </div>
+        <Card className="p-4 min-w-[300px] border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
+          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
+          <LineItem label="Review rate" current="" forter={reviewPctRow?.forterOutcome ?? '—'} />
+          <LineItem label="Reviews per year" current="" forter={reviewCountRow?.forterOutcome ?? '—'} />
+          <LineItem label="Total review hours" current="" forter={hoursRow?.forterOutcome ?? '—'} />
+          <LineItem label="Hourly cost per reviewer" current="" forter={hourlyRow?.forterOutcome ?? '—'} />
+          <LineItem label="Total annual review cost" current="" forter={costRow?.forterOutcome ?? '—'} />
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab content for c7-opex: Improve recovery efficiency — two cards Current / With Forter */
+function DisputeOpExVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
+  const timeRow = matchFormula('a');
+  const reviewsPerHourRow = matchFormula('b');
+  const disputesRow = matchFormula('c');
+  const hoursRow = matchFormula('d');
+  const hourlyRow = matchFormula('e');
+  const costRow = matchFormula('f');
+  const custTime = (timeRow?.rawCustomerValue ?? 0) as number;
+  const fortTime = (timeRow?.rawForterValue ?? 0) as number;
+  const timeReductionPct = custTime > 0 ? Math.round(((custTime - fortTime) / custTime) * 100) : 0;
+  const LineItem = ({ label, current, forter }: { label: string; current: string; forter: string }) => (
+    <div className="flex justify-between items-center gap-6 py-2 border-b border-border/50 last:border-0">
+      <span className="text-sm text-muted-foreground shrink-0">{label}</span>
+      <span className="text-sm font-medium tabular-nums text-right min-w-[6rem]">{current || forter}</span>
+    </div>
+  );
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-stretch gap-4 justify-center">
+        <Card className="p-4 min-w-[320px] border-slate-200 dark:border-slate-700">
+          <div className="text-sm font-semibold text-muted-foreground mb-3">Current state</div>
+          <LineItem label="Avg time to review CB (mins)" current={timeRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="# of reviews per hour" current={reviewsPerHourRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="Number of annual CB disputes" current={disputesRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="# of hours required for all chargebacks" current={hoursRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="Cost per hour of analyst" current={hourlyRow?.customerInput ?? '—'} forter="" />
+          <LineItem label="Total cost" current={costRow?.customerInput ?? '—'} forter="" />
+        </Card>
+        <div className="flex flex-col items-center justify-center gap-1">
+          <ArrowRight className="w-6 h-6 text-muted-foreground" aria-hidden />
+          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{timeReductionPct}% faster review time</Badge>
+        </div>
+        <Card className="p-4 min-w-[320px] border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
+          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
+          <LineItem label="Avg time to review CB (mins)" current="" forter={timeRow?.forterOutcome ?? '—'} />
+          <LineItem label="# of reviews per hour" current="" forter={reviewsPerHourRow?.forterOutcome ?? '—'} />
+          <LineItem label="Number of annual CB disputes" current="" forter={disputesRow?.forterOutcome ?? '—'} />
+          <LineItem label="# of hours required for all chargebacks" current="" forter={hoursRow?.forterOutcome ?? '—'} />
+          <LineItem label="Cost per hour of analyst" current="" forter={hourlyRow?.forterOutcome ?? '—'} />
+          <LineItem label="Total cost" current="" forter={costRow?.forterOutcome ?? '—'} />
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab content for c8-returns: 3-column layout — egregious | non-egregious | value cards */
+function ReturnsAbuseVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const rowG = rows.find((r) => r.formula === 'g = a*f');
+  const rowR = rows.find((r) => r.formula === 'r = a*q');
+  const rowI = rows.find((r) => r.label?.includes('Cost of goods sold') && r.formula?.startsWith('i'));
+  const rowK = rows.find((r) => r.label?.includes('2-way shipping') && r.formula?.startsWith('k'));
+  const rowL = rows.find((r) => r.label?.includes('fulfilment') && r.formula?.startsWith('l'));
+  const rowM = rows.find((r) => r.label?.includes('TX processing') && r.formula?.startsWith('m'));
+  const rowN = rows.find((r) => r.label?.includes('inventory loss') && r.formula?.startsWith('n'));
+  const rowO = rows.find((r) => r.formula?.startsWith('o ='));
+  const rowP = rows.find((r) => r.formula?.startsWith('p ='));
+  const rowS = rows.find((r) => r.label?.includes('Cost of goods sold') && r.formula === 's');
+  const rowU = rows.find((r) => r.label?.includes('Inventory recouped'));
+  const rowV = rows.find((r) => r.label?.includes('2-way shipping') && r.formula === 'v');
+  const rowW = rows.find((r) => r.label?.includes('fulfilment') && r.formula === 'w');
+  const rowX = rows.find((r) => r.label?.includes('TX processing') && r.formula === 'x');
+  const rowY = rows.find((r) => r.label?.includes('inventory loss') && r.formula === 'y');
+  const rowZ = rows.find((r) => r.formula?.startsWith('z ='));
+  const rowAA = rows.find((r) => r.formula?.startsWith('aa ='));
+  const rowAB = rows.find((r) => r.formula?.startsWith('ab ='));
+  const rowE = rows.find((r) => r.formula === 'e = c*d' || r.formula?.startsWith('e ='));
+  const rowF = rows.find((r) => r.formula === 'f');
+  const rowQ = rows.find((r) => r.formula === 'q');
+  const aovLabel = rowE?.customerInput ?? rowE?.forterOutcome ?? '—';
+  const netEconomicLossTitle = `Net economic loss per abusive transaction (${aovLabel} AoV)`;
+
+  const toNum = (s: string | undefined): number => {
+    if (!s) return 0;
+    const trimmed = s.trim();
+    if (trimmed === '' || trimmed === '-' || trimmed === '—') return 0;
+    const stripped = trimmed
+      .replace(/[£$€]/g, '')
+      .replace(/,/g, '')
+      .replace(/\s/g, '')
+      .replace(/[()]/g, '');
+    const n = parseFloat(stripped);
+    return isNaN(n) ? 0 : Math.abs(n);
+  };
+
+  const getCustomer = (row: typeof rowG) =>
+    (row?.rawCustomerValue !== undefined && row.rawCustomerValue !== null && row.rawCustomerValue !== 0)
+      ? Math.abs(row.rawCustomerValue as number)
+      : toNum(row?.customerInput);
+
+  const getForter = (row: typeof rowG) =>
+    (row?.rawForterValue !== undefined && row.rawForterValue !== null && row.rawForterValue !== 0)
+      ? Math.abs(row.rawForterValue as number)
+      : toNum(row?.forterOutcome);
+
+  // Unit costs
+  const egr_cogs = getCustomer(rowI);
+  const egr_shipping = getCustomer(rowK);
+  const egr_fulfilment = getCustomer(rowL);
+  const egr_txFees = getCustomer(rowM);
+  const egr_inventory = getCustomer(rowN);
+
+  const non_cogs = getCustomer(rowS);
+  const non_shipping = getCustomer(rowV);
+  const non_fulfilment = getCustomer(rowW);
+  const non_txFees = getCustomer(rowX);
+  const non_recouped = getCustomer(rowU);
+  const non_inventory = Math.max(0, getCustomer(rowY) - non_recouped);
+
+  // Parse plain integer strings like "2,748" by removing commas only
+  const parseCount = (s: string | undefined): number => {
+    if (!s) return 0;
+    return parseInt(s.replace(/,/g, ''), 10) || 0;
+  };
+
+  const egrCurrent = parseCount(rowG?.customerInput);
+  const egrForter = parseCount(rowG?.forterOutcome);
+  const nonEgrCurrent = parseCount(rowR?.customerInput);
+  const nonEgrForter = parseCount(rowR?.forterOutcome);
+
+  const egrBlocked = egrCurrent - egrForter;
+  const nonEgrBlocked = nonEgrCurrent - nonEgrForter;
+  const totalBlockedFinal = egrBlocked + nonEgrBlocked;
+  const totalBlockedDisplay = totalBlockedFinal.toLocaleString('en-US');
+
+  // Weighted average cost per abuser
+  const egrUnitCost = getCustomer(rowO);
+  const nonEgrUnitCost = getCustomer(rowZ);
+  const weightedAvg = totalBlockedFinal > 0
+    ? (egrBlocked * egrUnitCost + nonEgrBlocked * nonEgrUnitCost) / totalBlockedFinal
+    : 0;
+
+  const sym = getCurrencySymbol(currencyCode);
+  const fmtCur = (v: number) => `${sym}${Math.round(Math.abs(v)).toLocaleString('en-US')}`;
+
+  const egrTotal = egr_cogs + egr_shipping + egr_fulfilment + egr_txFees + egr_inventory;
+  const nonTotal = non_cogs + non_shipping + non_fulfilment + non_txFees + non_inventory;
+
+  const costChartMax = Math.max(egrTotal + 1, nonTotal + 1, 1);
+  // Nice Y-axis: round max up to even step and generate even tick values
+  const getNiceCostScale = (max: number) => {
+    if (max <= 0) return { niceMax: 100, ticks: [0, 25, 50, 75, 100] };
+    let step = 25;
+    if (max > 1000) step = 200;
+    else if (max > 500) step = 100;
+    else if (max > 200) step = 50;
+    else if (max > 100) step = 25;
+    else if (max > 50) step = 20;
+    else if (max > 20) step = 10;
+    const niceMax = Math.ceil(max / step) * step;
+    const ticks: number[] = [];
+    for (let t = 0; t <= niceMax; t += step) ticks.push(t);
+    return { niceMax, ticks };
+  };
+  const costScale = getNiceCostScale(costChartMax);
+
+  const egrVolumeData = [
+    { name: 'Today', value: egrCurrent, fill: '#94a3b8' },
+    { name: 'With Forter', value: egrForter, fill: '#22c55e' },
+  ];
+  const egrCostData = [{ name: 'Cost per abuser', cogs: egr_cogs, shipping: egr_shipping, fulfilment: egr_fulfilment, txFees: egr_txFees, divider: 1, inventory: egr_inventory }];
+
+  const nonVolumeData = [
+    { name: 'Today', value: nonEgrCurrent, fill: '#94a3b8' },
+    { name: 'With Forter', value: nonEgrForter, fill: '#22c55e' },
+  ];
+  const nonCostData = [{ name: 'Cost per abuser', cogs: non_cogs, shipping: non_shipping, fulfilment: non_fulfilment, txFees: non_txFees, divider: 1, inventory: non_inventory }];
+
+  const totalVolumeCurrent = egrCurrent + nonEgrCurrent;
+  const reductionPct = totalVolumeCurrent > 0 ? Math.round((totalBlockedFinal / totalVolumeCurrent) * 100) : 0;
+  const nonEgrReductionPct = nonEgrCurrent > 0 ? Math.round((nonEgrBlocked / nonEgrCurrent) * 100) : 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg mb-3 text-xs text-amber-800 dark:text-amber-200">
+        <Info className="w-3 h-3 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+        <span>
+          <strong>Refund excluded.</strong> Refund offsets against revenue received (net = £0). Only COGS, shipping, fulfilment, TX fees and lost margin represent true economic loss.
+        </span>
+      </div>
+
+      <div className="flex gap-4 items-start">
+        <div className="flex-1 min-w-0 space-y-1 pr-4 border-r border-border">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold">Egregious abuser transactions</p>
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="px-2 py-0.5 bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 rounded-full text-xs font-semibold whitespace-nowrap">
+                {egrBlocked.toLocaleString('en-US')} blocked
+              </span>
+              <span className="text-xs text-green-700 dark:text-green-300 font-medium pr-1">
+                {rowP?.forterImprovement ?? '—'} protected
+              </span>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={100}>
+            <BarChart data={egrVolumeData} margin={{ top: 20, right: 16, left: 16, bottom: 4 }} barCategoryGap="70%">
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 600, fill: 'hsl(var(--foreground))' }} />
+              <YAxis hide />
+              <ReferenceLine y={0} stroke="hsl(var(--border))" />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {egrVolumeData.map((e, i) => (
+                  <Cell key={i} fill={e.fill} />
+                ))}
+                <LabelList dataKey="value" position="top" content={(props: { x?: number; y?: number; width?: number; value?: number }) => {
+                  const { x, y, width, value } = props;
+                  return (
+                    <text x={Number(x) + Number(width) / 2} y={Number(y) - 4} textAnchor="middle" fontSize={11} fontWeight={600} fill={value === egrForter ? '#16a34a' : '#475569'}>
+                      {Number(value ?? 0).toLocaleString('en-US')}
+                    </text>
+                  );
+                }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs font-semibold text-muted-foreground">{netEconomicLossTitle}</p>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={egrCostData} margin={{ top: 16, right: 72, left: 8, bottom: 4 }} barCategoryGap="65%">
+              <YAxis domain={[0, costScale.niceMax]} ticks={costScale.ticks} tickFormatter={(v) => `${sym}${v}`} axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} width={32} />
+              <XAxis hide />
+              <Bar dataKey="cogs" stackId="a" fill="#1e293b" name="COGS" />
+              <Bar dataKey="shipping" stackId="a" fill="#475569" name="Shipping" />
+              <Bar dataKey="fulfilment" stackId="a" fill="#64748b" name="Fulfilment" />
+              <Bar dataKey="txFees" stackId="a" fill="#94a3b8" name="TX Fees" />
+              <Bar dataKey="divider" stackId="a" fill="white" legendType="none" isAnimationActive={false} />
+              <Bar dataKey="inventory" stackId="a" fill="#fca5a5" name="Lost margin (indirect) †" radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="inventory" position="top" content={(props: { x?: number; y?: number; width?: number }) => {
+                  const { x, y, width } = props;
+                  return (
+                    <text x={Number(x) + Number(width) / 2} y={Number(y) - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="hsl(var(--foreground))">
+                      {fmtCur(egrTotal)}
+                    </text>
+                  );
+                }} />
+              </Bar>
+              <Legend align="right" verticalAlign="middle" layout="vertical" iconSize={8} wrapperStyle={{ fontSize: 9 }} content={(props) => <DefaultLegendContent {...props} payload={[...(props.payload ?? [])].reverse()} />} />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-muted-foreground mt-1 italic">
+            † Lost margin is an indirect cost — inventory lost to abusers reduces future selling capacity, not a direct cash outflow at point of return.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Estimated abuse benchmark for egregious cohort: {rowF?.customerInput ?? '—'} of returns claims
+          </p>
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-1 pl-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold">Non-egregious abuser transactions</p>
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="px-2 py-0.5 bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 rounded-full text-xs font-semibold whitespace-nowrap">
+                {nonEgrBlocked.toLocaleString('en-US')} captured
+              </span>
+              <span className="text-xs text-green-700 dark:text-green-300 font-medium pr-1">
+                {rowAA?.forterImprovement ?? '—'} protected
+              </span>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={100}>
+            <BarChart data={nonVolumeData} margin={{ top: 20, right: 16, left: 16, bottom: 4 }} barCategoryGap="70%">
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 600, fill: 'hsl(var(--foreground))' }} />
+              <YAxis hide />
+              <ReferenceLine y={0} stroke="hsl(var(--border))" />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {nonVolumeData.map((e, i) => (
+                  <Cell key={i} fill={e.fill} />
+                ))}
+                <LabelList dataKey="value" position="top" content={(props: { x?: number; y?: number; width?: number; value?: number }) => {
+                  const { x, y, width, value } = props;
+                  return (
+                    <text x={Number(x) + Number(width) / 2} y={Number(y) - 4} textAnchor="middle" fontSize={11} fontWeight={600} fill={value === nonEgrForter ? '#16a34a' : '#475569'}>
+                      {Number(value ?? 0).toLocaleString('en-US')}
+                    </text>
+                  );
+                }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs font-semibold text-muted-foreground">{netEconomicLossTitle}</p>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={nonCostData} margin={{ top: 16, right: 72, left: 8, bottom: 4 }} barCategoryGap="65%">
+              <YAxis domain={[0, costScale.niceMax]} ticks={costScale.ticks} tickFormatter={(v) => `${sym}${v}`} axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} width={32} />
+              <XAxis hide />
+              <Bar dataKey="cogs" stackId="a" fill="#1e293b" name="COGS" />
+              <Bar dataKey="shipping" stackId="a" fill="#475569" name="Shipping" />
+              <Bar dataKey="fulfilment" stackId="a" fill="#64748b" name="Fulfilment" />
+              <Bar dataKey="txFees" stackId="a" fill="#94a3b8" name="TX Fees" />
+              <Bar dataKey="divider" stackId="a" fill="white" legendType="none" isAnimationActive={false} />
+              <Bar dataKey="inventory" stackId="a" fill="#fca5a5" name="Lost margin (indirect) †" radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="inventory" position="top" content={(props: { x?: number; y?: number; width?: number }) => {
+                  const { x, y, width } = props;
+                  return (
+                    <text x={Number(x) + Number(width) / 2} y={Number(y) - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="hsl(var(--foreground))">
+                      {fmtCur(nonTotal)}
+                    </text>
+                  );
+                }} />
+              </Bar>
+              <Legend align="right" verticalAlign="middle" layout="vertical" iconSize={8} wrapperStyle={{ fontSize: 9 }} content={(props) => <DefaultLegendContent {...props} payload={[...(props.payload ?? [])].reverse()} />} />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-muted-foreground mt-1 italic">
+            † Lost margin is an indirect cost — inventory lost to abusers reduces future selling capacity, not a direct cash outflow at point of return.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Estimated abuse benchmark for non-egregious cohort: {rowQ?.customerInput ?? '—'} of returns claims
+          </p>
+        </div>
+
+        <div className="w-48 shrink-0 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground mb-2">Value Impact (Totals)</p>
+          <div className="flex flex-col gap-2">
+            <Card className="rounded-lg border p-4 flex flex-col gap-0.5 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+              <Shield className="w-4 h-4 shrink-0 text-slate-400" />
+              <div className="text-slate-700 dark:text-slate-300 font-bold text-2xl">{totalBlockedDisplay}</div>
+              <div className="text-xs text-muted-foreground">{reductionPct}% of abusers captured</div>
+            </Card>
+            <Card className="rounded-lg border p-4 flex flex-col gap-0.5 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+              <BadgeDollarSign className="w-4 h-4 shrink-0 text-amber-400" />
+              <div className="text-amber-700 dark:text-amber-300 font-bold text-2xl">{fmtCur(weightedAvg)}</div>
+              <div className="text-xs text-muted-foreground">weighted avg. cost per abusive tx</div>
+            </Card>
+            <Card className="rounded-lg border p-4 flex flex-col gap-0.5 bg-green-100 dark:bg-green-950/30 border-green-300 dark:border-green-700">
+              <TrendingUp className="w-4 h-4 shrink-0 text-green-500" />
+              <div className="text-green-700 dark:text-green-300 font-bold text-3xl">{rowAB?.forterImprovement ?? '—'}</div>
+              <div className="text-xs text-muted-foreground">total cost protected</div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab content for c8-inr: single section (INR abusers) + value impact column */
+function INRAbuseVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const rowE = rows.find((r) => r.formula === 'e = c*d' || r.formula?.startsWith('e ='));
+  const rowF = rows.find((r) => r.formula === 'f');
+  const rowG = rows.find((r) => r.formula === 'g = a*f');
+  const aovLabel = rowE?.customerInput ?? rowE?.forterOutcome ?? '—';
+  const netEconomicLossTitle = `Net economic loss per abusive transaction (${aovLabel} AoV)`;
+  const rowI = rows.find((r) => r.formula === 'i');
+  const rowK = rows.find((r) => r.formula === 'k');
+  const rowL = rows.find((r) => r.formula === 'l');
+  const rowM = rows.find((r) => r.formula === 'm');
+  const rowN = rows.find((r) => r.formula === 'n');
+  const rowO = rows.find((r) => r.formula?.startsWith('o ='));
+  const rowP = rows.find((r) => r.formula === 'p = g*o');
+
+  const toNum = (s: string | undefined): number => {
+    if (!s) return 0;
+    const trimmed = s.trim();
+    if (trimmed === '' || trimmed === '-' || trimmed === '—') return 0;
+    const stripped = trimmed
+      .replace(/[£$€]/g, '')
+      .replace(/,/g, '')
+      .replace(/\s/g, '')
+      .replace(/[()]/g, '');
+    const n = parseFloat(stripped);
+    return isNaN(n) ? 0 : Math.abs(n);
+  };
+
+  const getCustomer = (row: CalculatorRow | undefined) =>
+    (row?.rawCustomerValue !== undefined && row.rawCustomerValue !== null && row.rawCustomerValue !== 0)
+      ? Math.abs(row.rawCustomerValue as number)
+      : toNum(row?.customerInput);
+
+  const parseCount = (s: string | undefined): number => {
+    if (!s) return 0;
+    return parseInt(s.replace(/,/g, ''), 10) || 0;
+  };
+
+  const currentAbusers = parseCount(rowG?.customerInput);
+  const forterAbusers = parseCount(rowG?.forterOutcome);
+  const blocked = currentAbusers - forterAbusers;
+  const reductionPct = currentAbusers > 0 ? Math.round((blocked / currentAbusers) * 100) : 0;
+
+  const cogs = getCustomer(rowI);
+  const shipping = getCustomer(rowK);
+  const fulfilment = getCustomer(rowL);
+  const txFees = getCustomer(rowM);
+  const inventory = getCustomer(rowN);
+  const unitCostTotal = cogs + shipping + fulfilment + txFees + inventory;
+  const costChartMax = Math.max(unitCostTotal + 1, 1);
+  const getNiceCostScale = (max: number) => {
+    if (max <= 0) return { niceMax: 100, ticks: [0, 25, 50, 75, 100] };
+    let step = 25;
+    if (max > 1000) step = 200;
+    else if (max > 500) step = 100;
+    else if (max > 200) step = 50;
+    else if (max > 100) step = 25;
+    else if (max > 50) step = 20;
+    else if (max > 20) step = 10;
+    const niceMax = Math.ceil(max / step) * step;
+    const ticks: number[] = [];
+    for (let t = 0; t <= niceMax; t += step) ticks.push(t);
+    return { niceMax, ticks };
+  };
+  const costScale = getNiceCostScale(costChartMax);
+
+  const sym = getCurrencySymbol(currencyCode);
+  const fmtCur = (v: number) => `${sym}${Math.round(Math.abs(v)).toLocaleString('en-US')}`;
+
+  const volumeData = [
+    { name: 'Today', value: currentAbusers, fill: '#94a3b8' },
+    { name: 'With Forter', value: forterAbusers, fill: '#22c55e' },
+  ];
+  const costData = [{ name: 'Cost per abuser', cogs, shipping, fulfilment, txFees, divider: 1, inventory }];
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-4 items-start">
+        <div className="min-w-0 space-y-1 pr-4 border-r border-border">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold">INR abusive transactions</p>
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="px-2 py-0.5 bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300 rounded-full text-xs font-semibold whitespace-nowrap">
+                {blocked.toLocaleString('en-US')} blocked
+              </span>
+              <span className="text-xs text-green-700 dark:text-green-300 font-medium pr-1">
+                {rowP?.forterImprovement ?? '—'} protected
+              </span>
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={100}>
+            <BarChart data={volumeData} margin={{ top: 20, right: 16, left: 16, bottom: 4 }} barCategoryGap="70%">
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 600, fill: 'hsl(var(--foreground))' }} />
+              <YAxis hide />
+              <ReferenceLine y={0} stroke="hsl(var(--border))" />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                {volumeData.map((e, i) => (
+                  <Cell key={i} fill={e.fill} />
+                ))}
+                <LabelList dataKey="value" position="top" content={(props: { x?: number; y?: number; width?: number; value?: number }) => {
+                  const { x, y, width, value } = props;
+                  return (
+                    <text x={Number(x) + Number(width) / 2} y={Number(y) - 4} textAnchor="middle" fontSize={11} fontWeight={600} fill={value === forterAbusers ? '#16a34a' : '#475569'}>
+                      {Number(value ?? 0).toLocaleString('en-US')}
+                    </text>
+                  );
+                }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs font-semibold text-muted-foreground">{netEconomicLossTitle}</p>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={costData} margin={{ top: 16, right: 72, left: 8, bottom: 4 }} barCategoryGap="65%">
+              <YAxis domain={[0, costScale.niceMax]} ticks={costScale.ticks} tickFormatter={(v) => `${sym}${v}`} axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} width={32} />
+              <XAxis hide />
+              <Bar dataKey="cogs" stackId="a" fill="#1e293b" name="COGS" />
+              <Bar dataKey="shipping" stackId="a" fill="#475569" name="Shipping" />
+              <Bar dataKey="fulfilment" stackId="a" fill="#64748b" name="Fulfilment" />
+              <Bar dataKey="txFees" stackId="a" fill="#94a3b8" name="TX Fees" />
+              <Bar dataKey="divider" stackId="a" fill="white" legendType="none" isAnimationActive={false} />
+              <Bar dataKey="inventory" stackId="a" fill="#fca5a5" name="Lost margin (indirect) †" radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="inventory" position="top" content={(props: { x?: number; y?: number; width?: number }) => {
+                  const { x, y, width } = props;
+                  return (
+                    <text x={Number(x) + Number(width) / 2} y={Number(y) - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="hsl(var(--foreground))">
+                      {fmtCur(unitCostTotal)}
+                    </text>
+                  );
+                }} />
+              </Bar>
+              <Legend align="right" verticalAlign="middle" layout="vertical" iconSize={8} wrapperStyle={{ fontSize: 9 }} content={(props) => <DefaultLegendContent {...props} payload={[...(props.payload ?? [])].reverse()} />} />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-muted-foreground mt-1 italic">
+            † Lost margin is an indirect cost — inventory lost to abusers reduces future selling capacity, not a direct cash outflow at point of claim.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Estimated abuse benchmark for INR cohort: {rowF?.customerInput ?? '—'} of INR claims
+          </p>
+        </div>
+
+        <div className="min-w-0 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground mb-2">Value Impact</p>
+          <div className="flex flex-col gap-2">
+            <Card className="rounded-lg border p-4 flex flex-col gap-0.5 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+              <Shield className="w-4 h-4 shrink-0 text-slate-400" />
+              <div className="text-slate-700 dark:text-slate-300 font-bold text-2xl">{blocked.toLocaleString('en-US')}</div>
+              <div className="text-xs text-muted-foreground">{reductionPct}% of abusers blocked</div>
+            </Card>
+            <Card className="rounded-lg border p-4 flex flex-col gap-0.5 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+              <BadgeDollarSign className="w-4 h-4 shrink-0 text-amber-400" />
+              <div className="text-amber-700 dark:text-amber-300 font-bold text-2xl">{fmtCur(getCustomer(rowO))}</div>
+              <div className="text-xs text-muted-foreground">avg. cost per abusive claim</div>
+            </Card>
+            <Card className="rounded-lg border p-4 flex flex-col gap-0.5 bg-green-100 dark:bg-green-950/30 border-green-300 dark:border-green-700">
+              <TrendingUp className="w-4 h-4 shrink-0 text-green-500" />
+              <div className="text-green-700 dark:text-green-300 font-bold text-3xl">{rowP?.forterImprovement ?? '—'}</div>
+              <div className="text-xs text-muted-foreground">total cost protected</div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab for c10-promotions: promotion abuse exploitation + GMV impact + value cards */
+function PromotionAbuseVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const parseCur = (s: string | undefined): number => {
+    if (!s) return 0;
+    const n = parseFloat(s.replace(/[£$€,\s()]/g, '').replace(/[^0-9.-]/g, ''));
+    return isNaN(n) ? 0 : Math.abs(n);
+  };
+  const parsePct = (s: string | undefined): number => {
+    if (!s) return 0;
+    return parseFloat(s.replace(/[^0-9.-]/g, '')) || 0;
+  };
+
+  const rowA = rows.find(r => r.formula === 'a');
+  const rowB = rows.find(r => r.formula === 'b');
+  const rowD = rows.find(r => r.formula === 'd');
+  const rowE = rows.find(r => r.formula === 'e');
+  const rowG = rows.find(r => r.formula === 'g');
+  const rowI = rows.find(r => r.valueDriver === 'revenue');
+  const rowM = rows.find(r => r.valueDriver === 'profit');
+
+  const totalGMV = parseCur(rowA?.customerInput);
+  const abusePct = parsePct(rowB?.customerInput);
+  const catchToday = parsePct(rowD?.customerInput);
+  const catchForter = parsePct(rowD?.forterOutcome);
+  const aovMultiplier = ((rowE?.rawCustomerValue as number) ?? parseFloat(String(rowE?.customerInput ?? '').replace(/x/g, ''))) || 1.5;
+  const discountPct = parsePct(rowG?.customerInput);
+  const lostGMVCurrent = parseCur(rowI?.customerInput);
+  const lostGMVForter = parseCur(rowI?.forterOutcome);
+  const gmvRecovered = lostGMVCurrent - lostGMVForter;
+  const profitRecovered = parseCur(rowM?.forterImprovement);
+
+  const sym = getCurrencySymbol(currencyCode);
+  const fmtCur = (v: number) => showInMillions ? `${sym}${(v / 1_000_000).toFixed(1)}M` : `${sym}${Math.round(v).toLocaleString('en-US')}`;
+
+  return (
+    <div className="grid grid-cols-3 gap-6 items-start">
+      <div className="col-span-2 space-y-4">
+        {/* Section 1 — How abusers exploit your promotions */}
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-3">How abusers exploit your promotions</p>
+          <div className="w-full h-10 bg-slate-700 rounded-lg flex items-center justify-between px-4">
+            <span className="text-xs text-white font-medium">Abusive basket value</span>
+            <span className="text-sm text-white font-bold">{aovMultiplier}× avg order value</span>
+          </div>
+          <div className="flex justify-center my-1">
+            <div className="flex flex-col items-center gap-0.5">
+              <div className="w-0.5 h-3 bg-slate-400" />
+              <div className="text-slate-400 text-xs">↓ {discountPct}% discount claimed</div>
+              <div className="w-0.5 h-3 bg-slate-400" />
+            </div>
+          </div>
+          <div className="w-full h-10 rounded-lg overflow-hidden flex">
+            <div className="h-full flex items-center justify-center text-xs font-semibold text-slate-700 bg-slate-200" style={{ width: `${100 - discountPct}%` }}>
+              Merchant receives ({100 - discountPct}%)
+            </div>
+            <div className="h-full flex items-center justify-center text-xs font-semibold text-white bg-red-400" style={{ width: `${discountPct}%` }}>
+              Absorbed ({discountPct}%)
+            </div>
+          </div>
+          <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+            <span>Abusers typically target higher value items to maximise discount value</span>
+          </div>
+        </div>
+
+        {/* Section 2 — Abuse scale: today vs with Forter */}
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mt-4 mb-2">Promotion abuse exposure: unprotected vs. protected</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="text-xs text-muted-foreground">Unprotected GMV exposure</div>
+              <div className="text-xl font-bold text-red-600">({fmtCur(lostGMVCurrent)})</div>
+              <div className="text-xs text-muted-foreground">{abusePct}% of GMV currently at risk</div>
+              <div className="w-full h-1.5 bg-red-100 rounded mt-2">
+                <div className="h-full bg-red-400 rounded" style={{ width: `${Math.min(abusePct * 5, 100)}%` }} />
+              </div>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="text-xs text-muted-foreground">Residual exposure with Forter</div>
+              <div className="text-xl font-bold text-green-700">({fmtCur(lostGMVForter)})</div>
+              <div className="text-xs text-muted-foreground">{catchForter}% of risk eliminated</div>
+              <div className="w-full h-1.5 bg-green-100 rounded mt-2">
+                <div className="h-full bg-green-400 rounded" style={{ width: `${Math.min(abusePct * (1 - catchForter / 100) * 5, 100)}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3 — Recovery callout */}
+        <div className="flex items-center gap-2 mt-3 p-2.5 bg-green-50 border border-green-200 rounded-lg">
+          <TrendingUp className="w-4 h-4 text-green-600 shrink-0" />
+          <p className="text-xs text-green-800">
+            <strong>{fmtCur(gmvRecovered)}</strong> net GMV protected — Forter&apos;s identity network identifies {catchForter}% of abusive accounts before discounts are applied
+          </p>
+        </div>
+      </div>
+
+      <div className="col-span-1 space-y-3">
+        <p className="text-sm font-semibold mb-3">Value Impact</p>
+        <div className="flex flex-col gap-3">
+          <Card className="rounded-lg border border-t-4 border-t-slate-400 p-5 flex flex-col gap-0.5 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+            <Shield className="w-5 h-5 shrink-0 text-slate-400" />
+            <div className="text-slate-700 dark:text-slate-300 font-bold text-3xl">{catchForter}%</div>
+            <div className="text-xs text-muted-foreground">abusers blocked</div>
+            <div className="text-xs text-muted-foreground opacity-70">vs {catchToday}% today</div>
+          </Card>
+          <Card className="rounded-lg border border-t-4 border-t-amber-400 p-5 flex flex-col gap-0.5 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+            <TrendingUp className="w-5 h-5 shrink-0 text-amber-500" />
+            <div className="text-amber-700 dark:text-amber-300 font-bold text-3xl">{fmtCur(gmvRecovered)}</div>
+            <div className="text-xs text-muted-foreground">net GMV protected</div>
+            <div className="text-xs text-muted-foreground opacity-70">{abusePct}% of GMV was at risk</div>
+          </Card>
+          <Card className="rounded-lg border border-t-4 border-t-green-500 border-green-300 p-5 flex flex-col gap-0.5 bg-green-100 dark:bg-green-950/30 dark:border-green-700">
+            <BadgeDollarSign className="w-5 h-5 shrink-0 text-green-500" />
+            <div className="text-green-700 dark:text-green-300 font-bold text-3xl">{fmtCur(profitRecovered)}</div>
+            <div className="text-xs text-muted-foreground">profitability protected</div>
+            <div className="text-xs text-green-600 font-medium">{rowM?.forterImprovement ?? ''} improvement</div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Visual tab for c13-clv: customers at risk grids + CLV chain + value impact cards */
+function CLVChurnVisual({ rows, showInMillions, currencyCode }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string }) {
+  const parseCount = (s: string | undefined): number => {
+    if (!s) return 0;
+    return parseInt(s.replace(/,/g, ''), 10) || 0;
+  };
+  const parseCur = (s: string | undefined): number => {
+    if (!s) return 0;
+    const n = parseFloat(s.replace(/[£$€,\s()]/g, '').replace(/[^0-9.-]/g, ''));
+    return isNaN(n) ? 0 : Math.abs(n);
+  };
+  const parsePct = (s: string | undefined): number => {
+    if (!s) return 0;
+    return parseFloat(s.replace(/[^0-9.-]/g, '')) || 0;
+  };
+
+  const rowA = rows.find(r => r.formula === 'a');
+  const rowB = rows.find(r => r.formula === 'b');
+  const rowC = rows.find(r => r.formula?.startsWith('c'));
+  const rowD = rows.find(r => r.formula === 'd');
+  const rowE = rows.find(r => r.formula?.startsWith('e'));
+  const rowF = rows.find(r => r.formula === 'f');
+  const rowG = rows.find(r => r.formula === 'g');
+  const rowH = rows.find(r => r.formula?.startsWith('h'));
+  const rowM = rows.find(r => r.valueDriver === 'profit');
+
+  const totalLogins = parseCount(rowA?.customerInput);
+  const fraudPct = parsePct(rowB?.customerInput);
+  const fraudPctForter = parsePct(rowB?.forterOutcome);
+  const atoAttempts = parseCount(rowC?.customerInput);
+  const successfulAtoToday = parseCount(rowE?.customerInput); // E = c*(1-d): successful ATO today (uses current catch rate)
+  const atoForter = parseCount(rowE?.forterOutcome);
+  const atoBlocked = successfulAtoToday - atoForter;
+  const currentCatchRate = parsePct(rowD?.customerInput);
+  const catchRate = parsePct(rowD?.forterOutcome);
+  const clvPerCustomer = parseCur(rowF?.customerInput);
+  const churnLikelihood = parsePct(rowG?.customerInput);
+  const clvChurnCurrent = parseCur(rowH?.customerInput);
+  const clvChurnForter = parseCur(rowH?.forterOutcome);
+  const clvRecovered = clvChurnCurrent - clvChurnForter;
+  const profitRecovered = parseCur(rowM?.forterImprovement);
+
+  const customersAtRiskCurrent = Math.round(successfulAtoToday * (churnLikelihood / 100));
+  const customersAtRiskForter = Math.round(atoForter * (churnLikelihood / 100));
+  const customersRetained = customersAtRiskCurrent - customersAtRiskForter;
+
+  const sym = getCurrencySymbol(currencyCode);
+  const fmtCur = (v: number) => showInMillions ? `${sym}${(v / 1_000_000).toFixed(1)}M` : `${sym}${Math.round(v).toLocaleString('en-US')}`;
+
+  const forterRelativePct = atoAttempts > 0 ? (atoForter / atoAttempts) * 25 : 0;
+
+  const clvAtRiskPerEvent = clvPerCustomer * (churnLikelihood / 100);
+
+  return (
+    <div className="grid grid-cols-3 gap-6 items-start">
+      <div className="col-span-2 space-y-4">
+        {/* Churn risk banner — first (top) */}
+        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800">
+            <strong>Churn risk:</strong> each successful ATO has a {churnLikelihood}% probability of permanently losing that customer and their {fmtCur(clvPerCustomer)} lifetime value. Forter&apos;s {catchRate}% catch rate reduces at-risk customers from <strong>{customersAtRiskCurrent.toLocaleString()}</strong> to <strong>{customersAtRiskForter.toLocaleString()}</strong>.
+          </p>
+        </div>
+
+        {/* Section 1 — Broken-axis visual: total logins 75%, ATO bars 25% base */}
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-3">Where ATO churn risk sits within your login volume</p>
+          <div className="grid grid-cols-[160px_1fr_auto] gap-x-4 gap-y-4 items-center">
+            {/* Stage 1 — Total logins: 75% with break marker; stub fills to end of row */}
+            <span className="text-sm font-medium">Total logins</span>
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <div className="relative flex items-center h-8 bg-slate-200 rounded-l shrink-0" style={{ width: '75%' }}>
+                <span className="absolute right-2 text-xs text-slate-600 font-medium">
+                  {totalLogins.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5 shrink-0 px-0.5">
+                <div className="w-3 h-0.5 bg-slate-400 rotate-12" />
+                <div className="w-3 h-0.5 bg-slate-400 rotate-12" />
+              </div>
+              <div className="h-8 flex-1 min-w-0 bg-slate-200 rounded-r" />
+            </div>
+            <div className="w-8 shrink-0" />
+
+            {/* Stage 2 — ATO logins: 25% width (3x smaller than total logins bar) */}
+            <span className="text-sm font-medium">ATO logins</span>
+            <div className="flex-1 flex items-center h-8 rounded overflow-hidden bg-slate-100">
+              <div
+                className="h-full bg-red-400 flex items-center justify-center text-xs text-white font-semibold rounded"
+                style={{ width: '25%', minWidth: '3rem' }}
+              >
+                {atoAttempts.toLocaleString()}
+              </div>
+            </div>
+            <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium whitespace-nowrap">
+              {parsePct(rowB?.customerInput).toFixed(1)}% of logins
+            </span>
+
+            {/* Stage 2b — Successful ATOs today (merchant's current catch rate) */}
+            <span className="text-sm font-medium text-red-600">Successful ATOs today</span>
+            <div className="flex-1 flex items-center h-8 rounded overflow-hidden bg-slate-100">
+              <div
+                className="h-full bg-red-600 flex items-center justify-center text-xs text-white font-semibold rounded"
+                style={{
+                  width: `${atoAttempts > 0 ? Math.max((successfulAtoToday / atoAttempts) * 25, 3) : 25}%`,
+                  minWidth: '2.5rem',
+                }}
+              >
+                {successfulAtoToday.toLocaleString()}
+              </div>
+            </div>
+            <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-medium whitespace-nowrap">
+              {currentCatchRate.toFixed(1)}% caught today
+            </span>
+
+            {/* Divider */}
+            <div className="col-span-3 flex items-center gap-2 my-1">
+              <div className="flex-1 border-t border-dashed border-slate-300" />
+              <span className="text-xs text-muted-foreground px-2 bg-white">With Forter ↓</span>
+              <div className="flex-1 border-t border-dashed border-slate-300" />
+            </div>
+
+            {/* Stage 3 — ATOs remaining with Forter: relative to 25% base */}
+            <span className="text-sm font-medium text-green-700">ATO remaining post-Forter</span>
+            <div className="flex-1 flex items-center h-8 rounded overflow-hidden bg-slate-100">
+              <div
+                className="h-full bg-green-500 flex items-center justify-center text-xs text-white font-semibold rounded"
+                style={{ width: `${Math.max(forterRelativePct, 3)}%`, minWidth: '2.5rem' }}
+              >
+                {atoForter.toLocaleString()}
+              </div>
+            </div>
+            <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium whitespace-nowrap">
+              {catchRate}% blocked
+            </span>
+          </div>
+        </div>
+
+        {/* Section 2 — How we calculate customers at risk of churn */}
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mt-4 mb-2">How we calculate customers at risk of churn</p>
+          <div className="flex items-stretch gap-3 w-full">
+            <div className="flex-1 min-w-0 h-24 rounded-lg border p-2 flex flex-col justify-between bg-slate-50 border-slate-200">
+              <span className="text-xs text-muted-foreground">Successful ATOs today</span>
+              <span className="text-xl font-bold text-slate-700">{successfulAtoToday.toLocaleString()}</span>
+              <span className="text-xs text-muted-foreground">unprotected events</span>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-sm font-bold self-center shrink-0">×</span>
+            <div className="flex-1 min-w-0 h-24 rounded-lg border p-2 flex flex-col justify-between bg-amber-50 border-amber-200">
+              <span className="text-xs text-muted-foreground">Churn likelihood</span>
+              <span className="text-xl font-bold text-amber-700">{churnLikelihood}%</span>
+              <span className="text-xs text-muted-foreground">probability per ATO event</span>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-sm font-bold self-center shrink-0">=</span>
+            <div className="flex-1 min-w-0 h-24 rounded-lg border p-2 flex flex-col justify-between bg-red-50 border-red-200">
+              <span className="text-xs text-muted-foreground">Customers at risk</span>
+              <span className="text-xl font-bold text-red-600">{customersAtRiskCurrent.toLocaleString()}</span>
+              <span className="text-xs text-muted-foreground">likely to churn without Forter</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+            <TrendingUp className="w-3.5 h-3.5 text-green-600 shrink-0" />
+            <p className="text-xs text-green-800">
+              With Forter: only <strong>{customersAtRiskForter.toLocaleString()}</strong> customers remain at risk of full churn ({churnLikelihood}% churn likelihood), leaving <strong>{customersRetained.toLocaleString()}</strong> retained and protected from a negative CX
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="col-span-1 space-y-3">
+        <p className="text-sm font-semibold mb-3">Value Impact</p>
+        <div className="flex flex-col gap-2">
+          <Card className="rounded-lg border border-t-4 border-t-slate-400 p-5 flex flex-col gap-0.5 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700">
+            <UserCheck className="w-5 h-5 shrink-0 text-slate-400" />
+            <div className="text-slate-700 dark:text-slate-300 font-bold text-3xl">{customersRetained.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">customers retained</div>
+            <div className="text-xs text-muted-foreground opacity-70">{catchRate}% ATO catch rate</div>
+          </Card>
+          <Card className="rounded-lg border border-t-4 border-t-amber-400 p-5 flex flex-col gap-0.5 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+            <BadgeDollarSign className="w-5 h-5 shrink-0 text-amber-400" />
+            <div className="text-amber-700 dark:text-amber-300 font-bold text-3xl">{fmtCur(clvPerCustomer)}</div>
+            <div className="text-xs text-muted-foreground">CLV per customer</div>
+            <div className="text-xs text-muted-foreground opacity-70">lifetime GMV value</div>
+          </Card>
+          <Card className="rounded-lg border border-t-4 border-t-green-500 border-green-300 p-5 flex flex-col gap-0.5 bg-green-100 dark:bg-green-950/30 dark:border-green-700">
+            <TrendingUp className="w-5 h-5 shrink-0 text-green-500" />
+            <div className="text-green-700 dark:text-green-300 font-bold text-3xl">{fmtCur(clvRecovered)}</div>
+            <div className="text-xs text-muted-foreground">CLV preserved</div>
+            <div className="text-xs text-green-600 font-medium">{rowM?.forterImprovement ?? ''} profit protected</div>
+          </Card>
+        </div>
       </div>
     </div>
   );
@@ -1725,6 +2595,7 @@ export const ValueSummaryOptionA = ({
       forterCatchRate: forterKPIs.forterCatchRate ?? 90,
       abuseAovMultiplier: forterKPIs.abuseAovMultiplier ?? 1.5,
       promotionAbuseAsGMVPct: benchmarks.promotionAbuseAsGMVPct ?? 2,
+      gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
     return calculateChallenge10(inputs);
@@ -1793,6 +2664,7 @@ export const ValueSummaryOptionA = ({
       pctFraudulentLogins: forterKPIs.pctFraudulentLogins ?? 1,
       churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO ?? 50,
       atoCatchRate: forterKPIs.atoCatchRate ?? 90,
+      currentAtoCatchRate: formData.currentAtoCatchRate ?? 0,
       gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(formData),
     };
 
@@ -2161,6 +3033,36 @@ export const ValueSummaryOptionA = ({
       });
     }
 
+    // Challenge 10/11: Protect profitability from promotion abuse (GMV uplift – value is GMV recovered; deduction to net sales applied in EBITDA)
+    const shouldShowC10 = !isCustomMode || enabledBenefitIds.has('c10');
+    const shouldShowC10Always = isCustomMode && enabledBenefitIds.has('c10');
+    if (challenge10Results && shouldShowC10) {
+      const catchRate = forterKPIs.forterCatchRate ?? 90;
+      drivers.push({
+        id: "c10-promotions",
+        label: "Protect profitability from promotion abuse",
+        value: challenge10Results.calculator1.revenueUplift,
+        enabled: getDriverEnabled("c10-promotions"),
+        calculatorTitle: "Protect profitability from promotion abuse",
+        calculatorRows: challenge10Results.calculator1.rows,
+        performanceHighlight: {
+          label: "Catch Rate",
+          current: 0,
+          target: catchRate,
+          unit: "%",
+        },
+      });
+    } else if ((isChallenge10_11Selected || shouldShowC10Always) && shouldShowC10) {
+      drivers.push({
+        id: "c10-promotions",
+        label: "Protect profitability from promotion abuse",
+        value: 0,
+        enabled: getDriverEnabled("c10-promotions"),
+        calculatorTitle: "Protect profitability from promotion abuse",
+        isTBD: true,
+      });
+    }
+
     // Add custom GMV uplift calculations
     customCalculations
       .filter(c => c.category === 'gmv_uplift')
@@ -2214,7 +3116,7 @@ export const ValueSummaryOptionA = ({
       return !isRemoved;
     });
     return applyCustomBenefitNames(filtered, formData.customBenefitNames).map(d => normalizeZeroValueDriver(d, formData));
-  }, [challenge1Results, challenge245Results, challenge9Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge9Selected, isCustomMode, enabledBenefitIds, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled, isSegmentationEnabled, segmentedC1AggregateRows, segmentedC245AggregateRows, segmentedC1ChargebackAggregateRows, segmentedC245ChargebackAggregateRows]);
+  }, [challenge1Results, challenge245Results, challenge9Results, challenge10Results, customCalculations, driverStates, formData, formData.customBenefitNames, formData.standaloneCalculators, forterKPIs, isChallenge1Selected, isChallenge245Selected, isChallenge9Selected, isChallenge10_11Selected, isCustomMode, enabledBenefitIds, deduplicationEnabled, deduplicationRetryRate, deduplicationSuccessRate, fraudCBCoverageEnabled, isSegmentationEnabled, segmentedC1AggregateRows, segmentedC245AggregateRows, segmentedC1ChargebackAggregateRows, segmentedC245ChargebackAggregateRows]);
 
   const riskAvoidanceDrivers: ValueDriver[] = useMemo(() => {
     const drivers: ValueDriver[] = [];
@@ -2782,42 +3684,6 @@ export const ValueSummaryOptionA = ({
       }
     }
 
-    // Challenge 10: Promotions abuse
-    // In custom mode, only show the specific benefit that was added
-    // In custom mode, ONLY show if benefit is explicitly enabled
-    // In standard mode, show if challenge 10/11 is selected
-    const shouldShowC10 = !isCustomMode || enabledBenefitIds.has('c10');
-    const shouldShowC10Always = isCustomMode && enabledBenefitIds.has('c10');
-    
-    if (challenge10Results && shouldShowC10) {
-      const catchRate = forterKPIs.forterCatchRate ?? 90;
-      
-      drivers.push({
-        id: "c10-promotions",
-        label: "Protect profitability from promotion abuse",
-        value: challenge10Results.calculator1.profitUplift,
-        enabled: getDriverEnabled("c10-promotions"),
-        calculatorTitle: "Protect profitability from promotion abuse",
-        calculatorRows: challenge10Results.calculator1.rows,
-        performanceHighlight: {
-          label: "Catch Rate",
-          current: 0,
-          target: catchRate,
-          unit: "%",
-        },
-      });
-    } else if ((isChallenge10_11Selected || shouldShowC10Always) && shouldShowC10) {
-      // TBD driver - also show if benefit is enabled in custom mode
-      drivers.push({
-        id: "c10-promotions",
-        label: "Protect profitability from promotion abuse",
-        value: 0,
-        enabled: getDriverEnabled("c10-promotions"),
-        calculatorTitle: "Protect profitability from promotion abuse",
-        isTBD: true,
-      });
-    }
-
     // Challenge 12/13: CLV loss mitigation (risk mitigation category)
     // In custom mode, only show the specific benefit that was added
     // In custom mode, ONLY show if benefit is explicitly enabled
@@ -3032,7 +3898,8 @@ export const ValueSummaryOptionA = ({
         calculatorId: d.id,
         challengeId: d.id.startsWith('c1-') ? '1' : 
                     d.id.startsWith('c245-') ? '2' :
-                    d.id.startsWith('c9-') ? '9' : undefined,
+                    d.id.startsWith('c9-') ? '9' :
+                    d.id.startsWith('c10-') ? '10' : undefined,
       }));
     
     const costReductionBreakdown = riskAvoidanceDrivers
@@ -3890,7 +4757,7 @@ export const ValueSummaryOptionA = ({
                               )}
                               {isCustom && (
                                 <button
-                                  onClick={() => handleRemoveCustomCalculation(driver.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveCustomCalculation(driver.id); }}
                                   className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                   title="Remove custom calculation"
                                 >
@@ -3900,7 +4767,7 @@ export const ValueSummaryOptionA = ({
                               {/* Remove benefit button in custom mode for standard benefits (not for duplicates; they use Remove duplicate above) */}
                               {isCustomMode && !isCustom && !isDuplicateCalculator(driver.id) && (
                                 <button
-                                  onClick={() => handleRemoveBenefit(driver.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveBenefit(driver.id); }}
                                   className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                   title="Remove benefit"
                                 >
@@ -4071,7 +4938,7 @@ export const ValueSummaryOptionA = ({
                               )}
                               {isCustom && (
                                 <button
-                                  onClick={() => handleRemoveCustomCalculation(driver.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveCustomCalculation(driver.id); }}
                                   className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                   title="Remove custom calculation"
                                 >
@@ -4081,7 +4948,7 @@ export const ValueSummaryOptionA = ({
                               {/* Remove benefit button in custom mode for standard benefits (not for duplicates; they use Remove duplicate above) */}
                               {isCustomMode && !isCustom && !isDuplicateCalculator(driver.id) && (
                                 <button
-                                  onClick={() => handleRemoveBenefit(driver.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveBenefit(driver.id); }}
                                   className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                   title="Remove benefit"
                                 >
@@ -4238,7 +5105,7 @@ export const ValueSummaryOptionA = ({
                               )}
                               {isCustom && (
                                 <button
-                                  onClick={() => handleRemoveCustomCalculation(driver.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveCustomCalculation(driver.id); }}
                                   className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                   title="Remove custom calculation"
                                 >
@@ -4248,7 +5115,7 @@ export const ValueSummaryOptionA = ({
                               {/* Remove benefit button in custom mode for standard benefits (not for duplicates; they use Remove duplicate above) */}
                               {isCustomMode && !isCustom && !isDuplicateCalculator(driver.id) && (
                                 <button
-                                  onClick={() => handleRemoveBenefit(driver.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveBenefit(driver.id); }}
                                   className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                                   title="Remove benefit"
                                 >
@@ -4778,12 +5645,13 @@ export const ValueSummaryOptionA = ({
                 const captureBenefitPdf = async () => {
                   setIsCapturingBenefitPdf(true);
                   const hasFunnel = selectedCalculatorId === 'c245-revenue';
-                  const hasVisual = ['c1-revenue', 'c1-chargeback', 'c245-chargeback', 'c3-review', 'c7-disputes', 'c7-opex', 'c9-cs-opex', 'c9-cx-uplift', 'c12-ato-opex'].includes(selectedCalculatorId ?? '');
+                  const srcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
+                  const hasVisual = ['c1-revenue', 'c1-chargeback', 'c245-chargeback', 'c3-review', 'c7-disputes', 'c7-opex', 'c9-cs-opex', 'c9-cx-uplift', 'c10-promotions', 'c12-ato-opex', 'c13-clv'].includes(srcId);
                   const tabsInOrder = (() => {
                     const tabs: string[] = ['summary', 'inputs', 'calculator'];
                     if (hasFunnel) tabs.push('funnel');
                     if (hasVisual) tabs.push('visual');
-                    if (hasCaseStudy(selectedCalculatorId ?? '')) tabs.push('success-stories');
+                    if (hasCaseStudy(srcId)) tabs.push('success-stories');
                     return tabs as const;
                   })();
                   const prevTab = calculatorModalTab;
@@ -5503,7 +6371,13 @@ export const ValueSummaryOptionA = ({
               // Calculate number of visible tabs (Benefit Summary, optional Inputs, optional Calculator, Success Story)
               const showSuccessStoriesTab = hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '');
               const showFunnelTab = showCalculatorTab && selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0;
-              const showVisualTab = showCalculatorTab && (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc');
+              const showVisualTab = showCalculatorTab && (() => {
+                const src = (modalContext.sourceIdForModal ?? selectedCalculatorId) ?? '';
+                const title = (selectedCalculator?.title ?? '').toLowerCase();
+                const isPromotionAbuseByTitle = title.includes('promotion abuse');
+                const hasVisualById = ['c1-revenue', 'c1-chargeback', 'c245-chargeback', 'c3-review', 'c7-disputes', 'c7-opex', 'c8-returns', 'c8-inr', 'c9-cs-opex', 'c9-cx-uplift', 'c10-promotions', 'c12-ato-opex', 'c13-clv', 'c14-marketing', 'c14-reactivation', 'c14-kyc'].includes(src);
+                return hasVisualById || isPromotionAbuseByTitle;
+              })();
               const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + (showFunnelTab ? 1 : 0) + (showVisualTab ? 1 : 0) + 1;
               const gridCols = tabCount === 7 ? 'grid-cols-7' : tabCount === 6 ? 'grid-cols-6' : tabCount === 5 ? 'grid-cols-5' : tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
               
@@ -6064,6 +6938,34 @@ export const ValueSummaryOptionA = ({
                     currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
                   />
                 )}
+                {selectedCalculatorId === 'c8-returns' && selectedCalculator?.rows && (
+                  <ReturnsAbuseVisual
+                    rows={selectedCalculator.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {selectedCalculatorId === 'c8-inr' && selectedCalculator?.rows && (
+                  <INRAbuseVisual
+                    rows={selectedCalculator.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {(((modalContext.sourceIdForModal ?? selectedCalculatorId) === 'c10-promotions') || (selectedCalculator?.title?.toLowerCase().includes('promotion abuse'))) && selectedCalculator?.rows && (
+                  <PromotionAbuseVisual
+                    rows={selectedCalculator.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {((modalContext.sourceIdForModal ?? selectedCalculatorId) === 'c13-clv') && selectedCalculator?.rows && (
+                  <CLVChurnVisual
+                    rows={selectedCalculator.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
                 {/* c1-revenue: Approval rate bar + Value Impact (same card flow as funnel) */}
                 {(selectedCalculatorId === 'c1-revenue' && challenge1Results?.calculator1) && (() => {
                   // When segmentation is on, use aggregated rows/breakdown so Visual matches Total calculator (e.g. Approved transactions = Total recoverable)
@@ -6310,100 +7212,21 @@ export const ValueSummaryOptionA = ({
                   );
                 })()}
                 {/* c3-review: Two cards Current / With Forter + badge */}
-                {(selectedCalculatorId === 'c3-review' && challenge3Results?.calculator1) && (() => {
-                  const rows = challenge3Results.calculator1.rows;
-                  const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
-                  const reviewPctRow = matchFormula('b');
-                  const reviewCountRow = matchFormula('c'); // 'c = a*b' = transactions to manual review
-                  const hoursRow = matchFormula('e');       // 'e = (c*d)/60' = hours required
-                  const hourlyRow = matchFormula('f');
-                  const costRow = matchFormula('g');       // 'g = e*f' = cost for manual reviews
-                  const custReviewPct = (reviewPctRow?.rawCustomerValue ?? 0) as number;
-                  const fortReviewPct = (reviewPctRow?.rawForterValue ?? 0) as number;
-                  const LineItem = ({ label, current, forter, formula }: { label: string; current: string; forter: string; formula?: string }) => (
-                    <div className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
-                      <span className="text-sm text-muted-foreground">
-                        {label}
-                        {formula != null && <span className="block italic text-xs mt-0.5">{formula}</span>}
-                      </span>
-                      <span className="text-sm font-medium tabular-nums">{current} → {forter}</span>
-                    </div>
-                  );
-                  return (
-                    <div className="space-y-6">
-                      <div className="flex flex-wrap items-stretch gap-4 justify-center">
-                        <Card className="p-4 min-w-[200px] border-slate-200 dark:border-slate-700">
-                          <div className="text-sm font-semibold text-muted-foreground mb-3">Current state</div>
-                          <LineItem label="Review rate" current={reviewPctRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="Reviews per year" current={reviewCountRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="Total review hours" current={hoursRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="Hourly cost per reviewer" current={hourlyRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="Total annual review cost" current={costRow?.customerInput ?? '—'} forter="" />
-                        </Card>
-                        <div className="flex flex-col items-center justify-center gap-1">
-                          <ArrowRight className="w-6 h-6 text-muted-foreground" aria-hidden />
-                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{manualReviewDecreasePct}% review rate reduction</Badge>
-                        </div>
-                        <Card className="p-4 min-w-[200px] border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
-                          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
-                          <LineItem label="Review rate" current="" forter={reviewPctRow?.forterOutcome ?? '—'} />
-                          <LineItem label="Reviews per year" current="" forter={reviewCountRow?.forterOutcome ?? '—'} />
-                          <LineItem label="Total review hours" current="" forter={hoursRow?.forterOutcome ?? '—'} />
-                          <LineItem label="Hourly cost per reviewer" current="" forter={hourlyRow?.forterOutcome ?? '—'} />
-                          <LineItem label="Total annual review cost" current="" forter={costRow?.forterOutcome ?? '—'} />
-                        </Card>
-                      </div>
-                    </div>
-                  );
-                })()}
-                {/* c7-opex: Improve recovery efficiency — two cards Current / With Forter (same layout as c3-review) */}
-                {(selectedCalculatorId === 'c7-opex' && challenge7Results?.calculator2) && (() => {
-                  const rows = challenge7Results.calculator2.rows;
-                  const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
-                  const timeRow = matchFormula('a');       // Avg time to review CB (mins)
-                  const reviewsPerHourRow = matchFormula('b'); // # of reviews per hour
-                  const disputesRow = matchFormula('c');   // Number of annual CB disputes
-                  const hoursRow = matchFormula('d');      // # of hours required for all chargebacks
-                  const hourlyRow = matchFormula('e');    // Cost per hour of analyst
-                  const costRow = matchFormula('f');      // Total cost
-                  const custTime = (timeRow?.rawCustomerValue ?? 0) as number;
-                  const fortTime = (timeRow?.rawForterValue ?? 0) as number;
-                  const timeReductionPct = custTime > 0 ? Math.round(((custTime - fortTime) / custTime) * 100) : 0;
-                  const LineItem = ({ label, current, forter }: { label: string; current: string; forter: string }) => (
-                    <div className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
-                      <span className="text-sm text-muted-foreground">{label}</span>
-                      <span className="text-sm font-medium tabular-nums">{current} → {forter}</span>
-                    </div>
-                  );
-                  return (
-                    <div className="space-y-6">
-                      <div className="flex flex-wrap items-stretch gap-4 justify-center">
-                        <Card className="p-4 min-w-[200px] border-slate-200 dark:border-slate-700">
-                          <div className="text-sm font-semibold text-muted-foreground mb-3">Current state</div>
-                          <LineItem label="Avg time to review CB (mins)" current={timeRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="# of reviews per hour" current={reviewsPerHourRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="Number of annual CB disputes" current={disputesRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="# of hours required for all chargebacks" current={hoursRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="Cost per hour of analyst" current={hourlyRow?.customerInput ?? '—'} forter="" />
-                          <LineItem label="Total cost" current={costRow?.customerInput ?? '—'} forter="" />
-                        </Card>
-                        <div className="flex flex-col items-center justify-center gap-1">
-                          <ArrowRight className="w-6 h-6 text-muted-foreground" aria-hidden />
-                          <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{timeReductionPct}% faster review time</Badge>
-                        </div>
-                        <Card className="p-4 min-w-[200px] border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
-                          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
-                          <LineItem label="Avg time to review CB (mins)" current="" forter={timeRow?.forterOutcome ?? '—'} />
-                          <LineItem label="# of reviews per hour" current="" forter={reviewsPerHourRow?.forterOutcome ?? '—'} />
-                          <LineItem label="Number of annual CB disputes" current="" forter={disputesRow?.forterOutcome ?? '—'} />
-                          <LineItem label="# of hours required for all chargebacks" current="" forter={hoursRow?.forterOutcome ?? '—'} />
-                          <LineItem label="Cost per hour of analyst" current="" forter={hourlyRow?.forterOutcome ?? '—'} />
-                          <LineItem label="Total cost" current="" forter={costRow?.forterOutcome ?? '—'} />
-                        </Card>
-                      </div>
-                    </div>
-                  );
-                })()}
+                {selectedCalculatorId === 'c3-review' && challenge3Results?.calculator1 && (
+                  <ManualReviewVisual
+                    rows={challenge3Results.calculator1.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
+                {/* c7-opex: Improve recovery efficiency — two cards Current / With Forter */}
+                {selectedCalculatorId === 'c7-opex' && challenge7Results?.calculator2 && (
+                  <DisputeOpExVisual
+                    rows={challenge7Results.calculator2.rows}
+                    showInMillions={false}
+                    currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
+                  />
+                )}
                 {/* c7-disputes: Recovery pipeline (current vs. with Forter) — stacked bars + Improvement column */}
                 {(selectedCalculatorId === 'c7-disputes' && totalRecoveryMetrics && challenge7Results && c7PipelineMetrics) && (() => {
                   const pipeline = c7PipelineMetrics;
@@ -6617,7 +7440,7 @@ export const ValueSummaryOptionA = ({
                             else if (calculatorModalTab === 'visual') setCalculatorModalTab('calculator');
                             else if (calculatorModalTab === 'calculator') setCalculatorModalTab(showInputsTab ? 'inputs' : 'summary');
                             else if (calculatorModalTab === 'inputs') setCalculatorModalTab('summary');
-                            else if (calculatorModalTab === 'success-stories') setCalculatorModalTab(selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0 ? 'funnel' : (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc') ? 'visual' : 'calculator');
+                            else if (calculatorModalTab === 'success-stories') setCalculatorModalTab(selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0 ? 'funnel' : (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c8-returns' || selectedCalculatorId === 'c8-inr' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c10-promotions' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c13-clv' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc') ? 'visual' : 'calculator');
                           }}
                         >
                           <ChevronLeft className="w-4 h-4" /> Back
@@ -6640,7 +7463,7 @@ export const ValueSummaryOptionA = ({
                         Go to Visual <ArrowRight className="w-4 h-4" />
                       </Button>
                     )}
-                    {(calculatorModalTab === 'calculator' && (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc')) && (
+                    {(calculatorModalTab === 'calculator' && (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c8-returns' || selectedCalculatorId === 'c8-inr' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c10-promotions' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c13-clv' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc')) && (
                       <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('visual')}>
                         Go to Visual <ArrowRight className="w-4 h-4" />
                       </Button>

@@ -352,9 +352,10 @@ export function runStandaloneCalculator(
         forterCatchRate: forterKPIs.forterCatchRate ?? 90,
         abuseAovMultiplier: forterKPIs.abuseAovMultiplier ?? 1.5,
         promotionAbuseAsGMVPct: benchmarks.promotionAbuseAsGMVPct ?? 2,
+        gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(data),
       };
       const result = calculateChallenge10(inputs);
-      return { value: result.calculator1.costReduction, rows: result.calculator1.rows };
+      return { value: result.calculator1.revenueUplift, rows: result.calculator1.rows };
     }
 
     // -------- Challenge 12/13: c12-ato-opex, c13-clv --------
@@ -373,6 +374,7 @@ export function runStandaloneCalculator(
         pctFraudulentLogins: forterKPIs.pctFraudulentLogins ?? 1,
         churnLikelihoodFromATO: forterKPIs.churnLikelihoodFromATO ?? 50,
         atoCatchRate: forterKPIs.atoCatchRate ?? 90,
+        currentAtoCatchRate: d(data, "currentAtoCatchRate", 0),
         gmvToNetSalesDeductionPct: getGmvToNetSalesDeductionPct(data),
       };
       const result = calculateChallenge12_13(inputs);
@@ -494,7 +496,7 @@ export const STANDALONE_CALC_SECTION: Record<string, "gmv" | "cost" | "risk"> = 
   "c12-ato-opex": "cost",
   "c8-returns": "risk",
   "c8-inr": "risk",
-  "c10-promotions": "risk",
+  "c10-promotions": "gmv",
   "c13-clv": "risk",
   "c14-marketing": "risk",
   "c14-kyc": "risk",

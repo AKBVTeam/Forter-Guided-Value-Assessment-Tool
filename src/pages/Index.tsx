@@ -180,6 +180,8 @@ export type CalculatorData = {
   avgSalaryPerCSMember?: number;
   avgHandlingTimePerATOClaim?: number;
   pctChurnFromATO?: number;
+  /** Current ATO catch rate (%) for customer inputs — used in Mitigate CLV loss (c13-clv). Default 0. */
+  currentAtoCatchRate?: number;
   
   // Challenge 14/15: Sign-up Protection specific
   monthlySignups?: number;

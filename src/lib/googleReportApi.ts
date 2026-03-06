@@ -1302,12 +1302,12 @@ export async function buildGoogleSlides(
       });
       top3Items.forEach((item, j) => {
         const itemY = s2CardsY + 1.28 + j * 0.38;
-        addTextBox(requests, `s2_cat_i${i}_${j}`, s2, xPos + 0.12, itemY, labelW, 0.32, truncateForSlide(item.label, 38), {
-          fontSize: 9, colorRgb: grayRgb, fontFamily: FONT_BODY,
+        addTextBox(requests, `s2_cat_i${i}_${j}`, s2, xPos + 0.12, itemY, labelW, 0.32, item.label, {
+          fontSize: 7, colorRgb: grayRgb, fontFamily: FONT_BODY,
         });
         const itemValFormatted = formatCurrencyForSlide(Number(item.value), currency);
-        addTextBox(requests, `s2_cat_iv${i}_${j}`, s2, xPos + cardW - 0.95, itemY, 0.95, 0.32, truncateForSlide(itemValFormatted, 14), {
-          bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_BODY,
+        addTextBox(requests, `s2_cat_iv${i}_${j}`, s2, xPos + cardW - 0.95, itemY, 0.95, 0.32, itemValFormatted, {
+          bold: true, fontSize: 7, colorRgb: navyRgb, fontFamily: FONT_BODY,
           alignment: "END",
         });
       });
@@ -1474,7 +1474,7 @@ export async function buildGoogleSlides(
     page.rows.forEach((r, idx) => {
       const cat = truncateForSlide((r as { category?: string }).category ?? "", 18);
       requests.push({ insertText: { objectId: tableId, cellLocation: { rowIndex: idx + 1, columnIndex: 0 }, insertionIndex: 0, text: cat || ZWSP } });
-      requests.push({ insertText: { objectId: tableId, cellLocation: { rowIndex: idx + 1, columnIndex: 1 }, insertionIndex: 0, text: truncateForSlide(r.label, 45) || ZWSP } });
+      requests.push({ insertText: { objectId: tableId, cellLocation: { rowIndex: idx + 1, columnIndex: 1 }, insertionIndex: 0, text: r.label || ZWSP } });
       requests.push({ insertText: { objectId: tableId, cellLocation: { rowIndex: idx + 1, columnIndex: 2 }, insertionIndex: 0, text: r.value || ZWSP } });
     });
     if (page.isLastPage) {

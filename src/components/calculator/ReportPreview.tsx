@@ -280,12 +280,12 @@ export function ReportPreview({
             {activeCategories.map((cat, i) => (
               <div key={i} className="bg-white rounded p-1.5 border flex flex-col min-h-0" style={{ borderColor: BORDER_GRAY }}>
                 <p className="text-[7px] font-bold uppercase tracking-wide" style={{ color: FORTER_BLUE }}>{cat.label}</p>
-                <p className="text-[10px] font-bold" style={{ color: FORTER_GREEN }}>{cat.value}</p>
+                <p className="text-[8px] font-bold whitespace-nowrap min-w-0" style={{ color: FORTER_GREEN }}>{cat.value}</p>
                 <div className="border-t mt-0.5 pt-0.5 flex-1 min-h-0" style={{ borderColor: BORDER_GRAY }}>
                   {cat.items.slice(0, 3).map((item, j) => (
-                    <div key={j} className="flex justify-between text-[7px]">
-                      <span style={{ color: FORTER_GRAY }}>{item.label}</span>
-                      <span className="font-semibold" style={{ color: FORTER_NAVY }}>{formatCurrency(item.value, currency)}</span>
+                    <div key={j} className="flex justify-between items-center gap-1 text-[6px] min-w-0">
+                      <span className="min-w-0 flex-1 break-words" style={{ color: FORTER_GRAY }}>{item.label}</span>
+                      <span className="font-semibold whitespace-nowrap shrink-0" style={{ color: FORTER_NAVY }}>{formatCurrency(item.value, currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -316,9 +316,9 @@ export function ReportPreview({
           <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Value Drivers</h3>
           <div className="mt-1.5 flex-1 min-h-0 overflow-auto space-y-0.5">
             {topDrivers.slice(0, 6).map((driver, idx) => (
-              <div key={idx} className="flex justify-between items-center bg-white rounded px-2 py-1 border" style={{ borderColor: BORDER_GRAY, backgroundColor: idx % 2 === 1 ? '#F9FAFB' : undefined }}>
-                <span className="text-[8px] truncate flex-1" style={{ color: FORTER_NAVY }}>{driver.label}</span>
-                <span className="text-[9px] font-bold ml-2" style={{ color: FORTER_GREEN }}>{formatCurrency(driver.value, currency)}</span>
+              <div key={idx} className="flex justify-between items-center gap-2 bg-white rounded px-2 py-1 border min-w-0" style={{ borderColor: BORDER_GRAY, backgroundColor: idx % 2 === 1 ? '#F9FAFB' : undefined }}>
+                <span className="text-[6px] min-w-0 flex-1 break-words" style={{ color: FORTER_NAVY }}>{driver.label}</span>
+                <span className="text-[7px] font-bold whitespace-nowrap shrink-0" style={{ color: FORTER_GREEN }}>{formatCurrency(driver.value, currency)}</span>
               </div>
             ))}
           </div>

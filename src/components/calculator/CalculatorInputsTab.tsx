@@ -306,6 +306,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     requiredInputs: [
       { id: 'monthlyLogins', label: 'Monthly Number of Logins (#)', description: 'Total number of login attempts per month', type: 'number' },
       { id: 'customerLTV', label: 'Customer Lifetime Value (CLV) - GMV ($)', description: 'Average lifetime value of a customer', type: 'currency' },
+      { id: 'currentAtoCatchRate', label: 'ATO catch rate today (%)', description: 'Your current ATO catch rate before Forter (customer inputs column)', type: 'percentage', defaultValue: 0 },
       { id: 'pctChurnFromATO', label: '% of Users that Churn from ATO (%)', description: 'Percentage of ATO victims who churn', type: 'percentage' },
     ],
     forterKPIs: [
