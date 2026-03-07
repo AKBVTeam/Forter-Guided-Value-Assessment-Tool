@@ -558,17 +558,17 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
   // a = Approved transactions (#) improvement = fortFinalApproved - custFinalApproved
   // b = Total delta (inverse) = −a
   // c = retry rate, d = success rate
-  // e = b×c×d = Duplicate successful transactions
-  // f = AOV; g = e×f = Deduplication GMV reduction (applied to value of approved transactions)
+  // e = b×c×d = Duplicate successful transactions (negative: duplicates to remove from approved value)
+  // f = AOV; g = e×f = Deduplication GMV (negative); we subtract |g| from value of approved
   const approvedTxImprovement = fortFinalApproved - custFinalApproved; // a
   const totalDelta = -approvedTxImprovement; // b = −a
-  const duplicateSuccessfulTx = totalDelta * retryRate * successRate; // e = b×c×d
+  const duplicateSuccessfulTx = totalDelta * retryRate * successRate; // e = b×c×d (negative)
   const recoveredOrderAOV_c245 = effectiveCompletedAOV * aovMultiplier; // f' = AOV × Recovered Order AOV multiplier
-  const deduplicationGMVReduction = duplicateSuccessfulTx * recoveredOrderAOV_c245; // g = e×f'
+  const deduplicationGMVReduction = duplicateSuccessfulTx * recoveredOrderAOV_c245; // g = e×f' (negative)
 
-  // Deduplicated value = Value of approved transactions (Forter outcome) − Deduplication GMV reduction
+  // Deduplicated value = Value of approved transactions − |Deduplication GMV|; g is negative so add g to subtract
   const fortFinalValueDeduplicated = deduplicationEnabled 
-    ? fortFinalValue - deduplicationGMVReduction 
+    ? fortFinalValue + deduplicationGMVReduction 
     : fortFinalValue;
   const fortNetSalesDeduplicated = fortFinalValueDeduplicated * netSalesMultiplier;
   // r = q'/b when deduplication enabled
