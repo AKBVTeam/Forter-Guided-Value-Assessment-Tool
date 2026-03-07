@@ -5754,6 +5754,7 @@ export const ValueSummaryOptionA = ({
               <h4 className="font-semibold mb-3 flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-500" />
                 Performance Highlights
+                <span className="text-gray-500 dark:text-gray-400 text-xs font-normal italic">(click to edit)</span>
               </h4>
               <div className="space-y-2">
                 {/* Approval Rate */}
