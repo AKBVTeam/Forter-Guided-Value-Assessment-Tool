@@ -5073,8 +5073,10 @@ export const ValueSummaryOptionA = ({
   const showDispute = challenge7Results && getDriverEnabled("c7-disputes") && recoveryIncreasePct > 0;
   const showAbuse = challenge8Results && (getDriverEnabled("c8-returns") || getDriverEnabled("c8-inr")) && (blendedAbuseCatchRate ?? forterKPIs.forterCatchRate ?? 0) > 0;
   const showInstantRefundsNPS = challenge9Results && getDriverEnabled("c9-cx-uplift") && (forterKPIs.npsIncreaseFromInstantRefunds ?? 0) > 0;
-  const showInstantRefundsCS = challenge9Results && getDriverEnabled("c9-cs-opex") && (forterKPIs.instantRefundPct ?? 0) > 0;
-  const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDispute || showAbuse || showInstantRefundsNPS || showInstantRefundsCS;
+  const showInstantRefundsCS = challenge9Results && getDriverEnabled("c9-cs-opex") && (forterKPIs.forterCSReduction ?? 0) > 0;
+  const showAtoCatchRate = (getDriverEnabled("c12-ato-opex") || getDriverEnabled("c13-clv")) && (forterKPIs.atoCatchRate ?? 0) > 0;
+  const showFraudulentSignupReduction = (getDriverEnabled("c14-marketing") || getDriverEnabled("c14-reactivation") || getDriverEnabled("c14-kyc")) && (forterKPIs.forterFraudulentSignupReduction ?? 0) > 0;
+  const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDispute || showAbuse || showInstantRefundsNPS || showInstantRefundsCS || showAtoCatchRate || showFraudulentSignupReduction;
 
   return (
     <>
@@ -5748,15 +5750,15 @@ export const ValueSummaryOptionA = ({
             );
           })()}
 
-          {/* Performance Highlights (keeping current design) */}
-          {hasAnyHighlight && (
+          {/* Performance Highlights — hidden in custom value pathway */}
+          {!isCustomMode && hasAnyHighlight && (
             <Card className="p-4">
               <h4 className="font-semibold mb-3 flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-500" />
                 Performance Highlights
                 <span className="text-gray-500 dark:text-gray-400 text-xs font-normal italic">(click to edit)</span>
               </h4>
-              <div className="space-y-2">
+              <div className="space-y-2 [&>*:last-child]:border-b-0">
                 {/* Approval Rate */}
                 {showApprovalRate && (
                   <PerformanceHighlightRow
@@ -5827,7 +5829,24 @@ export const ValueSummaryOptionA = ({
                     badge={`${forterKPIs.forterCSReduction || 78}%`}
                     section="instant-refunds"
                     onNavigateToForterKPI={onNavigateToForterKPI}
-                    isLast
+                  />
+                )}
+                {/* ATO Catch Rate */}
+                {showAtoCatchRate && (
+                  <PerformanceHighlightRow
+                    label="ATO Catch Rate"
+                    badge={`${forterKPIs.atoCatchRate ?? 90}%`}
+                    section="ato"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
+                  />
+                )}
+                {/* Fraudulent sign-up reduction */}
+                {showFraudulentSignupReduction && (
+                  <PerformanceHighlightRow
+                    label="Fraudulent sign-up reduction"
+                    badge={`${forterKPIs.forterFraudulentSignupReduction ?? 95}%`}
+                    section="signup"
+                    onNavigateToForterKPI={onNavigateToForterKPI}
                   />
                 )}
               </div>

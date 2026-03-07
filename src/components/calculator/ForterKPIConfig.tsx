@@ -172,7 +172,9 @@ export type ForterKPIFocusSection =
   | "manual-review"
   | "disputes"
   | "abuse"
-  | "instant-refunds";
+  | "instant-refunds"
+  | "ato"
+  | "signup";
 
 interface ForterKPIConfigProps {
   kpis: ForterKPIs;
@@ -1351,7 +1353,7 @@ export const ForterKPIConfig = ({
       )}
 
       {show12_13KPIs && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="ato">
           <h4 className="font-medium text-primary">Account Takeover (ATO) Protection</h4>
           <div className={gridClass}>
             <div className={fieldRowClass}>
@@ -1388,7 +1390,7 @@ export const ForterKPIConfig = ({
       )}
 
       {show14_15KPIs && (
-        <Card className="p-4 space-y-4">
+        <Card className="p-4 space-y-4" data-forter-kpi-section="signup">
           <h4 className="font-medium text-primary">Sign-up Protection</h4>
           <div className={gridClass}>
             <div className={fieldRowClass}>
