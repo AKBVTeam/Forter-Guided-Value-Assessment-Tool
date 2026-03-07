@@ -245,6 +245,19 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   });
   /** When set (e.g. from ROI tab benefit click), open the benefit modal without switching tab */
   const [benefitModalCalculatorId, setBenefitModalCalculatorId] = useState<string | null>(null);
+  /** Persist which benefit modal tabs (Visual / Funnel / Success Story) have been viewed so checkmarks survive main-tab navigation */
+  const [benefitTabsViewed, setBenefitTabsViewed] = useState<{ visual: Set<string>; funnel: Set<string>; successStories: Set<string> }>(() => ({
+    visual: new Set(),
+    funnel: new Set(),
+    successStories: new Set(),
+  }));
+  const onPersistBenefitTabViewed = useCallback((tab: 'visual' | 'funnel' | 'success-stories', calculatorId: string) => {
+    const key = tab === 'success-stories' ? 'successStories' : tab;
+    setBenefitTabsViewed(prev => ({
+      ...prev,
+      [key]: new Set([...prev[key], calculatorId]),
+    }));
+  }, []);
   const [investmentInputs, setInvestmentInputs] = useState<InvestmentInputs>(() => initialData?.investmentInputs ?? defaultInvestmentInputs);
   const showInvestmentRowsToggle = formData._showInvestmentRowsOn ?? true;
   const setShowInvestmentRowsToggle = useCallback((value: boolean) => {
@@ -2492,6 +2505,8 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                 setCalculatorSubsetForReport(subset);
                 setReportModalOpen(true);
               }}
+              persistedBenefitTabsViewed={benefitTabsViewed}
+              onPersistBenefitTabViewed={onPersistBenefitTabViewed}
             />
             {/* Navigation Buttons */}
             <div className="flex justify-between pt-6 border-t mt-6">
@@ -2580,6 +2595,8 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                 setCalculatorSubsetForReport(subset);
                 setReportModalOpen(true);
               }}
+              persistedBenefitTabsViewed={benefitTabsViewed}
+              onPersistBenefitTabViewed={onPersistBenefitTabViewed}
             />
           </div>
         )}

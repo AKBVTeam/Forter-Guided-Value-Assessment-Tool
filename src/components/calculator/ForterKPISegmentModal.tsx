@@ -135,24 +135,26 @@ export function ForterKPISegmentModal({
     onReset,
   }: { currentValue: number | undefined; benchmarkValue: number | undefined; onReset: () => void }) => {
     if (benchmarkValue === undefined || segmentValuesEqual(currentValue, benchmarkValue)) return null;
+    const displayBenchmark = typeof benchmarkValue === 'number' ? benchmarkValue.toFixed(2) : String(benchmarkValue);
+    const tooltipText = `Reset to benchmark (${displayBenchmark}%)`;
+    const handleReset = (e: React.MouseEvent | React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onReset();
+    };
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
-            onClick={onReset}
-            aria-label="Reset to benchmark"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <p className="text-xs">Reset to benchmark</p>
-        </TooltipContent>
-      </Tooltip>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+        title={tooltipText}
+        aria-label={tooltipText}
+        onClick={handleReset}
+        onPointerDown={handleReset}
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+      </Button>
     );
   };
 

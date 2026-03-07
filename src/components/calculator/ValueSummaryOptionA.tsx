@@ -1960,6 +1960,9 @@ interface ValueSummaryOptionAProps {
   onBenefitModalClose?: () => void;
   /** When user clicks "Generate Slides" in calculator modal, open report modal with this subset to create a calculator-only deck */
   onGenerateCalculatorSlides?: (subset: import("./GenerateReportModal").CalculatorSubsetForReport) => void;
+  /** When provided, benefit modal Visual / Funnel / Success Story tab checkmarks persist across main-tab navigation (lifted state from parent). */
+  persistedBenefitTabsViewed?: { visual: Set<string>; funnel: Set<string>; successStories: Set<string> };
+  onPersistBenefitTabViewed?: (tab: 'visual' | 'funnel' | 'success-stories', calculatorId: string) => void;
 }
 
 export const ValueSummaryOptionA = ({
@@ -1982,6 +1985,8 @@ export const ValueSummaryOptionA = ({
   openBenefitCalculatorId,
   onBenefitModalClose,
   onGenerateCalculatorSlides,
+  persistedBenefitTabsViewed,
+  onPersistBenefitTabViewed,
 }: ValueSummaryOptionAProps) => {
   const forterKPIs = formData.forterKPIs || defaultForterKPIs;
   const [businessGrowthOpen, setBusinessGrowthOpen] = useState(true);
@@ -1991,9 +1996,15 @@ export const ValueSummaryOptionA = ({
   const [ebitdaChartModalOpen, setEbitdaChartModalOpen] = useState(false);
   const [calculatorModalTab, setCalculatorModalTab] = useState<'summary' | 'inputs' | 'calculator' | 'funnel' | 'visual' | 'success-stories'>('summary');
   const [funnelViewMode, setFunnelViewMode] = useState<'percent' | 'transactions'>('transactions');
-  const [successStoriesViewed, setSuccessStoriesViewed] = useState<Set<string>>(new Set());
-  const [funnelViewed, setFunnelViewed] = useState<Set<string>>(new Set());
-  const [visualViewed, setVisualViewed] = useState<Set<string>>(new Set());
+  const [successStoriesViewedLocal, setSuccessStoriesViewedLocal] = useState<Set<string>>(new Set());
+  const [funnelViewedLocal, setFunnelViewedLocal] = useState<Set<string>>(new Set());
+  const [visualViewedLocal, setVisualViewedLocal] = useState<Set<string>>(new Set());
+  const successStoriesViewed = persistedBenefitTabsViewed ? persistedBenefitTabsViewed.successStories : successStoriesViewedLocal;
+  const funnelViewed = persistedBenefitTabsViewed ? persistedBenefitTabsViewed.funnel : funnelViewedLocal;
+  const visualViewed = persistedBenefitTabsViewed ? persistedBenefitTabsViewed.visual : visualViewedLocal;
+  const setSuccessStoriesViewed = setSuccessStoriesViewedLocal;
+  const setFunnelViewed = setFunnelViewedLocal;
+  const setVisualViewed = setVisualViewedLocal;
   const calculatorDialogRef = useRef<HTMLDivElement>(null);
   const [isCapturingBenefitPdf, setIsCapturingBenefitPdf] = useState(false);
 
@@ -4404,10 +4415,33 @@ export const ValueSummaryOptionA = ({
   const MAX_INLINE_CHART_BARS = 4;
   const MAX_FULL_CHART_BARS = 10;
 
-  type WaterfallEntry = { name: string; value: number; base: number; isTotal: boolean };
+  /** Tooltip payload for a single bar (or for one item inside "Other") */
+  type BarTooltipItem = {
+    label: string;
+    ebitdaValue: number;
+    gmvValue?: number;
+    performanceHighlight?: PerformanceHighlight;
+  };
+  type WaterfallEntry = {
+    name: string;
+    value: number;
+    base: number;
+    isTotal: boolean;
+    /** For tooltip: single bar or list for "Other" */
+    tooltipInfo?: BarTooltipItem | { other: BarTooltipItem[] };
+  };
 
   const sortedWaterfallRawData = useMemo(() => {
-    const rawData: { name: string; value: number; base: number; isTotal: boolean; originalLabel: string }[] = [];
+    type RawItem = {
+      name: string;
+      value: number;
+      base: number;
+      isTotal: boolean;
+      originalLabel: string;
+      gmvValue?: number;
+      performanceHighlight?: PerformanceHighlight;
+    };
+    const rawData: RawItem[] = [];
     const toMultiLine = (label: string) => label.split(" ").join("\n");
     // Use exact calculator names for EBITDA attribution chart (e.g. "Optimize payment funnel")
     const getBenefitLabel = (driver: { id: string; calculatorTitle?: string; label: string }) =>
@@ -4423,7 +4457,15 @@ export const ValueSummaryOptionA = ({
       if (driver.enabled && driver.value > 0) {
         const ebitdaValue = driver.value * netSalesMultiplier * marginMultiplier;
         const label = getBenefitLabel(driver);
-        rawData.push({ name: toMultiLine(label), originalLabel: label, value: ebitdaValue, base: 0, isTotal: false });
+        rawData.push({
+          name: toMultiLine(label),
+          originalLabel: label,
+          value: ebitdaValue,
+          base: 0,
+          isTotal: false,
+          gmvValue: driver.value,
+          performanceHighlight: driver.performanceHighlight,
+        });
       }
     });
     const customGmvDrivers = businessGrowthDrivers.filter(d => d.id.startsWith('custom-'));
@@ -4431,43 +4473,92 @@ export const ValueSummaryOptionA = ({
       if (driver.enabled && driver.value > 0) {
         const ebitdaValue = driver.value * netSalesMultiplier * marginMultiplier;
         const label = driver.calculatorTitle ?? driver.label;
-        rawData.push({ name: toMultiLine(label), originalLabel: label, value: ebitdaValue, base: 0, isTotal: false });
+        rawData.push({
+          name: toMultiLine(label),
+          originalLabel: label,
+          value: ebitdaValue,
+          base: 0,
+          isTotal: false,
+          gmvValue: driver.value,
+          performanceHighlight: driver.performanceHighlight,
+        });
       }
     });
     riskAvoidanceDrivers.forEach((driver) => {
       if (driver.enabled && driver.value > 0) {
         const label = getBenefitLabel(driver);
-        rawData.push({ name: toMultiLine(label), originalLabel: label, value: driver.value, base: 0, isTotal: false });
+        rawData.push({
+          name: toMultiLine(label),
+          originalLabel: label,
+          value: driver.value,
+          base: 0,
+          isTotal: false,
+          performanceHighlight: driver.performanceHighlight,
+        });
       }
     });
     riskMitigationDrivers.forEach((driver) => {
       if (driver.enabled && driver.value > 0) {
         const label = getBenefitLabel(driver);
-        rawData.push({ name: toMultiLine(label), originalLabel: label, value: driver.value, base: 0, isTotal: false });
+        rawData.push({
+          name: toMultiLine(label),
+          originalLabel: label,
+          value: driver.value,
+          base: 0,
+          isTotal: false,
+          performanceHighlight: driver.performanceHighlight,
+        });
       }
     });
     return [...rawData].sort((a, b) => b.value - a.value);
   }, [businessGrowthDrivers, riskAvoidanceDrivers, riskMitigationDrivers, formData.isMarketplace, formData.commissionRate, formData.amerGrossMarginPercent, formData.gmvToNetSalesDeductionPct, formData.country]);
 
-  const buildWaterfallChartData = (sortedData: { name: string; value: number }[], maxBars: number): WaterfallEntry[] => {
+  const buildWaterfallChartData = (
+    sortedData: { name: string; value: number; originalLabel: string; gmvValue?: number; performanceHighlight?: PerformanceHighlight }[],
+    maxBars: number
+  ): WaterfallEntry[] => {
     const chartData: WaterfallEntry[] = [];
+    const toTooltipItem = (item: typeof sortedData[0]): BarTooltipItem => ({
+      label: item.originalLabel,
+      ebitdaValue: item.value,
+      gmvValue: item.gmvValue,
+      performanceHighlight: item.performanceHighlight,
+    });
     if (sortedData.length > maxBars) {
       const topBars = sortedData.slice(0, maxBars);
       const otherBars = sortedData.slice(maxBars);
       const otherTotal = otherBars.reduce((sum, item) => sum + item.value, 0);
       let runningTotal = 0;
       topBars.forEach((item) => {
-        chartData.push({ name: item.name, value: item.value, base: runningTotal, isTotal: false });
+        chartData.push({
+          name: item.name,
+          value: item.value,
+          base: runningTotal,
+          isTotal: false,
+          tooltipInfo: toTooltipItem(item),
+        });
         runningTotal += item.value;
       });
       if (otherTotal > 0) {
-        chartData.push({ name: `Other\n(${otherBars.length})`, value: otherTotal, base: runningTotal, isTotal: false });
+        chartData.push({
+          name: `Other\n(${otherBars.length})`,
+          value: otherTotal,
+          base: runningTotal,
+          isTotal: false,
+          tooltipInfo: { other: otherBars.map(toTooltipItem) },
+        });
         runningTotal += otherTotal;
       }
     } else {
       let runningTotal = 0;
       sortedData.forEach((item) => {
-        chartData.push({ name: item.name, value: item.value, base: runningTotal, isTotal: false });
+        chartData.push({
+          name: item.name,
+          value: item.value,
+          base: runningTotal,
+          isTotal: false,
+          tooltipInfo: toTooltipItem(item),
+        });
         runningTotal += item.value;
       });
     }
@@ -4513,6 +4604,49 @@ export const ValueSummaryOptionA = ({
     if (value > 0) return `+${formatted}`;
     return formatted;
   };
+
+  /** Format performance highlight as a single line for tooltip */
+  const formatHighlightForTooltip = (h: PerformanceHighlight): string => {
+    const decimals = h.decimals ?? 1;
+    const showOnlyTarget = h.current === 0;
+    const change = h.percentChange != null ? ` (${h.percentChange >= 0 ? "+" : ""}${h.percentChange.toFixed(1)}%)` : "";
+    if (showOnlyTarget) return `${h.label}: ${h.target.toFixed(decimals)}${h.unit}${change}`;
+    return `${h.label}: ${h.current.toFixed(decimals)}${h.unit} → ${h.target.toFixed(decimals)}${h.unit}${change}`;
+  };
+
+  /** Custom tooltip for EBITDA attribution bars: GMV uplift + performance highlight */
+  const EbitdaAttributionTooltip = useCallback((props: { active?: boolean; payload?: Array<{ payload?: WaterfallEntry }> }) => {
+    if (!props.active || !props.payload?.length) return null;
+    const entry = props.payload[0]?.payload as WaterfallEntry | undefined;
+    if (!entry?.tooltipInfo || entry.isTotal) return null;
+    const info = entry.tooltipInfo;
+    const items: BarTooltipItem[] = "other" in info ? info.other : [info];
+    return (
+      <div className="rounded-lg border bg-popover px-3 py-2.5 text-sm shadow-md max-w-[320px]">
+        {"other" in info && (
+          <p className="font-semibold text-foreground border-b border-border pb-1.5 mb-1.5">Other drivers</p>
+        )}
+        {items.map((item, i) => (
+          <div key={i} className={i > 0 ? "mt-2 pt-2 border-t border-border" : ""}>
+            <p className="font-medium text-foreground">{item.label}</p>
+            <p className="text-muted-foreground text-xs mt-0.5">
+              EBITDA contribution: {formatCurrency(item.ebitdaValue)}
+            </p>
+            {item.gmvValue != null && item.gmvValue > 0 && (
+              <p className="text-muted-foreground text-xs mt-0.5">
+                GMV uplift: {formatCurrency(item.gmvValue)}
+              </p>
+            )}
+            {item.performanceHighlight && (
+              <p className="text-primary text-xs mt-1">
+                {formatHighlightForTooltip(item.performanceHighlight)}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }, [formatCurrency]);
 
   /** Round quarterly cost to a friendly readable number and return display string + tooltip copy */
   const getQuarterlyCostDisplay = (quarterly: number): { displayFormatted: string; exactFormatted: string; roundingNote: string } => {
@@ -5074,8 +5208,8 @@ export const ValueSummaryOptionA = ({
   const showAbuse = challenge8Results && (getDriverEnabled("c8-returns") || getDriverEnabled("c8-inr")) && (blendedAbuseCatchRate ?? forterKPIs.forterCatchRate ?? 0) > 0;
   const showInstantRefundsNPS = challenge9Results && getDriverEnabled("c9-cx-uplift") && (forterKPIs.npsIncreaseFromInstantRefunds ?? 0) > 0;
   const showInstantRefundsCS = challenge9Results && getDriverEnabled("c9-cs-opex") && (forterKPIs.forterCSReduction ?? 0) > 0;
-  const showAtoCatchRate = (getDriverEnabled("c12-ato-opex") || getDriverEnabled("c13-clv")) && (forterKPIs.atoCatchRate ?? 0) > 0;
-  const showFraudulentSignupReduction = (getDriverEnabled("c14-marketing") || getDriverEnabled("c14-reactivation") || getDriverEnabled("c14-kyc")) && (forterKPIs.forterFraudulentSignupReduction ?? 0) > 0;
+  const showAtoCatchRate = challenge12_13Results && (getDriverEnabled("c12-ato-opex") || getDriverEnabled("c13-clv")) && (forterKPIs.atoCatchRate ?? 0) > 0;
+  const showFraudulentSignupReduction = challenge14_15Results && (getDriverEnabled("c14-marketing") || getDriverEnabled("c14-reactivation") || getDriverEnabled("c14-kyc")) && (forterKPIs.forterFraudulentSignupReduction ?? 0) > 0;
   const hasAnyHighlight = showApprovalRate || show3DS || showChargeback || showManualReview || showDispute || showAbuse || showInstantRefundsNPS || showInstantRefundsCS || showAtoCatchRate || showFraudulentSignupReduction;
 
   return (
@@ -5923,6 +6057,7 @@ export const ValueSummaryOptionA = ({
                     margin={{ top: 30, right: 30, left: 30, bottom: 80 }}
                     barCategoryGap="30%"
                   >
+                    <RechartsTooltip content={<EbitdaAttributionTooltip />} cursor={{ fill: "hsl(var(--muted))" }} />
                     <XAxis
                       dataKey="name"
                       tick={(props) => {
@@ -6017,6 +6152,7 @@ export const ValueSummaryOptionA = ({
                 margin={{ top: 24, right: 24, left: 24, bottom: 100 }}
                 barCategoryGap="20%"
               >
+                <RechartsTooltip content={<EbitdaAttributionTooltip />} cursor={{ fill: "hsl(var(--muted))" }} />
                 <XAxis
                   dataKey="name"
                   tick={(props) => {
@@ -6818,9 +6954,18 @@ export const ValueSummaryOptionA = ({
           <Tabs value={calculatorModalTab} onValueChange={(v) => {
               setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'funnel' | 'visual' | 'success-stories');
               const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
-              if (v === 'success-stories' && calcId) setSuccessStoriesViewed(prev => new Set(prev).add(calcId));
-              if (v === 'funnel' && calcId) setFunnelViewed(prev => new Set(prev).add(calcId));
-              if (v === 'visual' && calcId) setVisualViewed(prev => new Set(prev).add(calcId));
+              if (v === 'success-stories' && calcId) {
+                if (onPersistBenefitTabViewed) onPersistBenefitTabViewed('success-stories', calcId);
+                else setSuccessStoriesViewed(prev => new Set(prev).add(calcId));
+              }
+              if (v === 'funnel' && calcId) {
+                if (onPersistBenefitTabViewed) onPersistBenefitTabViewed('funnel', calcId);
+                else setFunnelViewed(prev => new Set(prev).add(calcId));
+              }
+              if (v === 'visual' && calcId) {
+                if (onPersistBenefitTabViewed) onPersistBenefitTabViewed('visual', calcId);
+                else setVisualViewed(prev => new Set(prev).add(calcId));
+              }
             }} className="w-full">
             {/* Show all 3 tabs (Benefit Summary, Inputs, Calculator) in both Guided and Custom mode when calculator has required inputs */}
             {(() => {

@@ -1202,7 +1202,7 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s1_customer_logo", s1, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s1_section", s1, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+    addTextBox(requests, "s1_section", s1, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s1_page", s1, 0.28, FOOTER_Y, 1.0, 0.2, "3", {
@@ -1332,7 +1332,7 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s2_customer_logo", s2, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s2_section", s2, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+    addTextBox(requests, "s2_section", s2, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s2_page", s2, 0.28, FOOTER_Y, 1.0, 0.2, String(4 - contentSlideOffset), { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
@@ -1492,7 +1492,7 @@ export async function buildGoogleSlides(
     }
     const pageLabel = driverPages.length > 1 ? ` (Page ${pageIndex + 1} of ${driverPages.length})` : "";
     const pageNum = String(5 - contentSlideOffset + pageIndex);
-    addTextBox(requests, `s3_section_${pageIndex}`, pageSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+    addTextBox(requests, `s3_section_${pageIndex}`, pageSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, `s3_page_${pageIndex}`, pageSlide, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
@@ -1685,7 +1685,7 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s4_customer_logo", s4, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s4_section", s4, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+    addTextBox(requests, "s4_section", s4, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s4_page", s4, 0.28, FOOTER_Y, 1.0, 0.2, String(baseAfterDrivers + 1), { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
@@ -1908,7 +1908,7 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s5_customer_logo", s5, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s5_section", s5, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+    addTextBox(requests, "s5_section", s5, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s5_page", s5, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
@@ -2207,7 +2207,7 @@ export async function buildGoogleSlides(
         `valueprop_visual_${v}_${Date.now()}.png`
       );
       uploadedVisualImageIds.push(visualFileId);
-      addTextBox(requests, `svp_vis_sec_${v}`, visualSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+      addTextBox(requests, `svp_vis_sec_${v}`, visualSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
         bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
       addTextBox(requests, `svp_vis_title_${v}`, visualSlide, 0.5, 0.38, CONTENT_W, 0.38, truncateForSlide(item.title, 55), {
@@ -2260,7 +2260,7 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("snext_customer_logo", sNext, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "snext_section", sNext, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+    addTextBox(requests, "snext_section", sNext, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "snext_page", sNext, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
@@ -2543,7 +2543,7 @@ export async function buildGoogleSlides(
           );
           uploadedVisualImageIds.push(visualFileId);
           const pageNum = String(appendixContentStartIndex + appendixContentSlideIndex);
-          addTextBox(requests, `sfunnel_subset_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+          addTextBox(requests, `sfunnel_subset_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
             bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
           });
           addTextBox(requests, `sfunnel_subset_title_${a}`, funnelSlide.objectId, 0.5, 0.35, CONTENT_W, 0.5, "How transactions flow — Payments funnel", {
@@ -2557,7 +2557,7 @@ export async function buildGoogleSlides(
           });
           requests.push(createImageRequest(`sfunnel_subset_img_${a}`, funnelSlide.objectId, 0.1, 0.80, 13.13, 5.95, visualUrl));
         } else {
-          addTextBox(requests, `sfunnel_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+          addTextBox(requests, `sfunnel_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
             bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
           });
           addTextBox(requests, `sfunnel_page_${a}`, funnelSlide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, String(appendixContentStartIndex + appendixContentSlideIndex), {
@@ -2599,7 +2599,7 @@ export async function buildGoogleSlides(
       }
       const pageLabel = pageCount > 1 ? ` (Page ${pageIdx + 1} of ${pageCount})` : "";
       const pageNum = isSubset ? String(appendixContentStartIndex + appendixContentSlideIndex) : String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
-      addTextBox(requests, `sapp_sec_${a}_${pageIdx}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+      addTextBox(requests, `sapp_sec_${a}_${pageIdx}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
         bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
       addTextBox(requests, `sapp_page_${a}_${pageIdx}`, slide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
@@ -2925,7 +2925,7 @@ export async function buildGoogleSlides(
       const slide = slides[appendixContentStartIndex + appendixContentSlideIndex];
       if (slide?.objectId) {
         const pageNum = String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
-        addTextBox(requests, `sfunnel_sec_${a}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 52), {
+        addTextBox(requests, `sfunnel_sec_${a}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
           bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
         });
         addTextBox(requests, `sfunnel_page_${a}`, slide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {

@@ -355,25 +355,29 @@ export const ForterKPIConfig = ({
     if (benchmarkValue === undefined || isSegmentMode) return null;
     const currentValue = kpis[fieldId as keyof typeof kpis];
     if (valuesEqual(typeof currentValue === 'number' ? currentValue : undefined, benchmarkValue)) return null;
-    const roundedBenchmark = Math.round(benchmarkValue * 10000) / 10000;
+    // Use exact benchmark value so stored value matches calculated benchmark (no rounding drift)
+    const valueToSet = typeof benchmarkValue === 'number' ? benchmarkValue : Math.round(benchmarkValue * 10000) / 10000;
+    const displayBenchmark = typeof benchmarkValue === 'number' ? benchmarkValue.toFixed(2) : String(benchmarkValue);
+    const unit = ['chargebackReduction', 'approvalRateImprovement', 'preAuthApprovalImprovement', 'postAuthApprovalImprovement', 'threeDSReduction'].includes(fieldId) ? '%' : '';
+    const handleReset = (e: React.MouseEvent | React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      updateKPI(fieldId, valueToSet);
+    };
+    const tooltipText = `Reset to Forter benchmark (${displayBenchmark}${unit})`;
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
-            onClick={() => updateKPI(fieldId, roundedBenchmark)}
-            aria-label="Reset to Forter benchmark"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <p className="text-xs">Reset to Forter benchmark</p>
-        </TooltipContent>
-      </Tooltip>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary"
+        title={tooltipText}
+        aria-label={tooltipText}
+        onClick={handleReset}
+        onPointerDown={handleReset}
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+      </Button>
     );
   };
   const gridClass = viewMode === 'list' ? 'grid grid-cols-1 gap-4' : 'grid md:grid-cols-2 gap-4';

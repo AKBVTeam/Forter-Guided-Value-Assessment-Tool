@@ -248,7 +248,6 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     calculatorName: 'Instant refunds CX uplift',
     requiredInputs: [
       { id: 'expectedRefundsVolume', label: 'Expected Refunds - Volume (#)', description: 'Total number of expected returns annually', type: 'number' },
-      { id: 'avgRefundValue', label: 'Average Refunds Value ($)', description: 'Average value per return/refund', type: 'currency' },
       { id: 'refundRate', label: 'Refund Rate on Completed Transactions (%)', description: 'Percentage of completed transactions that are refunded', type: 'percentage' },
       { id: 'amerGrossMarginPercent', label: 'Gross Margin (%)', description: 'Your gross profit margin percentage', type: 'percentage' },
     ],

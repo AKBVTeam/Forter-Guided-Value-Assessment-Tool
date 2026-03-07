@@ -2,6 +2,8 @@
 
 The **Value Agent** is the chat that helps people fill in the value assessment. To make it work, you add an API key in Supabase (and, if you run the app yourself, connect the app to that Supabase project).
 
+**Migrated from Lovable to Cursor?** Use the step-by-step checklist in **CURSOR_VALUE_AGENT_FIX.md** (env, deploy, secrets, clear sessionStorage).
+
 ---
 
 ## Part 1: Add an API key in Supabase (you can do this)
@@ -57,12 +59,14 @@ Someone with access to the code or hosting needs to do this once:
    - Copy it to a file named **`.env`** (in the same folder).
    - Fill in:
      - **VITE_SUPABASE_URL** — the Supabase project URL (from Supabase: Project Settings → API).
-     - **VITE_SUPABASE_PUBLISHABLE_KEY** — the “anon” or “public” key (same place in Supabase).
+     - **VITE_SUPABASE_ANON_KEY** (or **VITE_SUPABASE_PUBLISHABLE_KEY**) — the “anon” or “public” key (same place in Supabase).
+   - Restart the dev server after changing `.env` (Vite does not hot-reload env).
 
 2. **Deploy the chat backend (Edge Function)**  
-   They need to run this once from the project folder (with Supabase CLI installed and the project linked):
+   From the project folder (Supabase CLI installed; use `--project-ref your-project-id` if not linked):
    - `npm run deploy:value-agent`  
-   Or follow the technical steps in **VALUE_AGENT_SETUP.md**.
+   Or: `npx supabase functions deploy fraud-calculator-chat --project-ref your-project-id`  
+   See **CURSOR_VALUE_AGENT_FIX.md** for full steps.
 
 If your app is already live (e.g. hosted by Lovable or your team), Part 2 might already be done — you only need **Part 1** (add the API key in Supabase).
 
