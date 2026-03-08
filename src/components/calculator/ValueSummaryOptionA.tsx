@@ -3019,19 +3019,29 @@ export const ValueSummaryOptionA = ({
   const challenge9Results = useMemo(() => {
     if (!isChallenge9Selected) return null;
 
-    // Current eCommerce sales = Net sales ($) from Reduce false declines (c1) or Optimize payment funnel (c245), so it matches the funnel
-    const getNetSalesFromCalc = (res: typeof challenge245Results) => {
+    // Current eCommerce sales ($) = Net sales ($) current state from whichever payment calculator is on
+    // (Optimize payment funnel or Reduce false fraud declines), so Instant refunds matches the funnel.
+    // When segmentation is enabled, use aggregated segment rows so Total Net sales ($110M) ties to Instant refunds ($110M).
+    const getNetSalesFromRows = (rows: { label?: string; rawCustomerValue?: number }[]): number | undefined => {
+      const row = rows?.find((r) => r.label === 'Net sales ($)' || r.label === 'Net sales ($) (deduplicated)');
+      return row?.rawCustomerValue;
+    };
+    const getNetSalesFromCalc = (res: typeof challenge245Results): number | undefined => {
       if (!res?.calculator1) return undefined;
       if (res.calculator1.customerNetSales != null) return res.calculator1.customerNetSales;
-      const row = res.calculator1.rows?.find((r: { label?: string }) => r.label === 'Net sales ($)');
-      return (row as { rawCustomerValue?: number } | undefined)?.rawCustomerValue;
+      return getNetSalesFromRows(res.calculator1.rows ?? []);
     };
-    const netSalesFromC245 = getNetSalesFromCalc(challenge245Results ?? null);
-    const netSalesFromC1 = getNetSalesFromCalc(challenge1Results ?? null);
+    const netSalesFromC245 =
+      isSegmentationEnabled && segmentedC245AggregateRows.length > 0
+        ? getNetSalesFromRows(segmentedC245AggregateRows)
+        : getNetSalesFromCalc(challenge245Results ?? null);
+    const netSalesFromC1 =
+      isSegmentationEnabled && segmentedC1AggregateRows.length > 0
+        ? getNetSalesFromRows(segmentedC1AggregateRows)
+        : getNetSalesFromCalc(challenge1Results ?? null);
     const completedCount = getCompletedTransactionCount(formData, isChallenge1Selected, isChallenge245Selected);
     const effectiveAOV = formData.completedAOV ?? ((formData.amerGrossAttempts ?? 0) > 0 ? (formData.amerAnnualGMV ?? 0) / (formData.amerGrossAttempts ?? 1) : 0);
     const derivedEcommerceSales = completedCount * effectiveAOV;
-    // When a payment calculator is on, use its Net sales only (never derived), so Instant refunds matches 129.9m
     const currentEcommerceSales = (isChallenge245Selected && netSalesFromC245 != null)
       ? netSalesFromC245
       : (isChallenge1Selected && netSalesFromC1 != null)
@@ -3054,7 +3064,7 @@ export const ValueSummaryOptionA = ({
     };
 
     return calculateChallenge9(inputs);
-  }, [isChallenge9Selected, isChallenge1Selected, isChallenge245Selected, formData, forterKPIs, challenge1Results, challenge245Results]);
+  }, [isChallenge9Selected, isChallenge1Selected, isChallenge245Selected, isSegmentationEnabled, formData, forterKPIs, challenge1Results, challenge245Results, segmentedC245AggregateRows, segmentedC1AggregateRows]);
 
   // Challenge 12/13: ATO Protection
   const challenge12_13Results = useMemo(() => {
