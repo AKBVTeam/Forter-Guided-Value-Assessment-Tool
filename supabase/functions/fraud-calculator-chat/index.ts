@@ -12,7 +12,8 @@ serve(async (req) => {
 
   try {
     const { messages, collectedData, contextSummary, isAssistantMode } = await req.json();
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    // Accept both spellings: GEMINI_API_KEY (correct) or GEMENI_API_KEY (typo used in some setup docs)
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GEMENI_API_KEY");
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -37,7 +38,7 @@ serve(async (req) => {
         role: m.role === "assistant" ? "model" : "user",
         parts: [{ text: m.content }],
       }));
-      response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", {
+      response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
         method: "POST",
         headers: {
           "x-goog-api-key": GEMINI_API_KEY!,
@@ -148,14 +149,17 @@ serve(async (req) => {
   } catch (error) {
     const errMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("Error:", error);
-    const isConfigError = errMessage.includes("LOVABLE_API_KEY") || errMessage.includes("OPENAI_API_KEY") || errMessage.includes("configured");
+    const isConfigError = errMessage.includes("LOVABLE_API_KEY") || errMessage.includes("OPENAI_API_KEY") || errMessage.includes("GEMINI_API_KEY") || errMessage.includes("configured");
+    // Include safe error detail in 500 response for debugging (no secrets)
+    const detail = isConfigError ? undefined : errMessage.replace(/key\s*=\s*[\w-]+/gi, "key=***");
     return new Response(
       JSON.stringify({
         message: isConfigError
-          ? "Value Agent is not configured. Add LOVABLE_API_KEY or OPENAI_API_KEY in Supabase Edge Function secrets. See VALUE_AGENT_SETUP_SIMPLE.md."
+          ? "Value Agent is not configured. Add GEMINI_API_KEY (or GEMENI_API_KEY), ANTHROPIC_API_KEY, OPENAI_API_KEY, or LOVABLE_API_KEY in Supabase Edge Function secrets. See VALUE_AGENT_SETUP_SIMPLE.md."
           : "I'm sorry, I encountered an error. Could you please try again?",
         updatedData: {},
         isComplete: false,
+        ...(detail && { errorDetail: detail }),
       }),
       {
         status: isConfigError ? 503 : 500,

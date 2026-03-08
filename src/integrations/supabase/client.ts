@@ -14,7 +14,6 @@ let _supabase: SupabaseClient<Database> | null = null;
 function getSupabase(): SupabaseClient<Database> {
   if (_supabase) return _supabase;
   if (!isConfigured) {
-    // Return a no-op client so the app loads without Supabase. Auth and Edge Functions will no-op or return errors.
     return createNoOpClient();
   }
   _supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {

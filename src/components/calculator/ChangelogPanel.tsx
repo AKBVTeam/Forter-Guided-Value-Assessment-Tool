@@ -108,9 +108,28 @@ const fieldLabels: Record<string, string> = {
   _pathwayMode: "Assessment type",
   _analysisName: "Analysis name",
   _authorName: "Report prepared by",
+  _valueDeckUrl: "Value Deck URL",
+  _executiveSummaryUrl: "Executive Summary URL",
+  _showInMillions: "Show values in millions",
+  _showInMillionsDefaultApplied: "Show in millions (auto-applied)",
+  _deduplicationEnabled: "Deduplication enabled",
+  _deduplicationRetryRate: "Deduplication retry rate (%)",
+  _deduplicationSuccessRate: "Deduplication success rate (%)",
+  _showInvestmentRowsOn: "Show investment rows",
+  _startedAt: "Started at",
   baseCurrency: "Base currency",
   useCaseNotes: "Use case notes",
 };
+
+/** Convert a field key like _valueDeckUrl or someNewField into "Value Deck Url" / "Some New Field" */
+function formatFieldKeyAsLabel(key: string): string {
+  const stripped = key.replace(/^_+/, "");
+  const withSpaces = stripped.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  return withSpaces
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
 
 // Fields to exclude from changelog (internal IDs, UI state, or too technical)
 const excludedCustomerKeys = new Set([
@@ -272,7 +291,7 @@ function computeCustomerDiff(
     if (!isEqual(currValue, prevValue)) {
       newEntries.push({
         field: key,
-        label: fieldLabels[key] || key,
+        label: fieldLabels[key] || formatFieldKeyAsLabel(key),
         oldValue: prevValue as string | number | boolean | undefined,
         newValue: currValue as string | number | boolean | undefined,
         timestamp: new Date().toISOString(),
@@ -296,7 +315,7 @@ function computeInvestmentDiff(
     if (!isEqual(currValue, prevValue)) {
       newEntries.push({
         field: `inv_${key}`,
-        label: investmentFieldLabels[key] || key,
+        label: investmentFieldLabels[key] || formatFieldKeyAsLabel(key),
         oldValue: prevValue as string | number | boolean | undefined,
         newValue: currValue as string | number | boolean | undefined,
         timestamp: new Date().toISOString(),

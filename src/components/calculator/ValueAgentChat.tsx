@@ -259,9 +259,14 @@ export const ValueAgentChat = ({
       });
 
       if (error) {
-        setIsUnavailable(true);
-        if (typeof sessionStorage !== "undefined") sessionStorage.setItem(VALUE_AGENT_UNAVAILABLE_KEY, "1");
-        toast.error("Value Agent is currently unavailable.");
+        const status = (error as { status?: number })?.status;
+        if (status === 429) {
+          toast.error("Rate limits exceeded. Please try again in a moment.");
+        } else {
+          setIsUnavailable(true);
+          if (typeof sessionStorage !== "undefined") sessionStorage.setItem(VALUE_AGENT_UNAVAILABLE_KEY, "1");
+          toast.error("Value Agent is currently unavailable.");
+        }
         return;
       }
 
@@ -274,6 +279,10 @@ export const ValueAgentChat = ({
         }
       }
 
+      if (parsedData?.error === "Rate limits exceeded, please try again later.") {
+        toast.error("Rate limits exceeded. Please try again in a moment.");
+        return;
+      }
       const rawMessage = parsedData.message || (typeof parsedData === 'string' ? parsedData : JSON.stringify(parsedData));
       // Strip markdown ** from response
       const assistantMessage = stripMarkdown(rawMessage);
