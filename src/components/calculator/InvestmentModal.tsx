@@ -91,12 +91,13 @@ export function InvestmentModal({
     if (!isEditingRef.current) {
       const pricingMode = investmentInputs.pricingMode ?? (investmentInputs.manualOverride ? 'manual' : 'guided');
       const salesGrowth = investmentInputs.annualSalesGrowthPct ?? 0;
-      const acvGrowth = investmentInputs.annualACVGrowthPct ?? 0;
-      const linkedByDefault = acvGrowth === 0;
+      const acvGrowth = investmentInputs.annualACVGrowthPct;
+      // Only "link to sales growth" when ACV growth was never set (undefined). If user set 0, keep 0.
+      const linkedByDefault = acvGrowth === undefined;
       const normalized = {
         ...investmentInputs,
         pricingMode,
-        annualACVGrowthPct: linkedByDefault ? salesGrowth : acvGrowth,
+        annualACVGrowthPct: linkedByDefault ? salesGrowth : (acvGrowth ?? 0),
       };
       setLocalInputs(normalized);
       setActiveTab(normalized.pricingMode === 'manual' ? 'manual' : 'guided');
@@ -277,8 +278,8 @@ export function InvestmentModal({
             dm.revenueSharePct = 20;
           }
         } else {
-          // Cost per dispute model: default number of disputes = (annual CB disputes / current dispute rate) * Forter dispute rate
-          if (dm.numberOfDisputes === undefined || dm.numberOfDisputes === null || dm.numberOfDisputes === 0) {
+          // Cost per dispute model: default number of disputes when never set. If user set 0, keep 0.
+          if (dm.numberOfDisputes === undefined || dm.numberOfDisputes === null) {
             const annualCBDisputes = formData.annualCBDisputes ?? 0;
             const currentDisputeRatePct = (formData.fraudDisputeRate ?? 0) || 1; // avoid div by 0
             const kpis = formData.forterKPIs;

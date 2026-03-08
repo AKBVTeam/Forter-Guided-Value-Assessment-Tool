@@ -64,22 +64,22 @@ export function ForterKPISegmentModal({
     if (open && segment) {
       const updatedSegment = { ...segment };
       
-      // Auto-populate approval rate targets to 99% if not set or 0
-      if (!updatedSegment.kpis.approvalRateTarget || updatedSegment.kpis.approvalRateTarget === 0) {
+      // Auto-populate approval rate targets only when never set (undefined). If user set 0, keep 0.
+      if (updatedSegment.kpis.approvalRateTarget === undefined) {
         updatedSegment.kpis.approvalRateTarget = globalKPIs.approvalRateImprovement || 99;
       }
-      if (!updatedSegment.kpis.preAuthApprovalTarget || updatedSegment.kpis.preAuthApprovalTarget === 0) {
+      if (updatedSegment.kpis.preAuthApprovalTarget === undefined) {
         updatedSegment.kpis.preAuthApprovalTarget = globalKPIs.preAuthApprovalImprovement || 99;
       }
-      if (!updatedSegment.kpis.postAuthApprovalTarget || updatedSegment.kpis.postAuthApprovalTarget === 0) {
+      if (updatedSegment.kpis.postAuthApprovalTarget === undefined) {
         updatedSegment.kpis.postAuthApprovalTarget = globalKPIs.postAuthApprovalImprovement || 99;
       }
       
-      // Auto-populate CB rate from vendor lookup
+      // Auto-populate CB rate from vendor lookup only when never set
       if (existingFraudVendor && segment.inputs.fraudCBRate && segment.inputs.fraudCBRate > 0) {
         const vendorFactor = getVendorCBReductionFactor(existingFraudVendor);
         const suggestedRate = parseFloat((segment.inputs.fraudCBRate * vendorFactor).toFixed(3));
-        if (!updatedSegment.kpis.chargebackRateTarget || updatedSegment.kpis.chargebackRateTarget === 0) {
+        if (updatedSegment.kpis.chargebackRateTarget === undefined) {
           updatedSegment.kpis.chargebackRateTarget = suggestedRate;
         }
       }

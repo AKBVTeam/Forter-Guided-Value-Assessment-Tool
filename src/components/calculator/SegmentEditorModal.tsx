@@ -117,16 +117,15 @@ export function SegmentEditorModal({
     setEditedSegment(prev => {
       if (!prev) return null;
       const updated = { ...prev, country };
-      // Auto-update KPI targets based on new country/industry lookup
+      // Auto-update KPI targets based on new country/industry lookup only when never set (undefined). If user set 0, keep 0.
       if (newApprovalRate !== undefined) {
-        // Only update if KPIs haven't been manually set yet
-        if (prev.kpis.approvalRateTarget === undefined || prev.kpis.approvalRateTarget === 0) {
+        if (prev.kpis.approvalRateTarget === undefined) {
           updated.kpis = { ...prev.kpis, approvalRateTarget: newApprovalRate };
         }
-        if (prev.kpis.preAuthApprovalTarget === undefined || prev.kpis.preAuthApprovalTarget === 0) {
+        if (prev.kpis.preAuthApprovalTarget === undefined) {
           updated.kpis = { ...updated.kpis, preAuthApprovalTarget: newApprovalRate };
         }
-        if (prev.kpis.postAuthApprovalTarget === undefined || prev.kpis.postAuthApprovalTarget === 0) {
+        if (prev.kpis.postAuthApprovalTarget === undefined) {
           updated.kpis = { ...updated.kpis, postAuthApprovalTarget: newApprovalRate };
         }
       }
@@ -139,15 +138,15 @@ export function SegmentEditorModal({
     setEditedSegment(prev => {
       if (!prev) return null;
       const updated = { ...prev, industry };
-      // Auto-update KPI targets based on new country/industry lookup
+      // Auto-update KPI targets based on new country/industry lookup only when never set (undefined)
       if (newApprovalRate !== undefined) {
-        if (prev.kpis.approvalRateTarget === undefined || prev.kpis.approvalRateTarget === 0) {
+        if (prev.kpis.approvalRateTarget === undefined) {
           updated.kpis = { ...prev.kpis, approvalRateTarget: newApprovalRate };
         }
-        if (prev.kpis.preAuthApprovalTarget === undefined || prev.kpis.preAuthApprovalTarget === 0) {
+        if (prev.kpis.preAuthApprovalTarget === undefined) {
           updated.kpis = { ...updated.kpis, preAuthApprovalTarget: newApprovalRate };
         }
-        if (prev.kpis.postAuthApprovalTarget === undefined || prev.kpis.postAuthApprovalTarget === 0) {
+        if (prev.kpis.postAuthApprovalTarget === undefined) {
           updated.kpis = { ...updated.kpis, postAuthApprovalTarget: newApprovalRate };
         }
       }
