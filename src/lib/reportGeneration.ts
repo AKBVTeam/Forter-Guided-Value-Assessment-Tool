@@ -49,6 +49,96 @@ const FORTER_LIGHT_GRAY = ALT_ROW;
 const FORTER_WHITE = WHITE;
 const FORTER_GREEN = GREEN;
 
+const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+function ensureMime(blob: Blob, mime: string): Blob {
+  if (blob.type === mime) return blob;
+  return new Blob([blob], { type: mime });
+}
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  if (!blob || blob.size === 0) {
+    throw new Error('Generated file is empty — nothing to download.');
+  }
+  console.log(`[ReportGen] Triggering download: ${filename} (${(blob.size / 1024).toFixed(0)} KB, type=${blob.type})`);
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch { /* already removed */ }
+      URL.revokeObjectURL(url);
+    }, 5000);
+  } catch (err) {
+    console.error('[ReportGen] Download trigger failed, trying fallback:', err);
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+}
+
+/**
+ * pptxgenjs v4 has a bug where [Content_Types].xml declares phantom
+ * slideMaster2..N entries that don't exist in the ZIP. Google Slides'
+ * strict OOXML parser fails on these dangling references. This function
+ * opens the PPTX ZIP, removes Override entries whose PartName points to
+ * a file not actually present in the archive, then re-packs the ZIP.
+ */
+async function fixPptxContentTypes(blob: Blob): Promise<Blob> {
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(blob);
+
+  const ctFile = zip.file('[Content_Types].xml');
+  if (!ctFile) return blob;
+
+  const ctXml = await ctFile.async('string');
+
+  const existingFiles = new Set<string>();
+  zip.forEach((relativePath) => {
+    existingFiles.add('/' + relativePath);
+  });
+
+  const fixed = ctXml.replace(
+    /<Override[^>]+PartName="([^"]+)"[^>]*\/>/g,
+    (match, partName: string) => {
+      if (existingFiles.has(partName)) return match;
+      return '';
+    }
+  );
+
+  if (fixed !== ctXml) {
+    zip.file('[Content_Types].xml', fixed);
+    const fixedBuf = await zip.generateAsync({ type: 'blob', mimeType: PPTX_MIME });
+    return fixedBuf;
+  }
+  return blob;
+}
+
+async function writePptxToBlob(pptx: any): Promise<Blob> {
+  const result: unknown = await pptx.write({ outputType: 'blob' });
+  let blob: Blob;
+  if (result instanceof Blob) {
+    blob = result;
+  } else if (result instanceof ArrayBuffer) {
+    blob = new Blob([result], { type: PPTX_MIME });
+  } else if (result instanceof Uint8Array) {
+    blob = new Blob([result], { type: PPTX_MIME });
+  } else if (typeof result === 'string') {
+    const binary = atob(result);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    blob = new Blob([bytes], { type: PPTX_MIME });
+  } else {
+    throw new Error('pptxgenjs write returned unexpected type: ' + typeof result);
+  }
+  return fixPptxContentTypes(blob);
+}
+
 // Forter white logo (base64 PNG) for title slide and footer
 const FORTER_LOGO_B64 = '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';
 
@@ -1083,14 +1173,10 @@ export async function generateCalculatorSlide(
   segmentData?: Array<{ name: string; rows: CalculatorRow[] }>,
   totalRows?: CalculatorRow[]
 ): Promise<void> {
-  const [pptxGenJS, { saveAs }] = await Promise.all([
-    import('pptxgenjs'),
-    import('file-saver'),
-  ]);
+  const pptxGenJS = await import('pptxgenjs');
 
   const pptx = new pptxGenJS.default();
-  pptx.defineLayout({ name: 'WIDE', width: 13.33, height: 7.5 });
-  pptx.layout = 'WIDE';
+  pptx.layout = 'LAYOUT_WIDE';
 
   const analysisName = (formData as any)._analysisName || formData.customerName || 'Customer';
   const customerName = formData.customerName || 'Customer';
@@ -1256,7 +1342,7 @@ export async function generateCalculatorSlide(
             x: 0.5, y: 0.38, w: 12.33, h: 0.4,
             fontSize: 18, bold: true, color: NAVY, fontFace: FONT_HEAD,
           });
-          slideStory.addImage({ data: `image/png;base64,${base64}`, x: 0.5, y: 0.9, w: 12.33, h: 6.0 });
+          slideStory.addImage({ data: `data:image/png;base64,${base64}`, x: 0.5, y: 0.9, w: 12.33, h: 6.0 });
         }
       } catch {
         // Skip success story slide if image fails to load
@@ -1264,14 +1350,13 @@ export async function generateCalculatorSlide(
     }
   }
 
-  // Save - Format: AnalysisName_CalculatorTitle (MMDDYY).pptx
-  const blob = await pptx.write({ outputType: 'blob' }) as Blob;
   const dateStr = formatDateMMMDDYYYY();
   const sanitizedAnalysisName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const sanitizedTitle = calculatorTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40);
   const segmentSuffix = isSegmented ? '_Segmented' : '';
   const filename = `${sanitizedAnalysisName}_${sanitizedTitle}${segmentSuffix} (${dateStr}).pptx`;
-  saveAs(blob, filename);
+  const blob = await writePptxToBlob(pptx);
+  triggerBlobDownload(ensureMime(blob, PPTX_MIME), filename);
 }
 
 /**
@@ -1363,21 +1448,16 @@ export async function generateExecutiveSummaryDocx(
   options: ReportOptions
 ): Promise<void> {
   // Dynamic imports to avoid React version conflicts
-  const [docxModule, { saveAs }] = await Promise.all([
-    import('docx'),
-    import('file-saver'),
-  ]);
+  const docxModule = await import('docx');
   const {
-    Document, Paragraph, Table, TableRow, TableCell, AlignmentType, WidthType, TextRun, Packer,
-    BorderStyle, ShadingType, convertInchesToTwip,
+    Document, Paragraph, TextRun, Packer,
+    BorderStyle, convertInchesToTwip,
   } = docxModule as typeof import('docx') & {
     BorderStyle?: { SINGLE: string };
-    ShadingType?: { SOLID: string };
     convertInchesToTwip?: (inches: number) => number;
   };
   const borderSingle = BorderStyle?.SINGLE ?? 'single';
-  const shadingSolid = ShadingType?.SOLID ?? 'clear';
-  const toTwip = convertInchesToTwip ?? ((inches: number) => Math.round(inches * 1440)); // 1 inch = 1440 twips
+  const toTwip = convertInchesToTwip ?? ((inches: number) => Math.round(inches * 1440));
 
   const analysisName = (formData as any)._analysisName || formData.customerName || 'Value Assessment';
   const customerName = formData.customerName || 'Customer';
@@ -1547,129 +1627,52 @@ export async function generateExecutiveSummaryDocx(
       indent: { left: toTwip(0.2) },
     }),
     ...sectionHeader('Target Outcomes'),
-    new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      borders: {
-        top: { style: borderSingle, color: 'E5E7EB', size: 4 },
-        bottom: { style: borderSingle, color: 'E5E7EB', size: 4 },
-        left: { style: 'none' as any },
-        right: { style: 'none' as any },
-        insideH: { style: borderSingle, color: 'E5E7EB', size: 4 },
-        insideV: { style: 'none' as any },
-      },
-      rows: [
-        new TableRow({
-          tableHeader: true,
-          children: [
-            new TableCell({
-              children: [new Paragraph({
-                children: [new TextRun({ text: 'Key Metric', bold: true, size: 20, color: 'FFFFFF', font: 'Poppins' })],
-              })],
-              width: { size: 45, type: WidthType.PERCENTAGE },
-              shading: { type: shadingSolid, fill: FORTER_NAVY, color: FORTER_NAVY },
-              margins: { top: 80, bottom: 80, left: 120, right: 120 },
-            }),
-            new TableCell({
-              children: [new Paragraph({
-                children: [new TextRun({ text: 'Current Measure', bold: true, size: 20, color: 'FFFFFF', font: 'Poppins' })],
-                alignment: AlignmentType.CENTER,
-              })],
-              width: { size: 27, type: WidthType.PERCENTAGE },
-              shading: { type: shadingSolid, fill: FORTER_NAVY, color: FORTER_NAVY },
-              margins: { top: 80, bottom: 80, left: 120, right: 120 },
-            }),
-            new TableCell({
-              children: [new Paragraph({
-                children: [new TextRun({ text: 'Target with Forter', bold: true, size: 20, color: 'FFFFFF', font: 'Poppins' })],
-                alignment: AlignmentType.CENTER,
-              })],
-              width: { size: 28, type: WidthType.PERCENTAGE },
-              shading: { type: shadingSolid, fill: FORTER_NAVY, color: FORTER_NAVY },
-              margins: { top: 80, bottom: 80, left: 120, right: 120 },
-            }),
-          ],
-        }),
-        ...performanceHighlights.map((m, idx) =>
-          new TableRow({
-            children: [
-              new TableCell({
-                children: [new Paragraph({
-                  children: [new TextRun({ text: m.metric, size: 20, font: 'Proxima Nova', color: '374151' })],
-                })],
-                shading: { type: shadingSolid, fill: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB', color: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB' },
-                margins: { top: 70, bottom: 70, left: 120, right: 120 },
-              }),
-              new TableCell({
-                children: [new Paragraph({
-                  children: [new TextRun({ text: m.current, size: 20, font: 'Proxima Nova', color: FORTER_GRAY })],
-                  alignment: AlignmentType.CENTER,
-                })],
-                shading: { type: shadingSolid, fill: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB', color: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB' },
-                margins: { top: 70, bottom: 70, left: 120, right: 120 },
-              }),
-              new TableCell({
-                children: [new Paragraph({
-                  children: [new TextRun({ text: m.target, size: 20, bold: true, color: FORTER_GREEN, font: 'Proxima Nova' })],
-                  alignment: AlignmentType.CENTER,
-                })],
-                shading: { type: shadingSolid, fill: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB', color: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB' },
-                margins: { top: 70, bottom: 70, left: 120, right: 120 },
-              }),
-            ],
-          })
-        ),
+    new Paragraph({
+      children: [
+        new TextRun({ text: 'Key Metric', bold: true, size: 20, color: FORTER_GRAY, font: 'Poppins' }),
+        new TextRun({ text: '  |  ', size: 20, color: FORTER_GRAY, font: 'Proxima Nova' }),
+        new TextRun({ text: 'Improvement', bold: true, size: 20, color: FORTER_GRAY, font: 'Poppins' }),
       ],
+      spacing: { after: 80 },
+      border: { bottom: { color: 'E5E7EB', style: borderSingle, size: 4, space: 2 } },
     }),
+    ...performanceHighlights.map(m =>
+      new Paragraph({
+        children: [
+          new TextRun({ text: m.metric, size: 20, font: 'Proxima Nova', color: '374151' }),
+          new TextRun({ text: '  |  ', size: 20, color: FORTER_GRAY, font: 'Proxima Nova' }),
+          new TextRun({ text: m.target, bold: true, size: 20, color: FORTER_GREEN, font: 'Proxima Nova' }),
+        ],
+        spacing: { after: 60 },
+      })
+    ),
     new Paragraph({ spacing: { after: 200 } })
   );
 
   // INVESTMENT or PROJECTED VALUE / NEXT STEPS section
   if (options.hasInvestment) {
+    const investmentRows = [
+      { label: 'Annual Investment', val: formatCurrency(roiResults.yearProjections?.[0]?.forterSaaSCost || 0, currency), green: false },
+      { label: 'EBITDA Contribution', val: formatCurrency(valueTotals.ebitdaContribution, currency), green: true },
+      { label: 'Return on Investment', val: `${roiResults.roi.toFixed(1)}×`, green: true },
+      { label: 'Payback Period', val: roiResults.paybackPeriodMonths > 0 ? `${roiResults.paybackPeriodMonths} months` : 'Immediate', green: false },
+    ];
     documentChildren.push(
       ...sectionHeader('Required Investment'),
-      new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        borders: {
-          top: { style: borderSingle, color: 'E5E7EB', size: 4 },
-          bottom: { style: borderSingle, color: 'E5E7EB', size: 4 },
-          left: { style: 'none' as any },
-          right: { style: 'none' as any },
-          insideH: { style: borderSingle, color: 'E5E7EB', size: 4 },
-          insideV: { style: 'none' as any },
-        },
-        rows: [
-          ...[
-            { label: 'Annual Investment', val: formatCurrency(roiResults.yearProjections?.[0]?.forterSaaSCost || 0, currency), green: false },
-            { label: 'EBITDA Contribution', val: formatCurrency(valueTotals.ebitdaContribution, currency), green: true },
-            { label: 'Return on Investment', val: `${roiResults.roi.toFixed(1)}×`, green: true },
-            { label: 'Payback Period', val: roiResults.paybackPeriodMonths > 0 ? `${roiResults.paybackPeriodMonths} months` : 'Immediate', green: false },
-          ].map((row, idx) => new TableRow({
-            children: [
-              new TableCell({
-                children: [new Paragraph({ children: [new TextRun({ text: row.label, size: 20, font: 'Proxima Nova', color: '374151' })] })],
-                shading: { type: shadingSolid, fill: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB', color: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB' },
-                margins: { top: 70, bottom: 70, left: 120, right: 120 },
-                width: { size: 60, type: WidthType.PERCENTAGE },
-              }),
-              new TableCell({
-                children: [new Paragraph({
-                  children: [new TextRun({ text: row.val, size: 20, bold: true, color: row.green ? FORTER_GREEN : FORTER_NAVY, font: 'Proxima Nova' })],
-                  alignment: AlignmentType.RIGHT,
-                })],
-                shading: { type: shadingSolid, fill: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB', color: idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB' },
-                margins: { top: 70, bottom: 70, left: 120, right: 120 },
-              }),
-            ],
-          })),
-        ],
-      })
+      ...investmentRows.flatMap(row => [
+        bodyPara(row.label),
+        new Paragraph({
+          children: [new TextRun({ text: row.val, bold: true, size: 20, color: row.green ? FORTER_GREEN : FORTER_NAVY, font: 'Poppins' })],
+          spacing: { after: 120 },
+        }),
+      ])
     );
   } else {
     const projectedRows = [
-      { label: 'GMV Uplift', val: formatCurrency(valueTotals.gmvUplift, currency), green: false, bold: false },
-      { label: 'Cost Reduction', val: formatCurrency(valueTotals.costReduction, currency), green: false, bold: false },
-      { label: 'Risk Mitigation', val: formatCurrency(valueTotals.riskMitigation, currency), green: false, bold: false },
-      { label: 'Annual EBITDA Contribution', val: formatCurrency(valueTotals.ebitdaContribution, currency), green: true, bold: true },
+      { label: 'GMV Uplift', val: formatCurrency(valueTotals.gmvUplift, currency), green: false },
+      { label: 'Cost Reduction', val: formatCurrency(valueTotals.costReduction, currency), green: false },
+      { label: 'Risk Mitigation', val: formatCurrency(valueTotals.riskMitigation, currency), green: false },
+      { label: 'Annual EBITDA Contribution', val: formatCurrency(valueTotals.ebitdaContribution, currency), green: true },
     ].filter(row => {
       if (row.label === 'Annual EBITDA Contribution') return true;
       const key = row.label === 'GMV Uplift' ? valueTotals.gmvUplift
@@ -1679,39 +1682,13 @@ export async function generateExecutiveSummaryDocx(
     });
     documentChildren.push(
       ...sectionHeader('Projected Value'),
-      new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        borders: {
-          top: { style: borderSingle, color: 'E5E7EB', size: 4 },
-          bottom: { style: borderSingle, color: 'E5E7EB', size: 4 },
-          left: { style: 'none' as any },
-          right: { style: 'none' as any },
-          insideH: { style: borderSingle, color: 'E5E7EB', size: 4 },
-          insideV: { style: 'none' as any },
-        },
-        rows: projectedRows.map((row, idx) =>
-          new TableRow({
-            children: [
-              new TableCell({
-                children: [new Paragraph({
-                  children: [new TextRun({ text: row.label, size: 20, bold: row.bold, font: row.bold ? 'Poppins' : 'Proxima Nova', color: row.bold ? FORTER_NAVY : '374151' })],
-                })],
-                shading: { type: shadingSolid, fill: row.bold ? 'F0F4FF' : (idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB'), color: row.bold ? 'F0F4FF' : (idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB') },
-                margins: { top: 70, bottom: 70, left: 120, right: 120 },
-                width: { size: 60, type: WidthType.PERCENTAGE },
-              }),
-              new TableCell({
-                children: [new Paragraph({
-                  children: [new TextRun({ text: row.val, size: 20, bold: row.bold, color: row.green ? FORTER_GREEN : FORTER_NAVY, font: 'Proxima Nova' })],
-                  alignment: AlignmentType.RIGHT,
-                })],
-                shading: { type: shadingSolid, fill: row.bold ? 'F0F4FF' : (idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB'), color: row.bold ? 'F0F4FF' : (idx % 2 === 0 ? 'FFFFFF' : 'F9FAFB') },
-                margins: { top: 70, bottom: 70, left: 120, right: 120 },
-              }),
-            ],
-          })
-        ),
-      }),
+      ...projectedRows.flatMap(row => [
+        bodyPara(row.label),
+        new Paragraph({
+          children: [new TextRun({ text: row.val, bold: true, size: 20, color: row.green ? FORTER_GREEN : FORTER_NAVY, font: 'Poppins' })],
+          spacing: { after: 120 },
+        }),
+      ]),
       new Paragraph({ spacing: { after: 160 } }),
       ...sectionHeader('Next Steps'),
       numberedItem(1, 'Finalize investment and pricing discussion to complete ROI analysis'),
@@ -1743,11 +1720,12 @@ export async function generateExecutiveSummaryDocx(
     }],
   });
   
-  const blob = await Packer.toBlob(doc);
+  const rawDocBlob = await Packer.toBlob(doc);
+  const docBlob = ensureMime(rawDocBlob, DOCX_MIME);
   const dateStr = formatDateMMMDDYYYY();
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `${sanitizedName}_Executive_Summary (${dateStr}).docx`;
-  saveAs(blob, filename);
+  triggerBlobDownload(docBlob, filename);
 }
 
 /** Payload for Google Slides calculator subset (title + calculator appendix + success story). Same shapes as full deck. */
@@ -2071,16 +2049,13 @@ export async function generateValueDeckPptx(
   valueTotals: ValueTotals,
   challenges: Record<string, boolean>,
   roiResults: ROIResults,
-  options: ReportOptions
+  options: ReportOptions,
+  appendixSlidesData?: ValueDeckPayload['appendixSlides']
 ): Promise<void> {
-  const [pptxModule, { saveAs }] = await Promise.all([
-    import('pptxgenjs'),
-    import('file-saver'),
-  ]);
+  const pptxModule = await import('pptxgenjs');
   const PptxGenJS = pptxModule.default;
   const pptx = new PptxGenJS();
-  pptx.defineLayout({ name: 'WIDE', width: 13.33, height: 7.5 });
-  pptx.layout = 'WIDE';
+  pptx.layout = 'LAYOUT_WIDE';
 
   const analysisName = (formData as any)._analysisName || formData.customerName || 'Value Assessment';
   const customerName = formData.customerName || 'Customer';
@@ -2153,7 +2128,7 @@ export async function generateValueDeckPptx(
   const slideHowTo = pptx.addSlide();
   applyContentSlide(slideHowTo, 0, '');
   slideHowTo.addShape('rect', { x: 0, y: 0, w: 13.33, h: 0.45, fill: { color: LIGHT_BG }, line: { color: 'E5E7EB', pt: 1 } });
-  slideHowTo.addText('⚠️  DELETE THIS PAGE PRIOR TO SHARING', {
+  slideHowTo.addText('[!]  DELETE THIS PAGE PRIOR TO SHARING', {
     x: 3.5, y: 0.06, w: 9.0, h: 0.32,
     fontSize: 16, bold: true, color: RED, fontFace: FONT_HEAD,
   });
@@ -2183,7 +2158,7 @@ export async function generateValueDeckPptx(
   });
   const slide6Row = options.hasInvestment
     ? [{ text: '6 — ROI Summary', options: { fontFace: FONT_BODY } }, { text: '3-year projection (if investment entered)', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }]
-    : [{ text: '6 — Value Proposition Insights', options: { fontFace: FONT_BODY } }, { text: 'Key value visuals and insights', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }];
+    : [];
   const mapRows = [
     [{ text: 'Slide', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD } }, { text: 'Content', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD } }, { text: 'Notes', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD } }],
     [{ text: '1 — Title', options: { fontFace: FONT_BODY } }, { text: 'Customer name, report type, date', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
@@ -2191,9 +2166,10 @@ export async function generateValueDeckPptx(
     [{ text: '3 — Value Summary', options: { fontFace: FONT_BODY } }, { text: 'Active value category cards + KPI pills', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
     [{ text: '4 — Value Drivers', options: { fontFace: FONT_BODY } }, { text: 'Ranked breakdown of value contributors', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
     [{ text: '5 — Target Outcomes', options: { fontFace: FONT_BODY } }, { text: 'Current vs Forter KPI table', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
-    slide6Row,
-    [{ text: '7 — Next Steps ✏️', options: { fontFace: FONT_BODY, bold: true } }, { text: 'Action items and stakeholder names', options: { fontFace: FONT_BODY } }, { text: 'MUST BE EDITED MANUALLY', options: { fontFace: FONT_BODY, color: RED, bold: true } }],
-    [{ text: '8+ — Appendix', options: { fontFace: FONT_BODY } }, { text: 'Calculator detail slides (may span multiple pages)', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
+    ...(slide6Row.length ? [slide6Row] : []),
+    [{ text: `${options.hasInvestment ? '7' : '6'} -- Next Steps [edit]`, options: { fontFace: FONT_BODY, bold: true } }, { text: 'Action items and stakeholder names', options: { fontFace: FONT_BODY } }, { text: 'MUST BE EDITED MANUALLY', options: { fontFace: FONT_BODY, color: RED, bold: true } }],
+    [{ text: 'Value Proposition Insights', options: { fontFace: FONT_BODY } }, { text: 'Visual analysis for each value driver', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
+    [{ text: 'Appendix', options: { fontFace: FONT_BODY } }, { text: 'Calculator detail slides (may span multiple pages)', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
   ];
   slideHowTo.addTable(mapRows, {
     x: 0.5, y: 3.85, w: 12.33,
@@ -2206,24 +2182,54 @@ export async function generateValueDeckPptx(
   // ===== SLIDE 1: Title =====
   const slide1 = pptx.addSlide();
   applyDarkSlide(slide1);
+
+  let titleBgLoaded = false;
+  try {
+    const bgResp = await fetch('/title-bg.png');
+    const bgContentType = bgResp.headers.get('content-type') || '';
+    if (bgResp.ok && bgContentType.startsWith('image/')) {
+      const bgBuf = await bgResp.arrayBuffer();
+      const headerBytes = new Uint8Array(bgBuf.slice(0, 8));
+      const isPng = headerBytes[0] === 0x89 && headerBytes[1] === 0x50 && headerBytes[2] === 0x4E && headerBytes[3] === 0x47;
+      const isJpeg = headerBytes[0] === 0xFF && headerBytes[1] === 0xD8;
+      if ((isPng || isJpeg) && bgBuf.byteLength > 500) {
+        const bgBase64 = arrayBufferToBase64(bgBuf);
+        const mimeType = isPng ? 'image/png' : 'image/jpeg';
+        slide1.addImage({
+          data: `data:${mimeType};base64,${bgBase64}`,
+          x: 0, y: 0, w: 13.33, h: 7.5,
+        });
+        titleBgLoaded = true;
+      }
+    }
+  } catch { /* no background image available */ }
+
+  if (!titleBgLoaded) {
+    slide1.addShape('rect', { x: 8.5, y: 0, w: 5.0, h: 7.5, fill: { color: '0F2347' } });
+    slide1.addShape('rect', { x: 9.0, y: 0, w: 4.5, h: 3.0, fill: { color: BLUE } });
+    slide1.addShape('rect', { x: 9.5, y: 4.8, w: 4.0, h: 2.7, fill: { color: '1E40AF' } });
+  }
+
+  const s1x = titleBgLoaded ? 1.0 : 0.44;
+  const s1y = titleBgLoaded ? 2.2 : 1.28;
   slide1.addText(customerName, {
-    x: 0.44, y: 1.28, w: 7.5, h: 1.2,
+    x: s1x, y: s1y, w: 7.5, h: 1.2,
     fontSize: 52, bold: true, color: WHITE, fontFace: FONT_HEAD,
   });
   slide1.addText(`${customerName} x Forter Business Value Assessment`, {
-    x: 0.44, y: 2.48, w: 7.5, h: 0.7,
+    x: s1x, y: s1y + 1.2, w: 7.5, h: 0.7,
     fontSize: 28, bold: true, color: WHITE, fontFace: FONT_HEAD,
   });
   slide1.addText(headline, {
-    x: 0.44, y: 3.28, w: 7.5, h: 0.7,
+    x: s1x, y: s1y + 2.0, w: 7.5, h: 0.7,
     fontSize: 11, color: 'A5C8FF', fontFace: FONT_BODY, italic: false,
   });
   slide1.addShape('line', {
-    x: 0.44, y: 4.15, w: 7.0, h: 0,
-    line: { color: WHITE, pt: 0.5, transparency: 75 },
+    x: s1x, y: s1y + 2.87, w: 7.0, h: 0,
+    line: { color: 'CCCCCC', pt: 0.5 },
   });
   slide1.addText(new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), {
-    x: 0.44, y: 4.35, w: 4.0, h: 0.35,
+    x: s1x, y: s1y + 3.07, w: 4.0, h: 0.35,
     fontSize: 11, bold: true, color: WHITE, fontFace: FONT_BODY,
   });
 
@@ -2407,13 +2413,23 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
       { text: m.improvement ?? '—', options: { align: 'center', color: impColor, bold: true, fontFace: FONT_HEAD } },
     ]);
   });
+  const kpiAvailableHeight = 5.85;
+  const kpiBaseRowH = 0.56;
+  const kpiNeededH = kpiTableRows.length * kpiBaseRowH;
+  let kpiFontSize = 12;
+  let kpiRowH = kpiBaseRowH;
+  if (kpiNeededH > kpiAvailableHeight) {
+    const scale = kpiAvailableHeight / kpiNeededH;
+    kpiFontSize = Math.max(9, Math.floor(12 * scale));
+    kpiRowH = Math.max(0.30, kpiBaseRowH * scale);
+  }
   slideKPIs.addTable(kpiTableRows, {
     x: 0.5, y: 1.15, w: 12.33,
     colW: [5.0, 2.5, 2.5, 2.33],
-    fontSize: 13,
+    fontSize: kpiFontSize,
     fontFace: FONT_BODY,
     border: { pt: 0.5, color: 'E5E7EB' },
-    rowH: 0.72,
+    rowH: kpiRowH,
   });
 
   // ===== SLIDE 6: ROI Summary (only if investment is present) =====
@@ -2456,22 +2472,30 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
       { text: formatCurrency(roiResults.totalProjection.forterSaaSCost + roiResults.totalProjection.integrationCost, currency), options: { align: 'right', bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD } },
       { text: formatCurrency(roiResults.totalProjection.netEBITDAContribution, currency), options: { align: 'right', bold: true, fill: { color: NAVY }, color: '86EFAC', fontFace: FONT_HEAD } },
     ]);
+    const roiAvailableH = 2.8;
+    const roiBaseRowH = 0.45;
+    const roiNeededH = roiTableRows.length * roiBaseRowH;
+    const roiRowH = roiNeededH > roiAvailableH
+      ? Math.max(0.28, roiAvailableH / roiTableRows.length)
+      : roiBaseRowH;
     slideROI.addTable(roiTableRows, {
       x: 0.5, y: 4.2, w: 12.33,
       colW: [1.5, 3.5, 3.5, 3.83],
       fontSize: 10,
       fontFace: FONT_BODY,
       border: { pt: 0.5, color: 'E5E7EB' },
-      rowH: 0.45,
+      rowH: roiRowH,
     });
   }
   
-  // ===== SLIDE 7: Next Steps =====
+  let pageAfterInsights = options.hasInvestment ? 7 : 6;
+
+  // ===== NEXT STEPS SLIDE =====
   const slideNext = pptx.addSlide();
-  applyContentSlide(slideNext, options.hasInvestment ? 7 : 6);
+  applyContentSlide(slideNext, pageAfterInsights);
   addSlideTitle(slideNext, 'Next Steps');
   slideNext.addShape('rect', { x: 0.5, y: 1.28, w: 12.33, h: 0.62, fill: { color: 'FEF3C7' }, line: { color: AMBER, pt: 1.5 } });
-  slideNext.addText('✏️   Action required — Account Executive: All ', { x: 0.7, y: 1.38, w: 12.0, h: 0.42, fontSize: 10, color: '92400E', fontFace: FONT_BODY, bold: true });
+  slideNext.addText('[Edit]  Action required -- Account Executive: All ', { x: 0.7, y: 1.38, w: 12.0, h: 0.42, fontSize: 10, color: '92400E', fontFace: FONT_BODY, bold: true });
   slideNext.addText('highlighted fields', { x: 4.15, y: 1.38, w: 1.5, h: 0.42, fontSize: 10, color: '78350F', fontFace: FONT_BODY, bold: true });
   slideNext.addText(' must be completed manually before sharing with the customer.', { x: 5.55, y: 1.38, w: 7.2, h: 0.42, fontSize: 10, color: '92400E', fontFace: FONT_BODY });
   const steps = options.hasInvestment
@@ -2499,9 +2523,83 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     slideNext.addText(step.body, { x: xPos + 0.18, y: yPos + 0.66, w: 5.65, h: 1.3, fontSize: 11, color: '374151', fontFace: FONT_BODY, valign: 'top' });
   });
 
+  // ===== VALUE PROPOSITION INSIGHTS: One visual slide per benefit group =====
+  const insightsActiveBenefitGroups = getActiveBenefitGroups(challenges);
+  let insightsPageNum = options.hasInvestment ? 8 : 7;
+  const insightsVisualBadgeColors: Record<string, { bgColor: string; textColor: string }> = {
+    'GMV Uplift': { bgColor: 'DBEAFE', textColor: '1D4ED8' },
+    'Cost Reduction': { bgColor: 'FEF3C7', textColor: '92400E' },
+    'Risk Mitigation': { bgColor: 'FCE7F3', textColor: '9D174D' },
+  };
+  const insightsGetCategoryBadge = (calcId: string): { label: string; bgColor: string; textColor: string } | null => {
+    const cat = getCategoryForCalculator(calcId);
+    if (cat === 'GMV Uplift') return { label: 'GMV Uplift', bgColor: 'DBEAFE', textColor: '1D4ED8' };
+    if (cat === 'Cost Reduction') return { label: 'Cost Reduction', bgColor: 'FEF3C7', textColor: '92400E' };
+    if (cat === 'Risk Mitigation') return { label: 'Risk Mitigation', bgColor: 'FCE7F3', textColor: '9D174D' };
+    return null;
+  };
+
+  {
+    let hasAnyVisual = false;
+    for (const group of insightsActiveBenefitGroups) {
+      const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
+      for (const calc of calculatorTables) {
+        const calcId = findCalculatorIdForSlideTitle(group, calc.title);
+        const matchingAppSlide = appendixSlidesData?.find(a => a.calculatorId === calcId);
+        const vb64 = (matchingAppSlide as { visualImageBase64?: string } | undefined)?.visualImageBase64;
+        if (vb64) { hasAnyVisual = true; break; }
+      }
+      if (hasAnyVisual) break;
+    }
+
+    if (hasAnyVisual) {
+      const slideInsightsTitle = pptx.addSlide();
+      applyDarkSlide(slideInsightsTitle);
+      slideInsightsTitle.addText('Value Proposition Insights', {
+        x: 0.5, y: 2.8, w: 12.3, h: 1.2,
+        fontSize: 52, bold: true, color: WHITE, align: 'center', fontFace: FONT_HEAD,
+      });
+      slideInsightsTitle.addText('Visual analysis for each value driver', {
+        x: 0.5, y: 4.0, w: 12.3, h: 0.5,
+        fontSize: 16, color: 'A5C8FF', align: 'center', fontFace: FONT_BODY,
+      });
+      insightsPageNum += 1;
+
+      for (const group of insightsActiveBenefitGroups) {
+        const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
+        let visualEmitted = false;
+        for (const calc of calculatorTables) {
+          if (visualEmitted) break;
+          const calcId = findCalculatorIdForSlideTitle(group, calc.title);
+          const matchingAppSlide = appendixSlidesData?.find(a => a.calculatorId === calcId);
+          const vb64 = (matchingAppSlide as { visualImageBase64?: string } | undefined)?.visualImageBase64;
+          if (vb64) {
+            visualEmitted = true;
+            const slideVis = pptx.addSlide();
+            applyContentSlide(slideVis, insightsPageNum++);
+            slideVis.addText(group.title, {
+              x: 0.5, y: 0.38, w: 10.5, h: 0.38,
+              fontSize: 18, bold: true, color: NAVY, fontFace: FONT_HEAD,
+            });
+            const badge = insightsGetCategoryBadge(calcId);
+            if (badge && insightsVisualBadgeColors[badge.label]) {
+              const bc = insightsVisualBadgeColors[badge.label];
+              slideVis.addShape('rect', { x: 11.0, y: 0.1, w: 2.0, h: 0.3, fill: { color: bc.bgColor }, line: { color: 'E5E7EB', pt: 0.5 } });
+              slideVis.addText(badge.label, { x: 11.0, y: 0.1, w: 2.0, h: 0.3, fontSize: 7, bold: true, color: bc.textColor, align: 'center', valign: 'middle', fontFace: FONT_HEAD });
+            }
+            slideVis.addImage({
+              data: `data:image/png;base64,${vb64}`,
+              x: 0.1, y: 0.80, w: 13.13, h: 5.95,
+            });
+          }
+        }
+      }
+    }
+  }
+
   // ===== CASE STUDIES: One slide per selected benefit with a case study (before Appendix) =====
   const caseStudySlideNumbers = getSelectedCaseStudySlideNumbers(challenges);
-  let caseStudiesPageNum = options.hasInvestment ? 8 : 7;
+  let caseStudiesPageNum = insightsPageNum;
   if (caseStudySlideNumbers.length > 0) {
     const slideCaseStudiesTitle = pptx.addSlide();
     applyDarkSlide(slideCaseStudiesTitle);
@@ -2524,7 +2622,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
         const slideCase = pptx.addSlide();
         applyContentSlide(slideCase, caseStudiesPageNum++);
         slideCase.addImage({
-          data: `image/png;base64,${base64}`,
+          data: `data:image/png;base64,${base64}`,
           x: 0.5, y: 0.5, w: 12.33, h: 6.2,
         });
       } catch {
@@ -2568,6 +2666,8 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     };
     activeBenefitGroups.forEach(group => {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
+
+      // Emit all calculator table pages for each calc in this group
       calculatorTables.forEach(calc => {
         const calcId = findCalculatorIdForSlideTitle(group, calc.title);
         const benefitContent = getChallengeBenefitContent(calcId);
@@ -2682,11 +2782,272 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     });
   }
 
-  // Save using blob and file-saver for compatibility
-  // Format: Forter_x_AnalysisName_Value_Assessment (MMDDYY).pptx
-  const blob = await pptx.write({ outputType: 'blob' }) as Blob;
+  // ===== CLOSING SLIDE =====
+  const slideClosing = pptx.addSlide();
+  applyDarkSlide(slideClosing);
+  slideClosing.addText(customerName, {
+    x: 0.5, y: 1.8, w: 12.3, h: 1.0,
+    fontSize: 44, bold: true, color: WHITE, align: 'center', fontFace: FONT_HEAD,
+  });
+  slideClosing.addText('Thank You', {
+    x: 0.5, y: 2.8, w: 12.3, h: 1.0,
+    fontSize: 52, bold: true, color: WHITE, align: 'center', fontFace: FONT_HEAD,
+  });
+  slideClosing.addShape('line', {
+    x: 4.0, y: 4.0, w: 5.33, h: 0,
+    line: { color: 'CCCCCC', pt: 0.5 },
+  });
+  slideClosing.addText(new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), {
+    x: 0.5, y: 4.2, w: 12.3, h: 0.4,
+    fontSize: 14, color: 'A5C8FF', align: 'center', fontFace: FONT_BODY,
+  });
+  slideClosing.addText('© Forter, Inc. All rights Reserved  |  Confidential', {
+    x: 3.0, y: 6.8, w: 7.33, h: 0.3,
+    fontSize: 8, color: GRAY, align: 'center', fontFace: FONT_BODY,
+  });
+
   const dateStr = formatDateMMMDDYYYY();
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `Forter_x_${sanitizedName}_Value_Assessment (${dateStr}).pptx`;
-  saveAs(blob, filename);
+  const blob = await writePptxToBlob(pptx);
+  triggerBlobDownload(ensureMime(blob, PPTX_MIME), filename);
+}
+
+/**
+ * Generate a subset PPTX for a single calculator (title + calculator table(s) + case study).
+ * Used from the calculator modal "Generate Slides" as the Microsoft Office alternative.
+ */
+export async function generateCalculatorSubsetPptx(
+  payload: CalculatorSubsetPayload,
+  formData: CalculatorData
+): Promise<void> {
+  const pptxModule = await import('pptxgenjs');
+  const PptxGenJS = pptxModule.default;
+  const pptx = new PptxGenJS();
+  pptx.layout = 'LAYOUT_WIDE';
+
+  const customerName = payload.titleSlide.customerName || 'Customer';
+  const currency = payload.currency || formData.baseCurrency || 'USD';
+  const FONT_HEAD = 'Poppins';
+  const FONT_BODY = 'Proxima Nova';
+
+  const applyContentSlide = (slide: any, pageNum: number) => {
+    slide.background = { color: LIGHT_BG };
+    slide.addText(`${customerName} x Forter`, {
+      x: 0.5, y: 0.18, w: 12, h: 0.2,
+      fontSize: 7.5, bold: true, color: BLUE, fontFace: FONT_HEAD, charSpacing: 1.5,
+    });
+    slide.addText(String(pageNum), {
+      x: 0.28, y: 7.15, w: 1.0, h: 0.2,
+      fontSize: 7.5, color: GRAY, fontFace: FONT_BODY,
+    });
+    slide.addText('© Forter, Inc. All rights Reserved  |  Confidential', {
+      x: 7.0, y: 7.15, w: 6.0, h: 0.2,
+      fontSize: 7.5, color: GRAY, align: 'right', fontFace: FONT_BODY,
+    });
+  };
+
+  pptx.author = 'Forter Value Calculator';
+  pptx.title = `${customerName} Calculator`;
+
+  // Title slide
+  const slide1 = pptx.addSlide();
+  slide1.background = { color: NAVY };
+
+  let subsetBgLoaded = false;
+  try {
+    const bgResp = await fetch('/title-bg.png');
+    const bgCt = bgResp.headers.get('content-type') || '';
+    if (bgResp.ok && bgCt.startsWith('image/')) {
+      const bgBuf = await bgResp.arrayBuffer();
+      const hdr = new Uint8Array(bgBuf.slice(0, 8));
+      const isPng = hdr[0] === 0x89 && hdr[1] === 0x50 && hdr[2] === 0x4E && hdr[3] === 0x47;
+      const isJpeg = hdr[0] === 0xFF && hdr[1] === 0xD8;
+      if ((isPng || isJpeg) && bgBuf.byteLength > 500) {
+        const bgBase64 = arrayBufferToBase64(bgBuf);
+        const mime = isPng ? 'image/png' : 'image/jpeg';
+        slide1.addImage({ data: `data:${mime};base64,${bgBase64}`, x: 0, y: 0, w: 13.33, h: 7.5 });
+        subsetBgLoaded = true;
+      }
+    }
+  } catch { /* fall through to decorative bg */ }
+
+  if (!subsetBgLoaded) {
+    slide1.addShape('rect', { x: 8.5, y: 0, w: 5.0, h: 7.5, fill: { color: '0F2347' } });
+    slide1.addShape('rect', { x: 9.0, y: 0, w: 4.5, h: 3.0, fill: { color: BLUE } });
+    slide1.addShape('rect', { x: 9.5, y: 4.8, w: 4.0, h: 2.7, fill: { color: '1E40AF' } });
+  }
+
+  const calcTitle = payload.appendixSlides[0]?.title || 'Calculator';
+  const subX = subsetBgLoaded ? 1.0 : 0.44;
+  const subY = subsetBgLoaded ? 2.2 : 1.8;
+  slide1.addText(customerName, {
+    x: subX, y: subY, w: 7.5, h: 1.0,
+    fontSize: 44, bold: true, color: WHITE, fontFace: FONT_HEAD,
+  });
+  slide1.addText(calcTitle, {
+    x: subX, y: subY + 1.0, w: 7.5, h: 0.7,
+    fontSize: 24, bold: true, color: WHITE, fontFace: FONT_HEAD,
+  });
+  slide1.addText(payload.titleSlide.date, {
+    x: subX, y: subY + 2.0, w: 4.0, h: 0.35,
+    fontSize: 11, color: 'A5C8FF', fontFace: FONT_BODY,
+  });
+
+  // Visual insight slides — render BEFORE detailed calculation tables
+  const badgeColorsSubset: Record<string, { bgColor: string; textColor: string }> = {
+    'GMV Uplift': { bgColor: 'DBEAFE', textColor: '1D4ED8' },
+    'Cost Reduction': { bgColor: 'FEF3C7', textColor: '92400E' },
+    'Risk Mitigation': { bgColor: 'FCE7F3', textColor: '9D174D' },
+  };
+  let pageNum = 2;
+  const seenVisualCalcIds = new Set<string>();
+  for (const app of payload.appendixSlides) {
+    const vb64 = (app as { visualImageBase64?: string }).visualImageBase64;
+    const dedupeKey = app.calculatorId || app.title;
+    if (!vb64 || app.isTBD || seenVisualCalcIds.has(dedupeKey)) continue;
+    seenVisualCalcIds.add(dedupeKey);
+    const slideVis = pptx.addSlide();
+    applyContentSlide(slideVis, pageNum++);
+    slideVis.addText(app.title, {
+      x: 0.5, y: 0.38, w: 10.5, h: 0.38,
+      fontSize: 18, bold: true, color: NAVY, fontFace: FONT_HEAD,
+    });
+    const bc = app.badge ? badgeColorsSubset[app.badge] : undefined;
+    if (bc) {
+      slideVis.addShape('rect', { x: 11.0, y: 0.1, w: 2.0, h: 0.3, fill: { color: bc.bgColor }, line: { color: 'E5E7EB', pt: 0.5 } });
+      slideVis.addText(app.badge!, { x: 11.0, y: 0.1, w: 2.0, h: 0.3, fontSize: 7, bold: true, color: bc.textColor, align: 'center', valign: 'middle', fontFace: FONT_HEAD });
+    }
+    slideVis.addImage({ data: `data:image/png;base64,${vb64}`, x: 0.1, y: 0.80, w: 13.13, h: 5.95 });
+  }
+
+  // Calculator table slides
+  const MAX_ROWS_PER_SLIDE = 18;
+  const colWCalc = [1.07, 4.07, 1.97, 1.97, 3.25];
+  const headerRow = [
+    { text: 'Formula', options: { bold: true, fill: { color: '374151' }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Description', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Customer Inputs', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Forter Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Forter Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+  ];
+
+  const getCategoryBadgeStyle = (calculatorId: string): { label: string; bgColor: string; textColor: string } | null => {
+    const cat = getCategoryForCalculator(calculatorId);
+    if (cat === 'GMV Uplift') return { label: 'GMV Uplift', bgColor: 'DBEAFE', textColor: '1D4ED8' };
+    if (cat === 'Cost Reduction') return { label: 'Cost Reduction', bgColor: 'FEF3C7', textColor: '92400E' };
+    if (cat === 'Risk Mitigation') return { label: 'Risk Mitigation', bgColor: 'FCE7F3', textColor: '9D174D' };
+    return null;
+  };
+
+  for (const app of payload.appendixSlides) {
+    const calcId = app.calculatorId || '';
+    const slideTitle = app.title;
+    const benefitDescription = app.solution || app.benefit;
+
+    if (app.isTBD) {
+      const slideCalc = pptx.addSlide();
+      applyContentSlide(slideCalc, pageNum++);
+      const badge = getCategoryBadgeStyle(calcId);
+      if (badge) {
+        slideCalc.addShape('rect', { x: 11.5, y: 0.1, w: 1.6, h: 0.26, fill: { color: badge.bgColor } });
+        slideCalc.addText(badge.label, { x: 11.5, y: 0.1, w: 1.6, h: 0.26, fontSize: 7, bold: true, color: badge.textColor, align: 'center', valign: 'middle', fontFace: FONT_HEAD });
+      }
+      slideCalc.addText(slideTitle, { x: 0.5, y: 0.38, w: 12.33, h: 0.5, fontSize: 22, bold: true, color: NAVY, fontFace: FONT_HEAD });
+      slideCalc.addText('Complete the customer inputs to generate detailed value calculations.', { x: 0.5, y: 3.0, w: 12.33, h: 0.25, fontSize: 10, italic: true, color: GRAY, fontFace: FONT_BODY });
+    } else {
+      const dataRows: Array<{ isSection: boolean; cells: string[] }> = [];
+      app.tableRows.forEach(tr => {
+        const isSection = !tr.cells[0] && !!tr.cells[1] && !tr.cells[2] && !tr.cells[4];
+        if (tr.cells[0] && !tr.cells[1] && !tr.cells[2]) {
+          dataRows.push({ isSection: true, cells: tr.cells });
+        } else {
+          dataRows.push({ isSection, cells: tr.cells });
+        }
+      });
+
+      const totalPages = Math.ceil(dataRows.length / MAX_ROWS_PER_SLIDE) || 1;
+      for (let page = 0; page < totalPages; page++) {
+        const slideCalc = pptx.addSlide();
+        applyContentSlide(slideCalc, pageNum++);
+        const badge = getCategoryBadgeStyle(calcId);
+        if (badge) {
+          slideCalc.addShape('rect', { x: 11.5, y: 0.1, w: 1.6, h: 0.26, fill: { color: badge.bgColor } });
+          slideCalc.addText(badge.label, { x: 11.5, y: 0.1, w: 1.6, h: 0.26, fontSize: 7, bold: true, color: badge.textColor, align: 'center', valign: 'middle', fontFace: FONT_HEAD });
+        }
+        const pageLabel = totalPages > 1 ? ` (Page ${page + 1} of ${totalPages})` : '';
+        slideCalc.addText(slideTitle + pageLabel, { x: 0.5, y: 0.38, w: 12.33, h: 0.5, fontSize: 22, bold: true, color: NAVY, fontFace: FONT_HEAD });
+        slideCalc.addText(benefitDescription, { x: 0.5, y: 0.92, w: 12.33, h: 0.35, fontSize: 10, color: GRAY, fontFace: FONT_BODY });
+
+        const start = page * MAX_ROWS_PER_SLIDE;
+        const end = Math.min(start + MAX_ROWS_PER_SLIDE, dataRows.length);
+        const pageRows = dataRows.slice(start, end);
+        const calcTableRows: Array<Array<{ text: string; options?: any }>> = [headerRow.map(c => ({ text: c.text, options: { ...c.options } }))];
+
+        pageRows.forEach(({ isSection, cells }) => {
+          if (isSection) {
+            calcTableRows.push([
+              { text: cells[0] || cells[1] || '', options: { bold: true, fill: { color: 'E5E7EB' }, color: NAVY, fontFace: FONT_HEAD, fontSize: 8.5, colspan: 5 } },
+              { text: '', options: {} }, { text: '', options: {} }, { text: '', options: {} }, { text: '', options: {} },
+            ]);
+          } else {
+            const rowBg = calcTableRows.length % 2 === 0 ? ALT_ROW : WHITE;
+            const impColor = cells[3]?.startsWith('-') || cells[3]?.startsWith('(') ? RED : GREEN;
+            calcTableRows.push([
+              { text: cells[0] || '', options: { fontFace: 'Courier New', fontSize: 8, fill: { color: rowBg }, color: GRAY } },
+              { text: cells[1] || '', options: { fontFace: FONT_BODY, fontSize: 8, fill: { color: rowBg } } },
+              { text: cells[2] || '', options: { align: 'right', fontFace: FONT_BODY, fontSize: 8, fill: { color: rowBg } } },
+              { text: cells[3] || '', options: { align: 'right', fontFace: FONT_BODY, fontSize: 8, color: impColor, fill: { color: rowBg } } },
+              { text: cells[4] || '', options: { align: 'right', fontFace: FONT_BODY, fontSize: 8, fill: { color: rowBg } } },
+            ]);
+          }
+        });
+
+        if (page < totalPages - 1) {
+          calcTableRows.push([
+            { text: '→ Continued on next slide', options: { italic: true, fontSize: 8, color: GRAY, fontFace: FONT_BODY, colspan: 5 } },
+            { text: '', options: {} }, { text: '', options: {} }, { text: '', options: {} }, { text: '', options: {} },
+          ]);
+        }
+
+        const rowH = Math.min(0.22, (4.2 - 1.5) / Math.max(calcTableRows.length, 1));
+        slideCalc.addTable(calcTableRows, {
+          x: 0.5, y: 1.4, w: 12.33,
+          colW: colWCalc,
+          fontSize: 8,
+          fontFace: FONT_BODY,
+          border: { pt: 0.5, color: 'E5E7EB' },
+          rowH,
+        });
+      }
+    }
+
+  }
+
+  // Case study image slides
+  const caseStudySlideNumbers = payload.caseStudySlideNumbers || [];
+  for (const slideNum of caseStudySlideNumbers) {
+    const imageUrl = `/case-studies/slide${slideNum}.png`;
+    try {
+      const resp = await fetch(imageUrl);
+      if (!resp.ok) continue;
+      const buf = await resp.arrayBuffer();
+      const base64 = arrayBufferToBase64(buf);
+      const slideCase = pptx.addSlide();
+      applyContentSlide(slideCase, pageNum++);
+      slideCase.addImage({
+        data: `data:image/png;base64,${base64}`,
+        x: 0.5, y: 0.5, w: 12.33, h: 6.2,
+      });
+    } catch {
+      // Skip on failure
+    }
+  }
+
+  const dateStr = formatDateMMMDDYYYY();
+  const sanitizedCustomer = customerName.replace(/[^a-zA-Z0-9]/g, '_');
+  const sanitizedCalc = calcTitle.replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `Forter_x_${sanitizedCustomer}_${sanitizedCalc} (${dateStr}).pptx`;
+  const blob = await writePptxToBlob(pptx);
+  triggerBlobDownload(ensureMime(blob, PPTX_MIME), filename);
 }

@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Presentation, FileText, Loader2, CheckCircle2 } from "lucide-react";
+import { ExternalLink, Presentation, FileText, Loader2, CheckCircle2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useGoogleLogin } from "@react-oauth/google";
 import { CalculatorData } from "@/pages/Index";
@@ -15,7 +15,7 @@ import { ValueTotals } from "@/components/calculator/ValueSummaryOptionA";
 import { InvestmentInputs, calculateROI, calculateInvestmentCosts } from "@/lib/roiCalculations";
 import { StrategicObjectiveId } from "@/lib/useCaseMapping";
 import type { CalculatorRow } from "@/lib/calculations";
-import { getValueDeckPayload, getExecutiveSummaryPayload, getCalculatorSubsetPayload, type ValueDeckPayload, type FunnelSlideData } from "@/lib/reportGeneration";
+import { getValueDeckPayload, getExecutiveSummaryPayload, getCalculatorSubsetPayload, generateValueDeckPptx, generateExecutiveSummaryDocx, generateCalculatorSubsetPptx, type ValueDeckPayload, type FunnelSlideData } from "@/lib/reportGeneration";
 import { captureVisualImages } from "@/lib/captureVisualImages";
 import {
   googleReportFileName,
@@ -85,10 +85,23 @@ function GenerateReportModalWithGoogle({
   const [generating, setGenerating] = useState(false);
   const [generatingDocType, setGeneratingDocType] = useState<"slides" | "docs" | null>(null);
   const [reportUrl, setReportUrl] = useState<string | null>(null);
+  const [downloadingOffice, setDownloadingOffice] = useState<"pptx" | "docx" | null>(null);
   const pendingDocTypeRef = useRef<"slides" | "docs" | null>(null);
   const pendingSubsetRef = useRef<CalculatorSubsetForReport | null>(null);
-  /** True when this generation is for a single calculator (subset); we do not update lastValueDeckUrl in that case. */
   const pendingIsSubsetRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const cancelGeneration = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setGenerating(false);
+    setGeneratingDocType(null);
+    setDownloadingOffice(null);
+    pendingDocTypeRef.current = null;
+    pendingSubsetRef.current = null;
+    pendingIsSubsetRef.current = false;
+    toast.info("Report generation cancelled.");
+  };
 
   const merchantName = formData.customerName || "Customer";
 
@@ -208,10 +221,13 @@ function GenerateReportModalWithGoogle({
         return;
       }
 
+      abortRef.current = new AbortController();
+      const signal = abortRef.current.signal;
       setGeneratingDocType(docType);
       setGenerating(true);
       try {
         const url = await createAndGetUrl(token, docType);
+        if (signal.aborted) return;
         setReportUrl(url);
         if (docType === "docs") {
           onExecutiveSummaryGenerated?.(url);
@@ -220,13 +236,17 @@ function GenerateReportModalWithGoogle({
         }
         toast.success("Report created! Click the link below to open it.");
       } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         const msg = e instanceof Error ? e.message : String(e);
         console.error("Report generation failed:", msg);
         toast.error(msg.length > 400 ? `Failed: ${msg.slice(0, 397)}…` : msg);
       } finally {
         pendingIsSubsetRef.current = false;
-        setGeneratingDocType(null);
-        setGenerating(false);
+        if (!abortRef.current?.signal.aborted) {
+          setGeneratingDocType(null);
+          setGenerating(false);
+        }
+        abortRef.current = null;
       }
     },
     onError: (err) => {
@@ -254,11 +274,126 @@ function GenerateReportModalWithGoogle({
     login();
   };
 
+  const buildReportOptions = () => {
+    const roiResults = calculateROI(formData, valueTotals, investmentInputs);
+    const costs = calculateInvestmentCosts(investmentInputs, formData);
+    const hasInvestment = costs.totalACV > 0 || costs.integrationCost > 0;
+    const analysisId = (formData as any)._analysisId ?? "default";
+    const driverStatesKey = `forter_value_assessment_driver_states_${analysisId}`;
+    let driverStates: Record<string, boolean | "removed"> | undefined;
+    try {
+      const saved = typeof localStorage !== "undefined" ? localStorage.getItem(driverStatesKey) : null;
+      driverStates = saved ? (JSON.parse(saved) as Record<string, boolean | "removed">) : undefined;
+    } catch { driverStates = undefined; }
+    const isCustomPathway = (formData as any)._pathwayMode === "custom";
+    return { roiResults, hasInvestment, driverStates, isCustomPathway };
+  };
+
+  const handleDownloadPptx = async () => {
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+    setDownloadingOffice("pptx");
+    try {
+      const { roiResults, hasInvestment, driverStates, isCustomPathway } = buildReportOptions();
+      const opts = {
+        hasInvestment,
+        selectedObjectives,
+        ...(driverStates && { driverStates }),
+        ...(isCustomPathway && { isCustomPathway: true }),
+      };
+      const payload = getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, opts);
+      let appendixSlides = payload.appendixSlides;
+      if (appendixSlides?.length) {
+        if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+        appendixSlides = await captureVisualImages(appendixSlides, formData);
+      }
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      await generateValueDeckPptx(formData, valueTotals, selectedChallenges, roiResults, opts, appendixSlides);
+      if (!signal.aborted) toast.success("PowerPoint downloaded successfully.");
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("PPTX generation failed:", msg);
+      toast.error(msg.length > 300 ? `Failed: ${msg.slice(0, 297)}…` : `Failed: ${msg}`);
+    } finally {
+      if (!abortRef.current?.signal.aborted) setDownloadingOffice(null);
+      abortRef.current = null;
+    }
+  };
+
+  const handleDownloadDocx = async () => {
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+    setDownloadingOffice("docx");
+    try {
+      const { roiResults, hasInvestment, driverStates, isCustomPathway } = buildReportOptions();
+      const opts = {
+        hasInvestment,
+        selectedObjectives,
+        ...(driverStates && { driverStates }),
+        ...(isCustomPathway && { isCustomPathway: true }),
+      };
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      await generateExecutiveSummaryDocx(formData, valueTotals, selectedChallenges, roiResults, opts);
+      if (!signal.aborted) toast.success("Word document downloaded successfully.");
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("DOCX generation failed:", msg);
+      toast.error(msg.length > 300 ? `Failed: ${msg.slice(0, 297)}…` : `Failed: ${msg}`);
+    } finally {
+      if (!abortRef.current?.signal.aborted) setDownloadingOffice(null);
+      abortRef.current = null;
+    }
+  };
+
+  const handleDownloadSubsetPptx = async () => {
+    if (!calculatorSubset) return;
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+    setDownloadingOffice("pptx");
+    try {
+      const caseStudySourcePresentationId = import.meta.env.VITE_CASE_STUDY_SOURCE_PRESENTATION_ID as string | undefined;
+      const reportData = getCalculatorSubsetPayload(
+        calculatorSubset.calculatorId,
+        calculatorSubset.calculatorTitle,
+        calculatorSubset.rows,
+        formData,
+        calculatorSubset.segmentData,
+        calculatorSubset.totalRows,
+        {
+          ...(typeof caseStudySourcePresentationId === "string" && caseStudySourcePresentationId.trim()
+            ? { caseStudySourcePresentationId: caseStudySourcePresentationId.trim() }
+            : {}),
+          ...(calculatorSubset.funnelSlide && { funnelSlide: calculatorSubset.funnelSlide }),
+        }
+      );
+      if (reportData.appendixSlides?.length) {
+        if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+        reportData.appendixSlides = await captureVisualImages(reportData.appendixSlides, formData);
+      }
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      await generateCalculatorSubsetPptx(reportData, formData);
+      if (!signal.aborted) toast.success("PowerPoint downloaded successfully.");
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("Subset PPTX generation failed:", msg);
+      toast.error(msg.length > 300 ? `Failed: ${msg.slice(0, 297)}…` : `Failed: ${msg}`);
+    } finally {
+      if (!abortRef.current?.signal.aborted) setDownloadingOffice(null);
+      abortRef.current = null;
+    }
+  };
+
   const isSubsetMode = !!calculatorSubset;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+    <Dialog open={open} onOpenChange={(v) => {
+      if (!v && (generating || !!downloadingOffice)) return;
+      onOpenChange(v);
+    }}>
+      <DialogContent className={isSubsetMode ? "sm:max-w-[500px]" : "sm:max-w-[560px]"}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Presentation className="w-5 h-5 text-primary" />
@@ -266,90 +401,164 @@ function GenerateReportModalWithGoogle({
           </DialogTitle>
           <DialogDescription>
             {isSubsetMode
-              ? "Create a Google Slides deck with this calculator and its success story, using the same templates as the full value report."
-              : "Download editable reports based on the value assessment data."}
+              ? "Create slides for this calculator via Google Slides or download as PowerPoint."
+              : "Export editable reports via Google Workspace or download as Microsoft Office files."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {isSubsetMode ? (
-            <Button
-              disabled={generating}
-              onClick={handleOpenSlides}
-              className="w-full gap-2"
-            >
-              {generating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating…
-                </>
-              ) : (
-                <>
-                  <Presentation className="w-4 h-4" />
-                  Generate Slides
-                </>
-              )}
-            </Button>
-          ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
-              <button
-                type="button"
-                disabled={generating}
-                onClick={handleOpenDocs}
-                className="flex flex-col items-start text-left w-full"
-              >
-                <FileText className="w-8 h-8 mb-2" style={{ color: "#4285F4" }} />
-                <span className="font-semibold text-foreground">Executive 1-Page Summary</span>
-                <span className="text-sm text-muted-foreground mt-1 block">Google document with top value drivers, target outcomes, and ROI.</span>
-                <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">docs</span>
-              </button>
-              {lastExecutiveSummaryUrl && (
-                <a
-                  href={lastExecutiveSummaryUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Open last generated
-                </a>
-              )}
-            </div>
-            <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-amber-400/50 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
-              <button
-                type="button"
-                disabled={generating}
+          {isSubsetMode && (
+            <div className="space-y-3">
+              <Button
+                disabled={generating || !!downloadingOffice}
                 onClick={handleOpenSlides}
-                className="flex flex-col items-start text-left w-full"
+                className="w-full gap-2"
               >
-                <Presentation className="w-8 h-8 mb-2" style={{ color: "#F9AB00" }} />
-                <span className="font-semibold text-foreground">Value Assessment Deck</span>
-                <span className="text-sm text-muted-foreground mt-1 block">Slides with value summary, use cases, and ROI projections.</span>
-                <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">slides</span>
-              </button>
-              {lastValueDeckUrl && (
-                <a
-                  href={lastValueDeckUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Open last generated
-                </a>
-              )}
+                {generating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Presentation className="w-4 h-4" />
+                    Generate Google Slides
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={generating || !!downloadingOffice}
+                onClick={handleDownloadSubsetPptx}
+                className="w-full gap-2"
+              >
+                {downloadingOffice === "pptx" ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating PowerPoint…
+                  </>
+                ) : (
+                  <>
+                    <Presentation className="w-4 h-4" style={{ color: "#D24726" }} />
+                    Download PowerPoint (.pptx)
+                  </>
+                )}
+              </Button>
             </div>
-          </div>
+          )}
+          {!isSubsetMode && (
+            <>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Google Workspace</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
+                  <button
+                    type="button"
+                    disabled={generating || !!downloadingOffice}
+                    onClick={handleOpenDocs}
+                    className="flex flex-col items-start text-left w-full"
+                  >
+                    <FileText className="w-8 h-8 mb-2" style={{ color: "#4285F4" }} />
+                    <span className="font-semibold text-foreground">Executive 1-Page Summary</span>
+                    <span className="text-sm text-muted-foreground mt-1 block">Google document with top value drivers, target outcomes, and ROI.</span>
+                    <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">docs</span>
+                  </button>
+                  {lastExecutiveSummaryUrl && (
+                    <a
+                      href={lastExecutiveSummaryUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open last generated
+                    </a>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-amber-400/50 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
+                  <button
+                    type="button"
+                    disabled={generating || !!downloadingOffice}
+                    onClick={handleOpenSlides}
+                    className="flex flex-col items-start text-left w-full"
+                  >
+                    <Presentation className="w-8 h-8 mb-2" style={{ color: "#F9AB00" }} />
+                    <span className="font-semibold text-foreground">Value Assessment Deck</span>
+                    <span className="text-sm text-muted-foreground mt-1 block">Slides with value summary, use cases, and ROI projections.</span>
+                    <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">slides</span>
+                  </button>
+                  {lastValueDeckUrl && (
+                    <a
+                      href={lastValueDeckUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open last generated
+                    </a>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-2">Microsoft Office — Download</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
+                  <button
+                    type="button"
+                    disabled={generating || !!downloadingOffice}
+                    onClick={handleDownloadDocx}
+                    className="flex flex-col items-start text-left w-full"
+                  >
+                    <FileText className="w-8 h-8 mb-2" style={{ color: "#2B579A" }} />
+                    <span className="font-semibold text-foreground">Executive Summary</span>
+                    <span className="text-sm text-muted-foreground mt-1 block">Word document with top value drivers, target outcomes, and ROI.</span>
+                    <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">.docx</span>
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-orange-400/50 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors">
+                  <button
+                    type="button"
+                    disabled={generating || !!downloadingOffice}
+                    onClick={handleDownloadPptx}
+                    className="flex flex-col items-start text-left w-full"
+                  >
+                    <Presentation className="w-8 h-8 mb-2" style={{ color: "#D24726" }} />
+                    <span className="font-semibold text-foreground">Value Assessment Deck</span>
+                    <span className="text-sm text-muted-foreground mt-1 block">PowerPoint with value summary, use cases, visuals, and ROI.</span>
+                    <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">.pptx</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {downloadingOffice && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+              <p className="text-sm text-muted-foreground flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                {downloadingOffice === "pptx"
+                  ? "Generating PowerPoint with visual captures — this may take a minute…"
+                  : "Generating Word document…"}
+              </p>
+              <Button variant="outline" size="sm" onClick={cancelGeneration} className="shrink-0">
+                <X className="w-3.5 h-3.5 mr-1" />
+                Cancel
+              </Button>
+            </div>
           )}
 
           {generating && (
-            <p className="text-sm text-muted-foreground flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-              {generatingDocType === "slides"
-                ? "Generating your report, this may take a few minutes to prepare"
-                : "Generating your report..."}
-            </p>
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+              <p className="text-sm text-muted-foreground flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                {generatingDocType === "slides"
+                  ? "Generating your report, this may take a few minutes to prepare"
+                  : "Generating your report..."}
+              </p>
+              <Button variant="outline" size="sm" onClick={cancelGeneration} className="shrink-0">
+                <X className="w-3.5 h-3.5 mr-1" />
+                Cancel
+              </Button>
+            </div>
           )}
 
           {reportUrl && !generating && (
@@ -378,7 +587,7 @@ function GenerateReportModalWithGoogle({
           )}
 
           <p className="text-xs text-muted-foreground border-t pt-3">
-            You&apos;ll be asked to sign in with Google. Your report will be created in your Google Drive.
+            Google reports require sign-in and are created in your Google Drive. Microsoft reports download directly.
           </p>
         </div>
       </DialogContent>
@@ -386,23 +595,131 @@ function GenerateReportModalWithGoogle({
   );
 }
 
-/** Shown when Google OAuth is not configured (no client ID). No hook used. */
+/** Shown when Google OAuth is not configured (no client ID). Still offers Microsoft Office downloads. */
 function GenerateReportModalNotConfigured({
   open,
   onOpenChange,
-}: Pick<GenerateReportModalProps, "open" | "onOpenChange">) {
+  formData,
+  valueTotals,
+  selectedChallenges,
+  investmentInputs,
+  selectedObjectives,
+}: Pick<GenerateReportModalProps, "open" | "onOpenChange" | "formData" | "valueTotals" | "selectedChallenges" | "investmentInputs" | "selectedObjectives">) {
+  const [downloadingOffice, setDownloadingOffice] = useState<"pptx" | "docx" | null>(null);
+  const ncAbortRef = useRef<AbortController | null>(null);
+
+  const cancelGeneration = () => {
+    ncAbortRef.current?.abort();
+    ncAbortRef.current = null;
+    setDownloadingOffice(null);
+    toast.info("Report generation cancelled.");
+  };
+
+  const buildOpts = () => {
+    const roiResults = calculateROI(formData, valueTotals, investmentInputs);
+    const costs = calculateInvestmentCosts(investmentInputs, formData);
+    const hasInvestment = costs.totalACV > 0 || costs.integrationCost > 0;
+    const analysisId = (formData as any)._analysisId ?? "default";
+    let driverStates: Record<string, boolean | "removed"> | undefined;
+    try {
+      const saved = typeof localStorage !== "undefined" ? localStorage.getItem(`forter_value_assessment_driver_states_${analysisId}`) : null;
+      driverStates = saved ? (JSON.parse(saved) as Record<string, boolean | "removed">) : undefined;
+    } catch { driverStates = undefined; }
+    const isCustomPathway = (formData as any)._pathwayMode === "custom";
+    return { roiResults, hasInvestment, driverStates, isCustomPathway };
+  };
+
+  const handleDownloadPptx = async () => {
+    ncAbortRef.current = new AbortController();
+    const signal = ncAbortRef.current.signal;
+    setDownloadingOffice("pptx");
+    try {
+      const { roiResults, hasInvestment, driverStates, isCustomPathway } = buildOpts();
+      const opts = { hasInvestment, selectedObjectives, ...(driverStates && { driverStates }), ...(isCustomPathway && { isCustomPathway: true }) };
+      const payload = getValueDeckPayload(formData, valueTotals, selectedChallenges, roiResults, opts);
+      let appendixSlides = payload.appendixSlides;
+      if (appendixSlides?.length) {
+        if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+        appendixSlides = await captureVisualImages(appendixSlides, formData);
+      }
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      await generateValueDeckPptx(formData, valueTotals, selectedChallenges, roiResults, opts, appendixSlides);
+      if (!signal.aborted) toast.success("PowerPoint downloaded successfully.");
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      toast.error(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      if (!ncAbortRef.current?.signal.aborted) setDownloadingOffice(null);
+      ncAbortRef.current = null;
+    }
+  };
+
+  const handleDownloadDocx = async () => {
+    ncAbortRef.current = new AbortController();
+    const signal = ncAbortRef.current.signal;
+    setDownloadingOffice("docx");
+    try {
+      const { roiResults, hasInvestment, driverStates, isCustomPathway } = buildOpts();
+      const opts = { hasInvestment, selectedObjectives, ...(driverStates && { driverStates }), ...(isCustomPathway && { isCustomPathway: true }) };
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      await generateExecutiveSummaryDocx(formData, valueTotals, selectedChallenges, roiResults, opts);
+      if (!signal.aborted) toast.success("Word document downloaded successfully.");
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      toast.error(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      if (!ncAbortRef.current?.signal.aborted) setDownloadingOffice(null);
+      ncAbortRef.current = null;
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+    <Dialog open={open} onOpenChange={(v) => {
+      if (!v && !!downloadingOffice) return;
+      onOpenChange(v);
+    }}>
+      <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Presentation className="w-5 h-5 text-primary" />
             Generate Value Reports
           </DialogTitle>
           <DialogDescription>
-            Google export is not configured. Set <code className="text-xs bg-muted px-1 rounded">VITE_GOOGLE_CLIENT_ID</code> in your environment to enable Google Slides and Google Docs export.
+            Download editable Microsoft Office reports. Set <code className="text-xs bg-muted px-1 rounded">VITE_GOOGLE_CLIENT_ID</code> to also enable Google Workspace export.
           </DialogDescription>
         </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
+              <button type="button" disabled={!!downloadingOffice} onClick={handleDownloadDocx} className="flex flex-col items-start text-left w-full">
+                <FileText className="w-8 h-8 mb-2" style={{ color: "#2B579A" }} />
+                <span className="font-semibold text-foreground">Executive Summary</span>
+                <span className="text-sm text-muted-foreground mt-1 block">Word document with top value drivers, target outcomes, and ROI.</span>
+                <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">.docx</span>
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-orange-400/50 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors">
+              <button type="button" disabled={!!downloadingOffice} onClick={handleDownloadPptx} className="flex flex-col items-start text-left w-full">
+                <Presentation className="w-8 h-8 mb-2" style={{ color: "#D24726" }} />
+                <span className="font-semibold text-foreground">Value Assessment Deck</span>
+                <span className="text-sm text-muted-foreground mt-1 block">PowerPoint with value summary, use cases, visuals, and ROI.</span>
+                <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">.pptx</span>
+              </button>
+            </div>
+          </div>
+          {downloadingOffice && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+              <p className="text-sm text-muted-foreground flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                {downloadingOffice === "pptx" ? "Generating PowerPoint with visual captures — this may take a minute…" : "Generating Word document…"}
+              </p>
+              <Button variant="outline" size="sm" onClick={cancelGeneration} className="shrink-0">
+                <X className="w-3.5 h-3.5 mr-1" />
+                Cancel
+              </Button>
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -419,6 +736,11 @@ export function GenerateReportModal(props: GenerateReportModalProps) {
     <GenerateReportModalNotConfigured
       open={props.open}
       onOpenChange={props.onOpenChange}
+      formData={props.formData}
+      valueTotals={props.valueTotals}
+      selectedChallenges={props.selectedChallenges}
+      investmentInputs={props.investmentInputs}
+      selectedObjectives={props.selectedObjectives}
     />
   );
 }
