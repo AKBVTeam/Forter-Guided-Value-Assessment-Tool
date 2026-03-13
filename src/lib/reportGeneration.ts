@@ -90,33 +90,45 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
  * a file not actually present in the archive, then re-packs the ZIP.
  */
 async function fixPptxContentTypes(blob: Blob): Promise<Blob> {
-  const JSZip = (await import('jszip')).default;
-  const zip = await JSZip.loadAsync(blob);
+  try {
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(blob);
 
-  const ctFile = zip.file('[Content_Types].xml');
-  if (!ctFile) return blob;
-
-  const ctXml = await ctFile.async('string');
-
-  const existingFiles = new Set<string>();
-  zip.forEach((relativePath) => {
-    existingFiles.add('/' + relativePath);
-  });
-
-  const fixed = ctXml.replace(
-    /<Override[^>]+PartName="([^"]+)"[^>]*\/>/g,
-    (match, partName: string) => {
-      if (existingFiles.has(partName)) return match;
-      return '';
+    const ctFile = zip.file('[Content_Types].xml');
+    if (!ctFile) {
+      console.warn('[ReportGen] fixPptxContentTypes: [Content_Types].xml not found in ZIP');
+      return blob;
     }
-  );
 
-  if (fixed !== ctXml) {
-    zip.file('[Content_Types].xml', fixed);
-    const fixedBuf = await zip.generateAsync({ type: 'blob', mimeType: PPTX_MIME });
-    return fixedBuf;
+    const ctXml = await ctFile.async('string');
+
+    const existingFiles = new Set<string>();
+    zip.forEach((relativePath) => {
+      existingFiles.add('/' + relativePath);
+    });
+
+    let removedCount = 0;
+    const fixed = ctXml.replace(
+      /<Override[^>]+PartName="([^"]+)"[^>]*\/>/g,
+      (match, partName: string) => {
+        if (existingFiles.has(partName)) return match;
+        removedCount++;
+        return '';
+      }
+    );
+
+    if (removedCount > 0) {
+      console.log(`[ReportGen] fixPptxContentTypes: removed ${removedCount} phantom entries from [Content_Types].xml`);
+      zip.file('[Content_Types].xml', fixed);
+      const fixedBuf = await zip.generateAsync({ type: 'blob', mimeType: PPTX_MIME });
+      return fixedBuf;
+    }
+    console.log('[ReportGen] fixPptxContentTypes: no phantom entries found (file already clean)');
+    return blob;
+  } catch (err) {
+    console.error('[ReportGen] fixPptxContentTypes FAILED — returning original blob:', err);
+    return blob;
   }
-  return blob;
 }
 
 async function writePptxToBlob(pptx: any): Promise<Blob> {

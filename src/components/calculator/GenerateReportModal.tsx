@@ -401,8 +401,8 @@ function GenerateReportModalWithGoogle({
           </DialogTitle>
           <DialogDescription>
             {isSubsetMode
-              ? "Create slides for this calculator via Google Slides or download as PowerPoint."
-              : "Export editable reports via Google Workspace or download as Microsoft Office files."}
+              ? "Download slides for this calculator as a PowerPoint file."
+              : "Download editable reports as Microsoft Office files."}
           </DialogDescription>
         </DialogHeader>
 
@@ -410,24 +410,6 @@ function GenerateReportModalWithGoogle({
           {isSubsetMode && (
             <div className="space-y-3">
               <Button
-                disabled={generating || !!downloadingOffice}
-                onClick={handleOpenSlides}
-                className="w-full gap-2"
-              >
-                {generating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating…
-                  </>
-                ) : (
-                  <>
-                    <Presentation className="w-4 h-4" />
-                    Generate Google Slides
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="outline"
                 disabled={generating || !!downloadingOffice}
                 onClick={handleDownloadSubsetPptx}
                 className="w-full gap-2"
@@ -444,62 +426,19 @@ function GenerateReportModalWithGoogle({
                   </>
                 )}
               </Button>
+              <Button
+                variant="outline"
+                disabled
+                className="w-full gap-2 opacity-50"
+              >
+                <Presentation className="w-4 h-4" />
+                Generate Google Slides
+              </Button>
             </div>
           )}
           {!isSubsetMode && (
             <>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Google Workspace</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
-                  <button
-                    type="button"
-                    disabled={generating || !!downloadingOffice}
-                    onClick={handleOpenDocs}
-                    className="flex flex-col items-start text-left w-full"
-                  >
-                    <FileText className="w-8 h-8 mb-2" style={{ color: "#4285F4" }} />
-                    <span className="font-semibold text-foreground">Executive 1-Page Summary</span>
-                    <span className="text-sm text-muted-foreground mt-1 block">Google document with top value drivers, target outcomes, and ROI.</span>
-                    <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">docs</span>
-                  </button>
-                  {lastExecutiveSummaryUrl && (
-                    <a
-                      href={lastExecutiveSummaryUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      Open last generated
-                    </a>
-                  )}
-                </div>
-                <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-amber-400/50 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
-                  <button
-                    type="button"
-                    disabled={generating || !!downloadingOffice}
-                    onClick={handleOpenSlides}
-                    className="flex flex-col items-start text-left w-full"
-                  >
-                    <Presentation className="w-8 h-8 mb-2" style={{ color: "#F9AB00" }} />
-                    <span className="font-semibold text-foreground">Value Assessment Deck</span>
-                    <span className="text-sm text-muted-foreground mt-1 block">Slides with value summary, use cases, and ROI projections.</span>
-                    <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">slides</span>
-                  </button>
-                  {lastValueDeckUrl && (
-                    <a
-                      href={lastValueDeckUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1 w-fit"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      Open last generated
-                    </a>
-                  )}
-                </div>
-              </div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-2">Microsoft Office — Download</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Microsoft Office — Download</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
                   <button
@@ -526,6 +465,23 @@ function GenerateReportModalWithGoogle({
                     <span className="text-sm text-muted-foreground mt-1 block">PowerPoint with value summary, use cases, visuals, and ROI.</span>
                     <span className="mt-auto pt-3 text-xs font-medium rounded px-2 py-1 bg-muted text-muted-foreground">.pptx</span>
                   </button>
+                </div>
+              </div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-4 opacity-50">Google Workspace</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 opacity-50 pointer-events-none select-none">
+                <div className="flex flex-col gap-2 rounded-lg border-2 border-dashed border-muted p-4 min-h-[140px]">
+                  <div className="flex flex-col items-start text-left w-full">
+                    <FileText className="w-8 h-8 mb-2 text-muted-foreground" />
+                    <span className="font-semibold text-muted-foreground">Executive 1-Page Summary</span>
+                    <span className="text-sm text-muted-foreground mt-1 block">Google Docs</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 rounded-lg border-2 border-dashed border-muted p-4 min-h-[140px]">
+                  <div className="flex flex-col items-start text-left w-full">
+                    <Presentation className="w-8 h-8 mb-2 text-muted-foreground" />
+                    <span className="font-semibold text-muted-foreground">Value Assessment Deck</span>
+                    <span className="text-sm text-muted-foreground mt-1 block">Google Slides</span>
+                  </div>
                 </div>
               </div>
             </>
@@ -587,7 +543,7 @@ function GenerateReportModalWithGoogle({
           )}
 
           <p className="text-xs text-muted-foreground border-t pt-3">
-            Google reports require sign-in and are created in your Google Drive. Microsoft reports download directly.
+            Microsoft Office reports download directly to your device.
           </p>
         </div>
       </DialogContent>
@@ -685,10 +641,11 @@ function GenerateReportModalNotConfigured({
             Generate Value Reports
           </DialogTitle>
           <DialogDescription>
-            Download editable Microsoft Office reports. Set <code className="text-xs bg-muted px-1 rounded">VITE_GOOGLE_CLIENT_ID</code> to also enable Google Workspace export.
+            Download editable Microsoft Office reports to share with your customer.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Microsoft Office</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex flex-col gap-2 rounded-lg border-2 border-transparent p-4 min-h-[140px] hover:border-blue-400/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-colors">
               <button type="button" disabled={!!downloadingOffice} onClick={handleDownloadDocx} className="flex flex-col items-start text-left w-full">
@@ -719,6 +676,19 @@ function GenerateReportModalNotConfigured({
               </Button>
             </div>
           )}
+          <div className="pt-2 border-t">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Google Workspace</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 opacity-50 pointer-events-none select-none">
+              <div className="flex flex-col gap-2 rounded-lg border-2 border-dashed border-muted p-4 min-h-[100px]">
+                <FileText className="w-8 h-8 mb-2 text-muted-foreground/50" />
+                <span className="font-semibold text-muted-foreground">Google Docs</span>
+              </div>
+              <div className="flex flex-col gap-2 rounded-lg border-2 border-dashed border-muted p-4 min-h-[100px]">
+                <Presentation className="w-8 h-8 mb-2 text-muted-foreground/50" />
+                <span className="font-semibold text-muted-foreground">Google Slides</span>
+              </div>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
