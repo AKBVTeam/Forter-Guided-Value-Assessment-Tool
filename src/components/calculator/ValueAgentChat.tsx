@@ -201,7 +201,7 @@ export const ValueAgentChat = ({
         onNavigate?.(validTab);
         toast.success(`Navigating to ${validTab.charAt(0).toUpperCase() + validTab.slice(1)} tab`);
       } else {
-        toast.error(`Unknown tab: ${tab}. Try profile, challenges, inputs, forter, summary, or roi.`);
+        toast.error(`Unknown tab: ${tab}. Try profile, challenges, inputs, kpis, summary, or roi.`);
       }
     } else if (action.startsWith("ask:")) {
       const prompt = action === "ask:next_steps" 

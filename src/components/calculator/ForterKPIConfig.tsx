@@ -39,11 +39,11 @@ export interface ForterKPIs {
   threeDSReductionIsAbsolute: boolean;
   /** When true, do not auto-overwrite threeDSReduction from country/AOV benchmark (user or calculator override). */
   threeDSRateUserOverride?: boolean;
-  /** Forter outcome override for 3DS Failure & Abandonment Rate (%) in payment funnel; when set, used as Forter rate (0-100). */
+  /** Solution outcome override for 3DS Failure & Abandonment Rate (%) in payment funnel; when set, used as solution rate (0-100). */
   forter3DSAbandonmentRate?: number;
-  /** Forter outcome override for Issuing Bank Decline Rate (%) in payment funnel; when set, used as Forter rate (0-100). */
+  /** Solution outcome override for Issuing Bank Decline Rate (%) in payment funnel; when set, used as solution rate (0-100). */
   forterIssuingBankDeclineRate?: number;
-  /** Forter outcome override for Completed AOV ($) in calculators; when set, used for Forter value of approved transactions. */
+  /** Solution outcome override for Completed AOV ($) in calculators; when set, used for solution value of approved transactions. */
   forterCompletedAOV?: number;
   /** AOV uplift applied to recovered transactions only (default 1.15 = 15% higher AOV on recovered). */
   recoveredAovMultiplier?: number;
@@ -190,7 +190,7 @@ interface ForterKPIConfigProps {
   onFocusHandled?: () => void;
   /** List = single column; grid = current 2-column layout */
   viewMode?: 'list' | 'grid';
-  /** When a KPI value matches an auto-applied benchmark, show "(Forter Benchmark)" pill with this tooltip text keyed by field id */
+  /** When a KPI value matches an auto-applied benchmark, show "(Benchmark)" pill with this tooltip text keyed by field id */
   forterBenchmarkSources?: Partial<Record<keyof ForterKPIs, string>>;
   /** Current benchmark values for reset-to-benchmark (keyed by field id). When present and value differs, show reset button. */
   forterBenchmarkValues?: Partial<Record<keyof ForterKPIs, number>>;
@@ -336,7 +336,7 @@ export const ForterKPIConfig = ({
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/20 cursor-help">
-            Forter Benchmark
+            Benchmark
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs">
@@ -364,7 +364,7 @@ export const ForterKPIConfig = ({
       e.stopPropagation();
       updateKPI(fieldId, valueToSet);
     };
-    const tooltipText = `Reset to Forter benchmark (${displayBenchmark}${unit})`;
+    const tooltipText = `Reset to benchmark (${displayBenchmark}${unit})`;
     return (
       <Button
         type="button"
@@ -511,7 +511,7 @@ export const ForterKPIConfig = ({
   if (!showAnyKPIs) {
     return (
       <div className="text-center py-8 text-muted-foreground">
-        <p>Please select challenges in the Challenges tab to see relevant Forter KPIs.</p>
+        <p>Please select challenges in the Challenges tab to see relevant solution KPIs.</p>
       </div>
     );
   }
@@ -519,7 +519,7 @@ export const ForterKPIConfig = ({
   return (
     <div ref={scrollContainerRef} className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Forter Performance Assumptions</h3>
+        <h3 className="text-lg font-semibold">Solution Performance Assumptions</h3>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -547,7 +547,7 @@ export const ForterKPIConfig = ({
               <div>
                 <p className="font-medium text-sm">Segmented KPI Targets</p>
                 <p className={fieldHelperClass}>
-                  Configure Forter performance targets per segment. Payment/fraud KPIs below show weighted averages.
+                  Configure solution performance targets per segment. Payment/fraud KPIs below show weighted averages.
                 </p>
               </div>
             </div>
@@ -853,7 +853,7 @@ export const ForterKPIConfig = ({
             )}
             {isSegmentMode && (
               <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
-                Forter KPIs (weighted avg): {aggregatedKPIs?.weightedPreAuthApprovalTarget?.toFixed(1)}% pre-auth fraud approval, {aggregatedKPIs?.weightedThreeDSRateTarget?.toFixed(1)}% 3DS, {aggregatedKPIs?.weightedChargebackRateTarget?.toFixed(2)}% fraud CB
+                Solution KPIs (weighted avg): {aggregatedKPIs?.weightedPreAuthApprovalTarget?.toFixed(1)}% pre-auth fraud approval, {aggregatedKPIs?.weightedThreeDSRateTarget?.toFixed(1)}% 3DS, {aggregatedKPIs?.weightedChargebackRateTarget?.toFixed(2)}% fraud CB
               </span>
             )}
           </div>
@@ -1294,7 +1294,7 @@ export const ForterKPIConfig = ({
           </div>
           <div className={gridClass}>
             <div className={fieldRowClass}>
-              <Label className={fieldLabelClass}>Forter Catch Rate (%)</Label>
+              <Label className={fieldLabelClass}>Catch Rate (%)</Label>
               <NumericInput className={fieldInputClass} 
                 value={kpis.forterCatchRate} 
                 onChange={(v) => updateKPI("forterCatchRate", v)} 
@@ -1342,7 +1342,7 @@ export const ForterKPIConfig = ({
               <p className={fieldHelperClass}>Revenue increase per 7 NPS points</p>
             </div>
             <div className={fieldRowClass}>
-              <Label className={fieldLabelClass}>Forter CS Contact Reduction (%)</Label>
+              <Label className={fieldLabelClass}>CS Contact Reduction (%)</Label>
               <NumericInput className={fieldInputClass} 
                 value={kpis.forterCSReduction} 
                 onChange={(v) => updateKPI("forterCSReduction", v)} 
@@ -1407,7 +1407,7 @@ export const ForterKPIConfig = ({
               />
             </div>
             <div className={fieldRowClass}>
-              <Label className={fieldLabelClass}>Forter Fraudulent Sign-up Reduction (%)</Label>
+              <Label className={fieldLabelClass}>Fraudulent Sign-up Reduction (%)</Label>
               <NumericInput className={fieldInputClass} 
                 value={kpis.forterFraudulentSignupReduction} 
                 onChange={(v) => updateKPI("forterFraudulentSignupReduction", v)} 
@@ -1417,7 +1417,7 @@ export const ForterKPIConfig = ({
               />
             </div>
             <div className={fieldRowClass}>
-              <Label className={fieldLabelClass}>Forter KYC Reduction (%)</Label>
+              <Label className={fieldLabelClass}>KYC Reduction (%)</Label>
               <NumericInput className={fieldInputClass} 
                 value={kpis.forterKYCReduction} 
                 onChange={(v) => updateKPI("forterKYCReduction", v)} 

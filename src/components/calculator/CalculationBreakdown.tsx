@@ -6,7 +6,7 @@ interface CalculationBreakdownProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  columns?: string[]; // For multi-column layout e.g., ["Current", "Impact", "Forter"]
+  columns?: string[]; // For multi-column layout e.g., ["Current", "Impact", "Projected"]
   calculations: {
     label: string;
     value?: string | number; // Single column value (backward compatible)

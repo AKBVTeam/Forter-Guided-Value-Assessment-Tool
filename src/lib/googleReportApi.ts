@@ -2,12 +2,12 @@
  * Google Slides and Docs API calls from the frontend using OAuth access token.
  * Creates files in the user's Drive (root) and populates them with report data.
  * No Supabase Edge Functions — all calls go directly to Google APIs from the browser.
- * Uses Forter brand design system (1:1 with PowerPoint/DOCX formatting).
+ * Uses brand design system (1:1 with PowerPoint/DOCX formatting).
  */
 
 import { getCaseStudySlideNumbersInOrder } from "@/lib/caseStudyMapping";
 
-// Forter brand design system (hex without #) — align with reportGeneration.ts
+// Brand design system (hex without #) — align with reportGeneration.ts
 const NAVY = "0D1B3E";
 const BLUE = "2563EB";
 const GREEN = "16A34A";
@@ -192,12 +192,12 @@ function formatDateMMMDDYYYY(): string {
 }
 
 export function googleReportFileName(clientName: string): string {
-  return `[BV] ${clientName} x Forter - Value_Assessment (${formatDateMMMDDYYYY()})`;
+  return `[BV] ${clientName} - Value_Assessment (${formatDateMMMDDYYYY()})`;
 }
 
 /** File name for Executive Summary Google Doc. */
 export function googleReportExecutiveSummaryFileName(merchantName: string): string {
-  return `[BV] ${merchantName} x Forter - Executive Summary (${formatDateMMMDDYYYY()})`;
+  return `[BV] ${merchantName} - Executive Summary (${formatDateMMMDDYYYY()})`;
 }
 
 /** File name for calculator-subset Google Slides (single benefit + success story). */
@@ -324,7 +324,7 @@ export async function buildGoogleDoc(
   if (isCustomPathwayDoc) {
     insert("STRATEGIC ALIGNMENT", "section");
     insert(placeholderText, "body");
-    insert("TARGETED CAPABILITIES WITH FORTER", "section");
+    insert("TARGETED CAPABILITIES", "section");
     insert(placeholderText, "body");
     insert("RECOMMENDED APPROACH", "section");
     insert(placeholderText, "body");
@@ -338,7 +338,7 @@ export async function buildGoogleDoc(
         insert(`→  ${obj.name}: ${obj.description}`, "bullet");
       }
       if (p.strategicAlignment.useCases?.length) {
-        insert("TARGETED CAPABILITIES WITH FORTER", "section");
+        insert("TARGETED CAPABILITIES", "section");
         for (const uc of p.strategicAlignment.useCases) {
           insert(`→  ${uc.name}`, "bullet");
         }
@@ -384,7 +384,7 @@ export async function buildGoogleDoc(
     });
   }
 
-  // 1:1 formatting — apply Forter styles (same as DOCX)
+  // 1:1 formatting — apply styles (same as DOCX)
   const navyRgb = hexToRgb(NAVY);
   const blueRgb = hexToRgb(BLUE);
   const grayRgb = hexToRgb(GRAY);
@@ -973,7 +973,7 @@ export async function buildGoogleSlides(
           ["2 — Executive Summary", "Challenges, approach, value metrics", "Auto-populated"],
           ["3 — Value Summary", "Active value category cards + KPI pills", "Auto-populated"],
           ["4 — Value Drivers", "Ranked breakdown of value contributors", "Auto-populated"],
-          ["5 — Target Outcomes", "Current vs Forter KPI table", "Auto-populated"],
+          ["5 — Target Outcomes", "Current vs Solution KPI table", "Auto-populated"],
           roiRowFull,
           ["7 — Next Steps ✏️", "Action items and stakeholder names", "MUST BE EDITED MANUALLY"],
           ["8+ — Appendix", "Calculator detail slides (may span multiple pages)", "Auto-populated"],
@@ -1152,13 +1152,13 @@ export async function buildGoogleSlides(
         },
       });
     }
-    // Title slide content: left-aligned with Forter logo, positioned lower
+    // Title slide content: left-aligned with logo, positioned lower
     const s0ContentX = 1.0;
     const s0ContentYStart = 2.2;
     addTextBox(requests, "s0_customer", s0, s0ContentX, s0ContentYStart, 7.5, 1.2, titleSlide.customerName, {
       bold: true, fontSize: 52, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
     });
-    addTextBox(requests, "s0_sub", s0, s0ContentX, s0ContentYStart + 1.2, 7.5, 0.7, "Forter Business Value Assessment", {
+    addTextBox(requests, "s0_sub", s0, s0ContentX, s0ContentYStart + 1.2, 7.5, 0.7, "Business Value Assessment", {
       bold: true, fontSize: 28, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
     });
     if (titleSlide.headline) {
@@ -1187,7 +1187,7 @@ export async function buildGoogleSlides(
     addTextBox(requests, "s0_date", s0, s0ContentX, s0LineY + 0.2, 4.0, 0.4, titleSlide.date, {
       bold: true, fontSize: 15, colorRgb: whiteRgb, fontFamily: FONT_BODY,
     });
-    // Customer logo top right, above main title content (next to where Forter logo would sit)
+    // Customer logo top right, above main title content
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s0_customer_logo", s0, 10.8, 0.22, 1.2, 0.5, customerLogoUrlForSlides));
     }
@@ -1202,13 +1202,13 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s1_customer_logo", s1, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s1_section", s1, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+    addTextBox(requests, "s1_section", s1, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s1_page", s1, 0.28, FOOTER_Y, 1.0, 0.2, "3", {
       fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
     });
-    addTextBox(requests, "s1_footer", s1, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+    addTextBox(requests, "s1_footer", s1, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
       fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "s1_title", s1, 0.5, 0.38, CONTENT_W, 0.65, "Executive Summary", {
@@ -1332,11 +1332,11 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s2_customer_logo", s2, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s2_section", s2, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+    addTextBox(requests, "s2_section", s2, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s2_page", s2, 0.28, FOOTER_Y, 1.0, 0.2, String(4 - contentSlideOffset), { fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY });
-    addTextBox(requests, "s2_footer", s2, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+    addTextBox(requests, "s2_footer", s2, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
       fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "s2_title", s2, 0.5, 0.38, CONTENT_W, 0.65, "Value Summary", {
@@ -1492,11 +1492,11 @@ export async function buildGoogleSlides(
     }
     const pageLabel = driverPages.length > 1 ? ` (Page ${pageIndex + 1} of ${driverPages.length})` : "";
     const pageNum = String(5 - contentSlideOffset + pageIndex);
-    addTextBox(requests, `s3_section_${pageIndex}`, pageSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+    addTextBox(requests, `s3_section_${pageIndex}`, pageSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, `s3_page_${pageIndex}`, pageSlide, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
-    addTextBox(requests, `s3_footer_${pageIndex}`, pageSlide, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+    addTextBox(requests, `s3_footer_${pageIndex}`, pageSlide, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
       fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, `s3_title_${pageIndex}`, pageSlide, 0.5, 0.38, CONTENT_W, 0.65, `Value Drivers${pageLabel}`, {
@@ -1685,11 +1685,11 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s4_customer_logo", s4, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s4_section", s4, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+    addTextBox(requests, "s4_section", s4, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s4_page", s4, 0.28, FOOTER_Y, 1.0, 0.2, String(baseAfterDrivers + 1), { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
-    addTextBox(requests, "s4_footer", s4, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+    addTextBox(requests, "s4_footer", s4, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
       fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "s4_title", s4, 0.5, 0.38, CONTENT_W, 0.65, "Target Outcomes", {
@@ -1759,7 +1759,7 @@ export async function buildGoogleSlides(
         objectId: "table_outcomes",
         cellLocation: { rowIndex: 0, columnIndex: 2 },
         insertionIndex: 0,
-        text: "With Forter",
+        text: "Projected",
       },
     });
     requests.push({
@@ -1841,7 +1841,7 @@ export async function buildGoogleSlides(
         });
       }
     });
-    // Green bold for "With Forter" column
+    // Green bold for "Projected" column
     kpiRows.forEach((_, idx) => {
       requests.push({
         updateTextStyle: {
@@ -1854,7 +1854,7 @@ export async function buildGoogleSlides(
       });
     });
     // Center align columns 1, 2, 3 only when cell has content
-    const outcomesHeaderLabels = ["Key Metric", "Current", "With Forter", "Improvement"];
+    const outcomesHeaderLabels = ["Key Metric", "Current", "Projected", "Improvement"];
     [0, ...kpiRows.map((_, i) => i + 1)].forEach((rowIdx) => {
       [1, 2, 3].forEach((col) => {
         const cellText =
@@ -1908,11 +1908,11 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("s5_customer_logo", s5, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "s5_section", s5, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+    addTextBox(requests, "s5_section", s5, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "s5_page", s5, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
-    addTextBox(requests, "s5_footer", s5, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+    addTextBox(requests, "s5_footer", s5, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
       fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "s5_title", s5, 0.5, 0.38, CONTENT_W, 0.65, "ROI Summary", {
@@ -2012,7 +2012,7 @@ export async function buildGoogleSlides(
         objectId: "table_roi",
         cellLocation: { rowIndex: 0, columnIndex: 2 },
         insertionIndex: 0,
-        text: "Forter Cost",
+        text: "Solution Cost",
       },
     });
     requests.push({
@@ -2185,7 +2185,7 @@ export async function buildGoogleSlides(
         bold: true, fontSize: 40, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
       });
       const merchantName = titleSlide.customerName || "Customer";
-      addTextBox(requests, "svp_subtitle", sValuePropTitle, 0.5, 3.2, CONTENT_W, 0.3, truncateForSlide(`How ${merchantName}'s business benefits from a Forter partnership`, 80), {
+      addTextBox(requests, "svp_subtitle", sValuePropTitle, 0.5, 3.2, CONTENT_W, 0.3, truncateForSlide(`How ${merchantName}'s business benefits from the solution`, 80), {
         fontSize: 14, colorRgb: lightBlueRgb, fontFamily: FONT_BODY,
       });
     }
@@ -2207,7 +2207,7 @@ export async function buildGoogleSlides(
         `valueprop_visual_${v}_${Date.now()}.png`
       );
       uploadedVisualImageIds.push(visualFileId);
-      addTextBox(requests, `svp_vis_sec_${v}`, visualSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+      addTextBox(requests, `svp_vis_sec_${v}`, visualSlide, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
         bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
       addTextBox(requests, `svp_vis_title_${v}`, visualSlide, 0.5, 0.38, CONTENT_W, 0.38, truncateForSlide(item.title, 55), {
@@ -2216,7 +2216,7 @@ export async function buildGoogleSlides(
       addTextBox(requests, `svp_vis_page_${v}`, visualSlide, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
         fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
       });
-      addTextBox(requests, `svp_vis_ft_${v}`, visualSlide, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+      addTextBox(requests, `svp_vis_ft_${v}`, visualSlide, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
         fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
       });
       if (item.badge && badgeColors[item.badge]) {
@@ -2260,11 +2260,11 @@ export async function buildGoogleSlides(
     if (customerLogoUrlForSlides) {
       requests.push(createImageRequest("snext_customer_logo", sNext, 11.15, 0.1, 0.95, 0.32, customerLogoUrlForSlides));
     }
-    addTextBox(requests, "snext_section", sNext, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+    addTextBox(requests, "snext_section", sNext, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
       bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
     });
     addTextBox(requests, "snext_page", sNext, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY });
-    addTextBox(requests, "snext_footer", sNext, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+    addTextBox(requests, "snext_footer", sNext, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
       fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
     });
     addTextBox(requests, "snext_title", sNext, 0.5, 0.38, CONTENT_W, 0.65, "Next Steps", {
@@ -2543,7 +2543,7 @@ export async function buildGoogleSlides(
           );
           uploadedVisualImageIds.push(visualFileId);
           const pageNum = String(appendixContentStartIndex + appendixContentSlideIndex);
-          addTextBox(requests, `sfunnel_subset_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+          addTextBox(requests, `sfunnel_subset_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
             bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
           });
           addTextBox(requests, `sfunnel_subset_title_${a}`, funnelSlide.objectId, 0.5, 0.35, CONTENT_W, 0.5, "How transactions flow — Payments funnel", {
@@ -2552,18 +2552,18 @@ export async function buildGoogleSlides(
           addTextBox(requests, `sfunnel_subset_page_${a}`, funnelSlide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
             fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
           });
-          addTextBox(requests, `sfunnel_subset_ft_${a}`, funnelSlide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+          addTextBox(requests, `sfunnel_subset_ft_${a}`, funnelSlide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
             fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
           });
           requests.push(createImageRequest(`sfunnel_subset_img_${a}`, funnelSlide.objectId, 0.1, 0.80, 13.13, 5.95, visualUrl));
         } else {
-          addTextBox(requests, `sfunnel_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+          addTextBox(requests, `sfunnel_sec_${a}`, funnelSlide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
             bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
           });
           addTextBox(requests, `sfunnel_page_${a}`, funnelSlide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, String(appendixContentStartIndex + appendixContentSlideIndex), {
             fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
           });
-          addTextBox(requests, `sfunnel_ft_${a}`, funnelSlide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+          addTextBox(requests, `sfunnel_ft_${a}`, funnelSlide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
             fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
           });
           addTextBox(requests, `sfunnel_title_${a}`, funnelSlide.objectId, 0.5, 0.35, CONTENT_W, 0.5, "How transactions flow — Payments funnel", {
@@ -2576,7 +2576,7 @@ export async function buildGoogleSlides(
           let y = 0.95;
           addTextBox(requests, `sfunnel_col1_${a}`, funnelSlide.objectId, 0.5, y, 7.0, 0.22, "Stage", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
           addTextBox(requests, `sfunnel_col2_${a}`, funnelSlide.objectId, 7.2, y, 2.8, 0.22, "Current state", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
-          addTextBox(requests, `sfunnel_col3_${a}`, funnelSlide.objectId, 10.0, y, 2.5, 0.22, "Forter recoverable", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
+          addTextBox(requests, `sfunnel_col3_${a}`, funnelSlide.objectId, 10.0, y, 2.5, 0.22, "Projected recoverable", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
           y += rowH;
           const funnelStages = funnelSlideData.stages || [];
           for (let i = 0; i < funnelStages.length; i++) {
@@ -2599,13 +2599,13 @@ export async function buildGoogleSlides(
       }
       const pageLabel = pageCount > 1 ? ` (Page ${pageIdx + 1} of ${pageCount})` : "";
       const pageNum = isSubset ? String(appendixContentStartIndex + appendixContentSlideIndex) : String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
-      addTextBox(requests, `sapp_sec_${a}_${pageIdx}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+      addTextBox(requests, `sapp_sec_${a}_${pageIdx}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
         bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
       addTextBox(requests, `sapp_page_${a}_${pageIdx}`, slide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
         fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
       });
-      addTextBox(requests, `sapp_ft_${a}_${pageIdx}`, slide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+      addTextBox(requests, `sapp_ft_${a}_${pageIdx}`, slide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
         fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
       });
       addTextBox(requests, `sapp_title_${a}_${pageIdx}`, slide.objectId, 0.5, 0.35, CONTENT_W, 0.42, truncateForSlide(app.title, 55) + pageLabel, {
@@ -2657,7 +2657,7 @@ export async function buildGoogleSlides(
           addTextBox(requests, `sapp_ch_${a}`, slide.objectId, 0.5, 1.28, CONTENT_W, 0.9, truncateForSlide(app.problem, 120), {
             fontSize: 9, colorRgb: grayRgb, fontFamily: FONT_BODY,
           });
-          addTextBox(requests, `sapp_sol_h_${a}`, slide.objectId, 0.5, 2.3, CONTENT_W, 0.25, "The Forter Solution", {
+          addTextBox(requests, `sapp_sol_h_${a}`, slide.objectId, 0.5, 2.3, CONTENT_W, 0.25, "The Solution", {
             bold: true, fontSize: 12, colorRgb: blueRgb, fontFamily: FONT_HEAD,
           });
           addTextBox(requests, `sapp_sol_${a}`, slide.objectId, 0.5, 2.58, CONTENT_W, 0.8, truncateForSlide(app.solution, 120), {
@@ -2728,7 +2728,7 @@ export async function buildGoogleSlides(
             fields: "minRowHeight",
           },
         });
-        const headerCells = ["Formula", "Description", "Customer Inputs", "Forter Improvement", "Forter Outcome"];
+        const headerCells = ["Formula", "Description", "Customer Inputs", "Improvement", "Projected Outcome"];
         headerCells.forEach((cell, c) => {
           requests.push({
             insertText: {
@@ -2744,7 +2744,7 @@ export async function buildGoogleSlides(
           const cells = (row.cells || []).slice(0, 5).map((c) => String(c ?? ""));
           for (let c = 0; c < 5; c++) {
             let cellText = (cells[c] ?? "").trim();
-            // Forter Improvement: show negative numbers as (value) instead of -value
+            // Improvement: show negative numbers as (value) instead of -value
             if (c === 3 && cellText && cellText.startsWith("-")) {
               cellText = "(" + cellText.slice(1) + ")";
             }
@@ -2925,13 +2925,13 @@ export async function buildGoogleSlides(
       const slide = slides[appendixContentStartIndex + appendixContentSlideIndex];
       if (slide?.objectId) {
         const pageNum = String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
-        addTextBox(requests, `sfunnel_sec_${a}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} x Forter Business Value Assessment`, 80), {
+        addTextBox(requests, `sfunnel_sec_${a}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
           bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
         });
         addTextBox(requests, `sfunnel_page_${a}`, slide.objectId, 0.28, FOOTER_Y, 1.0, 0.2, pageNum, {
           fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY,
         });
-        addTextBox(requests, `sfunnel_ft_${a}`, slide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "© Forter, Inc. All rights Reserved  |  Confidential", {
+        addTextBox(requests, `sfunnel_ft_${a}`, slide.objectId, 7.0, FOOTER_Y, 6.0, 0.2, "Confidential", {
           fontSize: 7.5, colorRgb: grayRgb, fontFamily: FONT_BODY, alignment: "END",
         });
         addTextBox(requests, `sfunnel_title_${a}`, slide.objectId, 0.5, 0.35, CONTENT_W, 0.5, "How transactions flow — Payments funnel", {
@@ -2945,7 +2945,7 @@ export async function buildGoogleSlides(
         let y = 0.95;
         addTextBox(requests, `sfunnel_col1_${a}`, slide.objectId, 0.5, y, 7.0, 0.22, "Stage", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
         addTextBox(requests, `sfunnel_col2_${a}`, slide.objectId, 7.2, y, 2.8, 0.22, "Current state", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
-        addTextBox(requests, `sfunnel_col3_${a}`, slide.objectId, 10.0, y, 2.5, 0.22, "Forter recoverable", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
+        addTextBox(requests, `sfunnel_col3_${a}`, slide.objectId, 10.0, y, 2.5, 0.22, "Projected recoverable", { bold: true, fontSize: 9, colorRgb: navyRgb, fontFamily: FONT_HEAD });
         y += rowH;
         for (let i = 0; i < funnelStages.length; i++) {
           const row = funnelStages[i];

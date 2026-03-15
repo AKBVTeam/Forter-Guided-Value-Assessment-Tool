@@ -196,10 +196,10 @@ export function ForterKPISegmentModal({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            Forter KPIs: {segment?.name}
+            Solution KPIs: {segment?.name}
           </DialogTitle>
           <DialogDescription>
-            Set Forter performance targets for this segment
+            Set solution performance targets for this segment
           </DialogDescription>
         </DialogHeader>
         

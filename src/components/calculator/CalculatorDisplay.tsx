@@ -74,8 +74,8 @@ export const CalculatorDisplay = ({ title, rows, className }: CalculatorDisplayP
               <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground text-sm w-[100px]">Formula</th>
               <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground text-sm">Description</th>
               <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm w-[130px]">Customer inputs</th>
-              <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm bg-blue-50 dark:bg-blue-950/30 w-[140px]">Forter improvement</th>
-              <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm w-[120px]">Forter outcome</th>
+              <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm bg-blue-50 dark:bg-blue-950/30 w-[140px]">Improvement</th>
+              <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm w-[120px]">Projected outcome</th>
             </tr>
           </thead>
           <tbody className="[&_tr:last-child]:border-0">

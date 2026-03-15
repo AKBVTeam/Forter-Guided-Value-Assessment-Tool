@@ -161,7 +161,7 @@ export function CSOpExVisual({ rows, showInMillions, currencyCode }: { rows: Cal
   const yMax = Math.max(ticketsCurrent, ticketsForter, 1) * 1.15;
   const chartData = [
     { name: 'Current', value: ticketsCurrent, fill: '#94a3b8' },
-    { name: 'With Forter', value: ticketsForter, fill: '#22c55e' },
+    { name: 'Projected', value: ticketsForter, fill: '#22c55e' },
   ];
   const reductionPct = ticketsCurrent > 0 ? `${Math.round((ticketsElim / ticketsCurrent) * 100)}%` : (row('b')?.forterOutcome ?? '0%');
   const annualSaving = row('e')?.forterImprovement ?? '—';
@@ -169,7 +169,7 @@ export function CSOpExVisual({ rows, showInMillions, currencyCode }: { rows: Cal
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch h-full flex flex-col justify-between">
       {/* Left — Bar chart */}
       <div className="flex flex-col min-h-0 md:border-r md:border-border/60 md:pr-6">
-        <h4 className="text-sm font-semibold text-muted-foreground mb-3">Refund tickets reaching CS: current vs. with Forter</h4>
+        <h4 className="text-sm font-semibold text-muted-foreground mb-3">Refund tickets reaching CS: current vs. projected</h4>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={chartData} margin={{ top: 40, right: 40, left: 20, bottom: 8 }} barCategoryGap="50%" barGap={4}>
             <ReferenceLine y={0} stroke="hsl(var(--border))" />
@@ -259,7 +259,7 @@ export function ATOOpExVisual({ rows, showInMillions, currencyCode }: { rows: Ca
   const yMax = Math.max(atoSucceed, atoForter, 1) * 1.15;
   const chartData = [
     { name: 'Current', value: atoSucceed, fill: '#94a3b8' },
-    { name: 'With Forter', value: atoForter, fill: '#22c55e' },
+    { name: 'Projected', value: atoForter, fill: '#22c55e' },
   ];
   const catchRatePct = (rowD?.rawForterValue ?? 0) as number;
   const annualOpExSaving = parseCurrencyFromRow(costRow?.forterImprovement);
@@ -269,7 +269,7 @@ export function ATOOpExVisual({ rows, showInMillions, currencyCode }: { rows: Ca
     <div className="flex gap-6 items-stretch h-full" style={{ minHeight: 0 }}>
       {/* Left — Chart: fills flex container so off-screen capture uses full width */}
       <div className="flex-1 min-w-0 md:border-r md:border-border/60 md:pr-6">
-        <h4 className="text-sm font-semibold text-muted-foreground mb-3">Successful ATO events: current vs. with Forter</h4>
+        <h4 className="text-sm font-semibold text-muted-foreground mb-3">Successful ATO events: current vs. projected</h4>
         <div style={{ height: 320 }} className="w-full">
           <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 40, right: 20, left: 20, bottom: 8 }} barCategoryGap="50%" barGap={4}>
@@ -386,7 +386,7 @@ export function MarketingBudgetVisual({ rows, showInMillions, currencyCode }: { 
             </div>
           </div>
           <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2">With Forter</p>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Projected</p>
             <div className="grid grid-cols-10 gap-1">
               {dots.map((i) => {
                 let bg = 'bg-slate-200';
@@ -398,7 +398,7 @@ export function MarketingBudgetVisual({ rows, showInMillions, currencyCode }: { 
             <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full bg-green-400" />
-                Blocked by Forter
+                Blocked by Solution
               </span>
               <span className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full bg-amber-300" />
@@ -484,7 +484,7 @@ export function ReactivationVisual({ rows, showInMillions, currencyCode, forRepo
           <div className={cn(boxClass, "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700")}>
             <span className={cn("text-muted-foreground", forReportCapture ? "text-sm" : "text-xs")}>Fake accounts today</span>
             <span className={cn("font-bold text-slate-700 dark:text-slate-300", numClass)}>{rowC?.customerInput ?? '—'}</span>
-            <span className={cn("text-muted-foreground", forReportCapture ? "text-sm" : "text-xs")}>→ {rowC?.forterOutcome ?? '—'} with Forter</span>
+            <span className={cn("text-muted-foreground", forReportCapture ? "text-sm" : "text-xs")}>→ {rowC?.forterOutcome ?? '—'} projected</span>
           </div>
           <span className={connectorClass}>×</span>
           <div className={cn(boxClass, "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700")}>
@@ -588,7 +588,7 @@ export function KYCVisual({ rows, showInMillions, currencyCode }: { rows: Calcul
             <p className="text-red-600 dark:text-red-400 font-semibold">{checksCurrent.toLocaleString('en-US')} checks</p>
           </div>
           <div className="flex flex-col items-center gap-2">
-            <p className="text-sm font-semibold text-center">With Forter</p>
+            <p className="text-sm font-semibold text-center">Projected</p>
             <div className="w-full max-w-[220px] mx-auto relative" style={{ height: `${heightForter}px` }}>
               <div className="absolute inset-0 bg-green-400 rounded-sm flex flex-col items-center justify-center" style={{ clipPath }}>
                 <span className="font-bold text-white text-2xl">{kycPctForter.toFixed(0)}%</span>
@@ -635,7 +635,7 @@ export function KYCVisual({ rows, showInMillions, currencyCode }: { rows: Calcul
   );
 }
 
-/** Visual tab content for c3-review: Two cards Current / With Forter + badge */
+/** Visual tab content for c3-review: Two cards Current / Projected + badge */
 export function ManualReviewVisual({ rows, showInMillions, currencyCode, forReportCapture }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string; forReportCapture?: boolean }) {
   const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
   const reviewPctRow = matchFormula('b');
@@ -674,7 +674,7 @@ export function ManualReviewVisual({ rows, showInMillions, currencyCode, forRepo
             <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{reviewDecreasePct}% review rate reduction</Badge>
           </div>
           <Card className={cardClassGreen}>
-            <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
+            <div className="text-sm font-semibold text-muted-foreground mb-3">Projected</div>
             <LineItem label="Review rate" current="" forter={reviewPctRow?.forterOutcome ?? '—'} />
             <LineItem label="Reviews per year" current="" forter={reviewCountRow?.forterOutcome ?? '—'} />
             <LineItem label="Total review hours" current="" forter={hoursRow?.forterOutcome ?? '—'} />
@@ -701,7 +701,7 @@ export function ManualReviewVisual({ rows, showInMillions, currencyCode, forRepo
           <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{reviewDecreasePct}% review rate reduction</Badge>
         </div>
         <Card className="p-4 min-w-[300px] border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
-          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
+          <div className="text-sm font-semibold text-muted-foreground mb-3">Projected</div>
           <LineItem label="Review rate" current="" forter={reviewPctRow?.forterOutcome ?? '—'} />
           <LineItem label="Reviews per year" current="" forter={reviewCountRow?.forterOutcome ?? '—'} />
           <LineItem label="Total review hours" current="" forter={hoursRow?.forterOutcome ?? '—'} />
@@ -713,7 +713,7 @@ export function ManualReviewVisual({ rows, showInMillions, currencyCode, forRepo
   );
 }
 
-/** Visual tab content for c7-opex: Improve recovery efficiency — two cards Current / With Forter */
+/** Visual tab content for c7-opex: Improve recovery efficiency — two cards Current / Projected */
 export function DisputeOpExVisual({ rows, showInMillions, currencyCode, forReportCapture }: { rows: CalculatorRow[]; showInMillions: boolean; currencyCode: string; forReportCapture?: boolean }) {
   const matchFormula = (formulaId: string) => rows.find((r) => r.formula === formulaId || r.formula?.startsWith(`${formulaId} `) || r.formula?.startsWith(`${formulaId}=`));
   const timeRow = matchFormula('a');
@@ -751,7 +751,7 @@ export function DisputeOpExVisual({ rows, showInMillions, currencyCode, forRepor
           <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">{timeReductionPct}% faster review time</Badge>
         </div>
         <Card className="p-4 min-w-0 border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20">
-          <div className="text-sm font-semibold text-muted-foreground mb-3">With Forter</div>
+          <div className="text-sm font-semibold text-muted-foreground mb-3">Projected</div>
           <LineItem label="Avg time to review CB (mins)" current="" forter={timeRow?.forterOutcome ?? '—'} />
           <LineItem label="# of reviews per hour" current="" forter={reviewsPerHourRow?.forterOutcome ?? '—'} />
           <LineItem label="Number of annual CB disputes" current="" forter={disputesRow?.forterOutcome ?? '—'} />
@@ -878,13 +878,13 @@ export function ReturnsAbuseVisual({ rows, showInMillions, currencyCode }: { row
 
   const egrVolumeData = [
     { name: 'Today', value: egrCurrent, fill: '#94a3b8' },
-    { name: 'With Forter', value: egrForter, fill: '#22c55e' },
+    { name: 'Projected', value: egrForter, fill: '#22c55e' },
   ];
   const egrCostData = [{ name: 'Cost per abuser', cogs: egr_cogs, shipping: egr_shipping, fulfilment: egr_fulfilment, txFees: egr_txFees, divider: 1, inventory: egr_inventory }];
 
   const nonVolumeData = [
     { name: 'Today', value: nonEgrCurrent, fill: '#94a3b8' },
-    { name: 'With Forter', value: nonEgrForter, fill: '#22c55e' },
+    { name: 'Projected', value: nonEgrForter, fill: '#22c55e' },
   ];
   const nonCostData = [{ name: 'Cost per abuser', cogs: non_cogs_net, shipping: non_shipping, fulfilment: non_fulfilment, txFees: non_txFees, divider: 1, inventory: non_inventory }];
 
@@ -1127,7 +1127,7 @@ export function INRAbuseVisual({ rows, showInMillions, currencyCode }: { rows: C
 
   const volumeData = [
     { name: 'Today', value: currentAbusers, fill: '#94a3b8' },
-    { name: 'With Forter', value: forterAbusers, fill: '#22c55e' },
+    { name: 'Projected', value: forterAbusers, fill: '#22c55e' },
   ];
   const costData = [{ name: 'Cost per abuser', cogs, shipping, fulfilment, txFees, divider: 1, inventory }];
 
@@ -1280,7 +1280,7 @@ export function PromotionAbuseVisual({ rows, showInMillions, currencyCode }: { r
           </div>
         </div>
 
-        {/* Section 2 — Abuse scale: today vs with Forter */}
+        {/* Section 2 — Abuse scale: today vs projected */}
         <div>
           <p className="text-xs font-semibold text-muted-foreground mt-4 mb-2">Promotion abuse exposure: unprotected vs. protected</p>
           <div className="grid grid-cols-2 gap-3">
@@ -1293,7 +1293,7 @@ export function PromotionAbuseVisual({ rows, showInMillions, currencyCode }: { r
               </div>
             </div>
             <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <div className="text-xs text-muted-foreground">Residual exposure with Forter</div>
+              <div className="text-xs text-muted-foreground">Residual exposure projected</div>
               <div className="text-xl font-bold text-green-700">({fmtCur(lostGMVForter)})</div>
               <div className="text-xs text-muted-foreground">{catchForter}% of risk eliminated</div>
               <div className="w-full h-1.5 bg-green-100 rounded mt-2">
@@ -1307,7 +1307,7 @@ export function PromotionAbuseVisual({ rows, showInMillions, currencyCode }: { r
         <div className="flex items-center gap-2 mt-3 p-2.5 bg-green-50 border border-green-200 rounded-lg">
           <TrendingUp className="w-4 h-4 text-green-600 shrink-0" />
           <p className="text-xs text-green-800">
-            <strong>{fmtCur(gmvRecovered)}</strong> net GMV protected — Forter&apos;s identity network identifies {catchForter}% of abusive accounts before discounts are applied
+            <strong>{fmtCur(gmvRecovered)}</strong> net GMV protected — The solution&apos;s identity network identifies {catchForter}% of abusive accounts before discounts are applied
           </p>
         </div>
       </div>
@@ -1350,7 +1350,7 @@ export function ChargebackVisual({ rows, showInMillions, currencyCode }: { rows:
   const isMore = forterRate > currentRate;
   const chartData = [
     { name: "Current", value: currentRate, fill: "#94a3b8" },
-    { name: "With Forter", value: forterRate, fill: isMore ? "#ef4444" : "#22c55e" },
+    { name: "Projected", value: forterRate, fill: isMore ? "#ef4444" : "#22c55e" },
   ];
   const yMax = Math.max(currentRate, forterRate, 0.1) * 1.4 || 1;
   const yTicks = getEqualYAxisTicks(yMax, 5);
@@ -1402,7 +1402,7 @@ export function ChargebackVisual({ rows, showInMillions, currencyCode }: { rows:
             <div className="font-semibold">{displayCurrent}</div>
           </Card>
           <Card className={cardClass}>
-            <div className="text-xs text-muted-foreground mb-1">Forter outcome fraud chargeback value</div>
+            <div className="text-xs text-muted-foreground mb-1">Projected outcome fraud chargeback value</div>
             <div className="font-semibold">{displayForter}</div>
           </Card>
           <Card className={cn(cardClass, "bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-800")}>
@@ -1484,7 +1484,7 @@ export function PaymentFunnelSummaryVisual({ rows, currencyCode }: { rows: Calcu
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {approvedRow && (
           <Card className={cardClass}>
-            <div className="text-xs text-muted-foreground mb-1">Approved transactions (With Forter)</div>
+            <div className="text-xs text-muted-foreground mb-1">Approved transactions (Projected)</div>
             <div className="font-bold text-lg">{approvedRow.forterOutcome ?? "—"}</div>
           </Card>
         )}
@@ -1567,7 +1567,7 @@ export function PaymentFunnelFullVisual({
       {/* Current state (# of transactions) */}
       <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-3 items-center text-sm">
         <div className="font-medium text-muted-foreground">Current state (# of transactions)</div>
-        <div className="font-medium text-muted-foreground text-right">Forter recoverable</div>
+        <div className="font-medium text-muted-foreground text-right">Projected recoverable</div>
         {funnelStages.map((stage) => {
           const isAttempts = stage.id === "attempts";
           const isDecline = stage.isDecline;
@@ -1791,12 +1791,12 @@ export function CLVChurnVisual({ rows, showInMillions, currencyCode }: { rows: C
             {/* Divider */}
             <div className="col-span-3 flex items-center gap-2 my-1">
               <div className="flex-1 border-t border-dashed border-slate-300" />
-              <span className="text-xs text-muted-foreground px-2 bg-white">With Forter ↓</span>
+              <span className="text-xs text-muted-foreground px-2 bg-white">Projected ↓</span>
               <div className="flex-1 border-t border-dashed border-slate-300" />
             </div>
 
-            {/* Stage 3 — ATOs remaining with Forter: relative to 25% base */}
-            <span className="text-sm font-medium text-green-700">ATO remaining post-Forter</span>
+            {/* Stage 3 — ATOs remaining projected: relative to 25% base */}
+            <span className="text-sm font-medium text-green-700">ATO remaining projected</span>
             <div className="flex-1 flex items-center h-8 rounded overflow-hidden bg-slate-100">
               <div
                 className="h-full bg-green-500 flex items-center justify-center text-xs text-white font-semibold rounded"
@@ -1830,13 +1830,13 @@ export function CLVChurnVisual({ rows, showInMillions, currencyCode }: { rows: C
             <div className="flex-1 min-w-0 h-24 rounded-lg border p-2 flex flex-col justify-between bg-red-50 border-red-200">
               <span className="text-xs text-muted-foreground">Customers at risk</span>
               <span className="text-xl font-bold text-red-600">{customersAtRiskCurrent.toLocaleString()}</span>
-              <span className="text-xs text-muted-foreground">likely to churn without Forter</span>
+              <span className="text-xs text-muted-foreground">likely to churn without solution</span>
             </div>
           </div>
           <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
             <TrendingUp className="w-3.5 h-3.5 text-green-600 shrink-0" />
             <p className="text-xs text-green-800">
-              With Forter: only <strong>{customersAtRiskForter.toLocaleString()}</strong> customers remain at risk of full churn ({churnLikelihood}% churn likelihood), leaving <strong>{customersRetained.toLocaleString()}</strong> retained and protected from a negative CX
+              Projected: only <strong>{customersAtRiskForter.toLocaleString()}</strong> customers remain at risk of full churn ({churnLikelihood}% churn likelihood), leaving <strong>{customersRetained.toLocaleString()}</strong> retained and protected from a negative CX
             </p>
           </div>
         </div>
@@ -1912,7 +1912,7 @@ function PerformanceHighlightRow({
         type="button"
         className={`${baseClassName} text-left`}
         onClick={() => onNavigateToForterKPI(section)}
-        title="Go to Forter KPI input"
+        title="Go to Solution KPI input"
       >
         {content}
       </button>
@@ -1953,7 +1953,7 @@ interface ValueSummaryOptionAProps {
   // Investment inputs for fraud coverage sync
   investmentInputs?: import("@/lib/roiCalculations").InvestmentInputs;
   onInvestmentInputsChange?: (inputs: import("@/lib/roiCalculations").InvestmentInputs) => void;
-  /** When a performance highlight is clicked, navigate to Forter KPI tab and focus this section (may open modals) */
+  /** When a performance highlight is clicked, navigate to Solution KPI tab and focus this section (may open modals) */
   onNavigateToForterKPI?: (section: ForterKPIFocusSection) => void;
   /** When set, open the benefit modal for this calculator id (e.g. from ROI tab); clear on modal close */
   openBenefitCalculatorId?: string | null;
@@ -5906,7 +5906,7 @@ export const ValueSummaryOptionA = ({
                 {/* Approval Rate */}
                 {showApprovalRate && (
                   <PerformanceHighlightRow
-                    label="Approval Rate with Forter"
+                    label="Projected Approval Rate"
                     badge={`${challenge245Results ? forterKPIs.preAuthApprovalImprovement : forterKPIs.approvalRateImprovement}%`}
                     section={challenge245Results ? "c245" : "c1"}
                     onNavigateToForterKPI={onNavigateToForterKPI}
@@ -6048,7 +6048,7 @@ export const ValueSummaryOptionA = ({
           {waterfallData.length > 0 && (
             <Card className="p-4">
               <div className="flex items-center justify-between gap-2 mb-3">
-                <p className="text-sm font-semibold">Forter Annual EBITDA Attribution</p>
+                <p className="text-sm font-semibold">Annual EBITDA Attribution</p>
                 <Button
                   type="button"
                   variant="outline"
@@ -6150,7 +6150,7 @@ export const ValueSummaryOptionA = ({
       <Dialog open={ebitdaChartModalOpen} onOpenChange={setEbitdaChartModalOpen}>
         <DialogContent className="max-w-6xl w-[min(100%,min(72rem,calc(100vw-2rem)))] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Forter Annual EBITDA Attribution</DialogTitle>
+            <DialogTitle>Annual EBITDA Attribution</DialogTitle>
             <DialogDescription>
               Full breakdown of value drivers contributing to EBITDA. Top {MAX_FULL_CHART_BARS} shown; remainder in Other.
             </DialogDescription>
@@ -6805,7 +6805,7 @@ export const ValueSummaryOptionA = ({
                                     <>
                                       <tr>
                                         <td className="px-2 py-1 text-muted-foreground">a</td>
-                                        <td className="px-2 py-1">Approved transactions (#) improvement (Forter − Customer)</td>
+                                        <td className="px-2 py-1">Approved transactions (#) improvement (Projected − Customer)</td>
                                         <td className="px-2 py-1 text-right font-mono">{fmt(Math.round(breakdown.approvedTxImprovement!))}</td>
                                       </tr>
                                       <tr className="bg-muted/50 font-medium">
@@ -6837,7 +6837,7 @@ export const ValueSummaryOptionA = ({
                                         <>
                                           <tr>
                                             <td className="px-2 py-1 text-muted-foreground">g</td>
-                                            <td className="px-2 py-1">Recovered AOV multiplier (Forter KPI)</td>
+                                            <td className="px-2 py-1">Recovered AOV multiplier (Solution KPI)</td>
                                             <td className="px-2 py-1 text-right font-mono">{(breakdown.aovMultiplier).toFixed(2)}×</td>
                                           </tr>
                                           <tr>
@@ -6889,7 +6889,7 @@ export const ValueSummaryOptionA = ({
                                         <>
                                           <tr>
                                             <td className="px-2 py-1 text-muted-foreground">g</td>
-                                            <td className="px-2 py-1">Recovered AOV multiplier (Forter KPI)</td>
+                                            <td className="px-2 py-1">Recovered AOV multiplier (Solution KPI)</td>
                                             <td className="px-2 py-1 text-right font-mono">{(breakdown.aovMultiplier).toFixed(2)}×</td>
                                           </tr>
                                           <tr>
@@ -7175,7 +7175,7 @@ export const ValueSummaryOptionA = ({
                             {fraudCBCoverageEnabled 
                               ? selectedCalculatorId === "c7-disputes"
                                 ? "Fraud chargebacks excluded - only service chargebacks are shown"
-                                : "Forter assumes fraud chargeback liability - fraud chargebacks override to $0"
+                                : "Solution assumes fraud chargeback liability - fraud chargebacks override to $0"
                               : "Enable if prospect will purchase fraud chargeback coverage"}
                           </p>
                         </div>
@@ -7313,7 +7313,7 @@ export const ValueSummaryOptionA = ({
                       </div>
                       <div className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-3 items-center text-sm">
                         <div className="font-medium text-muted-foreground">{showAsTransactions ? 'Current state (# of transactions)' : 'Current state (% of attempts)'}</div>
-                        <div className="font-medium text-muted-foreground text-right">Forter recoverable</div>
+                        <div className="font-medium text-muted-foreground text-right">Projected recoverable</div>
                         {funnelStages.map((stage: PaymentFunnelStage) => {
                           const isAttempts = stage.id === 'attempts';
                           const isDecline = stage.isDecline;
@@ -7493,7 +7493,7 @@ export const ValueSummaryOptionA = ({
                                       <p className="font-medium mb-1">Recovered average order value</p>
                                       <p className="text-muted-foreground text-sm">
                                         {hasRecoveredAovMultiplier
-                                          ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from Forter benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
+                                          ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from solution benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
                                           : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
                                         }
                                       </p>
@@ -7603,7 +7603,7 @@ export const ValueSummaryOptionA = ({
                   const valueClass = "font-semibold text-foreground";
                   const chartData = [
                     { name: 'Current', value: currentApproval, fill: '#94a3b8' },
-                    { name: 'With Forter', value: forterApproval, fill: '#22c55e' },
+                    { name: 'Projected', value: forterApproval, fill: '#22c55e' },
                   ];
                   const approvedTx = breakdown?.approvedTxImprovement ?? 0;
                   const recoveredAov = breakdown?.recoveredOrderAOV ?? breakdown?.aov ?? 0;
@@ -7684,7 +7684,7 @@ export const ValueSummaryOptionA = ({
                                       <p className="font-medium mb-1">Recovered average order value</p>
                                       <p className="text-muted-foreground text-sm">
                                         {hasRecoveredAovMultiplier
-                                          ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from Forter benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
+                                          ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from solution benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
                                           : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
                                         }
                                       </p>
@@ -7714,7 +7714,7 @@ export const ValueSummaryOptionA = ({
                                         <p className="font-medium mb-1">Recovered average order value</p>
                                         <p className="text-muted-foreground text-sm">
                                           {hasRecoveredAovMultiplier
-                                            ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from Forter benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
+                                            ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from solution benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
                                             : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
                                           }
                                         </p>
@@ -7754,7 +7754,7 @@ export const ValueSummaryOptionA = ({
                   const isMore = forterRate > currentRate;
                   const chartData = [
                     { name: 'Current', value: currentRate, fill: '#94a3b8' },
-                    { name: 'With Forter', value: forterRate, fill: isMore ? '#ef4444' : '#22c55e' },
+                    { name: 'Projected', value: forterRate, fill: isMore ? '#ef4444' : '#22c55e' },
                   ];
                   const yMax = Math.max(currentRate, forterRate, 0.1) * 1.4 || 1;
                   const yTicks = getEqualYAxisTicks(yMax, 5);
@@ -7813,7 +7813,7 @@ export const ValueSummaryOptionA = ({
                             <div className="font-semibold">{displayCurrent}</div>
                           </Card>
                           <Card className={cardClass}>
-                            <div className="text-xs text-muted-foreground mb-1">Forter outcome fraud chargeback value</div>
+                            <div className="text-xs text-muted-foreground mb-1">Projected outcome fraud chargeback value</div>
                             <div className="font-semibold">{displayForter}</div>
                           </Card>
                           <Card className={cn(cardClass, "bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-800")}>
@@ -7823,14 +7823,14 @@ export const ValueSummaryOptionA = ({
                         </div>
                         {fraudCBCoverageEnabled && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            When Fraud Chargeback Coverage is included, Forter assumes liability for fraud chargebacks, so the Forter outcome fraud chargeback value is $0.
+                            When Fraud Chargeback Coverage is included, The solution assumes liability for fraud chargebacks, so the projected outcome fraud chargeback value is $0.
                           </p>
                         )}
                       </div>
                     </div>
                   );
                 })()}
-                {/* c3-review: Two cards Current / With Forter + badge */}
+                {/* c3-review: Two cards Current / Projected + badge */}
                 {selectedCalculatorId === 'c3-review' && challenge3Results?.calculator1 && (
                   <ManualReviewVisual
                     rows={challenge3Results.calculator1.rows}
@@ -7838,7 +7838,7 @@ export const ValueSummaryOptionA = ({
                     currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
                   />
                 )}
-                {/* c7-opex: Improve recovery efficiency — two cards Current / With Forter */}
+                {/* c7-opex: Improve recovery efficiency — two cards Current / Projected */}
                 {selectedCalculatorId === 'c7-opex' && challenge7Results?.calculator2 && (
                   <DisputeOpExVisual
                     rows={challenge7Results.calculator2.rows}
@@ -7846,7 +7846,7 @@ export const ValueSummaryOptionA = ({
                     currencyCode={modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD'}
                   />
                 )}
-                {/* c7-disputes: Recovery pipeline (current vs. with Forter) — stacked bars + Improvement column */}
+                {/* c7-disputes: Recovery pipeline (current vs. projected) — stacked bars + Improvement column */}
                 {(selectedCalculatorId === 'c7-disputes' && totalRecoveryMetrics && challenge7Results && c7PipelineMetrics) && (() => {
                   const pipeline = c7PipelineMetrics;
                   const currencyCode = modalContext.modalFormData?.baseCurrency ?? formData.baseCurrency ?? 'USD';
@@ -7865,7 +7865,7 @@ export const ValueSummaryOptionA = ({
                   const recoveryRatePts = recoveryRateForter - recoveryRateCurrent;
                   return (
                     <div className="space-y-6">
-                      <h4 className="text-sm font-semibold text-muted-foreground">Recovery pipeline (current vs. with Forter)</h4>
+                      <h4 className="text-sm font-semibold text-muted-foreground">Recovery pipeline (current vs. projected)</h4>
                       {fraudCBCoverageEnabled && (
                         <p className="text-xs text-muted-foreground">Service chargebacks only — fraud chargebacks excluded (Fraud Chargeback Coverage enabled).</p>
                       )}
@@ -7873,7 +7873,7 @@ export const ValueSummaryOptionA = ({
                         <span className="inline-block w-4 h-3 rounded bg-slate-300 dark:bg-slate-400" />
                         <span>Current</span>
                         <span className="inline-block w-4 h-3 rounded bg-green-500 dark:bg-green-600 ml-2" />
-                        <span>With Forter</span>
+                        <span>Projected</span>
                       </div>
                       <div className="grid grid-cols-[140px_1fr_200px] gap-x-4 gap-y-3 items-center text-sm">
                         <div className="font-medium text-muted-foreground">Stage</div>
@@ -7890,7 +7890,7 @@ export const ValueSummaryOptionA = ({
                           </div>
                         </div>
                         <div className="text-right text-xs text-muted-foreground">{fmtCur(pipeline.totalCB)} Total CB exposure.</div>
-                        {/* Disputed — two stacked bars: Current (grey), With Forter (green) */}
+                        {/* Disputed — two stacked bars: Current (grey), Projected (green) */}
                         <div className="font-medium">Disputed</div>
                         <div className="flex flex-col gap-1 min-h-[52px] justify-center">
                           <div className="flex items-center gap-2 h-6">

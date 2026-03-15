@@ -413,7 +413,7 @@ export const UnifiedUseCaseSelection = ({
                   "text-xs mb-3",
                   hasAnyActive ? "text-green-700 dark:text-green-400" : "text-slate-500 dark:text-slate-400"
                 )}>
-                  <span className="font-medium">For reference</span> — Forter solutions activated by use case selection (read-only)
+                  <span className="font-medium">For reference</span> — Solutions activated by use case selection (read-only)
                 </p>
                 <SolutionMapping selectedChallenges={selectedChallenges} showCard={false} />
               </Card>

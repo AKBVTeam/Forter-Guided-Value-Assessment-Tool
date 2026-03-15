@@ -13,19 +13,19 @@ const steps = [
     number: 1,
     icon: Target,
     title: "Discovery & Alignment",
-    description: "Identify and align on the customer's priorities and key challenges that Forter will address. This ensures we focus on what matters most to their business.",
+    description: "Identify and align on the customer's priorities and key challenges that the solution will address. This ensures we focus on what matters most to their business.",
   },
   {
     number: 2,
     icon: Calculator,
     title: "Qualify & Quantify Value",
-    description: "Evaluate the use cases Forter can support and quantify the potential impact. Deep dive into return on investment (ROI) with detailed financial modeling.",
+    description: "Evaluate the use cases the solution can support and quantify the potential impact. Deep dive into return on investment (ROI) with detailed financial modeling.",
   },
   {
     number: 3,
     icon: FileText,
     title: "Defendable Value Reports",
-    description: "Generate data-backed reports and calculators that clearly demonstrate the value that Forter brings.",
+    description: "Generate data-backed reports and calculators that clearly demonstrate the value that the solution brings.",
   },
 ];
 
@@ -35,7 +35,7 @@ export const GuidedValueWelcome = ({ open, onClose }: GuidedValueWelcomeProps) =
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-center">
-            Welcome to Forter's Guided Value Experience
+            Welcome to the AI Fraud Prevention Assessment
           </DialogTitle>
           <p className="text-center text-muted-foreground mt-2">
             A structured approach to discovering, quantifying, and communicating customer value

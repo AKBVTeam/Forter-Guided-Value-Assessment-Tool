@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import forterLogo from "@/assets/forter-logo.png";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -546,8 +545,8 @@ const Index = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-8">
                     <div className="flex flex-col">
-                      <img src={forterLogo} alt="Forter" className="h-10 object-contain" />
-                      <span className="text-[10px] text-muted-foreground mt-0.5">Guided Value Assessment Version 1.0 (2026)</span>
+                      <span className="text-base font-semibold text-foreground">AI Fraud Prevention Assessment</span>
+                      <span className="text-[10px] text-muted-foreground mt-0.5">Version 1.0 (2026)</span>
                       <span className="text-[10px] text-muted-foreground">Analysis Started: {startedDisplay}</span>
                       <span className="text-[10px] text-muted-foreground">Analysis Last Updated: {lastUpdatedDisplay}</span>
                     </div>
@@ -782,8 +781,8 @@ const Index = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-8">
                   <div className="flex flex-col">
-                    <img src={forterLogo} alt="Forter" className="h-10 object-contain" />
-                    <span className="text-[10px] text-muted-foreground mt-0.5">Guided Value Assessment Version 1.0 (2026)</span>
+                    <span className="text-base font-semibold text-foreground">AI Fraud Prevention Assessment</span>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">Version 1.0 (2026)</span>
                     <span className="text-[10px] text-muted-foreground">Analysis Started: {startedDisplay}</span>
                     <span className="text-[10px] text-muted-foreground">Analysis Last Updated: {lastUpdatedDisplay}</span>
                   </div>

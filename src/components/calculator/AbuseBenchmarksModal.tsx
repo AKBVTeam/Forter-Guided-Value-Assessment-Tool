@@ -124,7 +124,7 @@ export const AbuseBenchmarksModal = ({ benchmarks, onUpdate, open: controlledOpe
                 />
               </div>
               <div className="space-y-2">
-                <Label>Forter Egregious Returns Reduction (%)</Label>
+                <Label>Egregious Returns Reduction (%)</Label>
                 <NumericInput
                   value={localBenchmarks.forterEgregiousReturnsReduction}
                   onChange={(v) => updateField("forterEgregiousReturnsReduction", v)}
@@ -132,7 +132,7 @@ export const AbuseBenchmarksModal = ({ benchmarks, onUpdate, open: controlledOpe
                 />
               </div>
               <div className="space-y-2">
-                <Label>Forter INR Reduction (%)</Label>
+                <Label>INR Reduction (%)</Label>
                 <NumericInput
                   value={localBenchmarks.forterEgregiousINRReduction}
                   onChange={(v) => updateField("forterEgregiousINRReduction", v)}
@@ -165,7 +165,7 @@ export const AbuseBenchmarksModal = ({ benchmarks, onUpdate, open: controlledOpe
                 />
               </div>
               <div className="space-y-2">
-                <Label>Forter Non-Egregious Reduction (%)</Label>
+                <Label>Non-Egregious Reduction (%)</Label>
                 <NumericInput
                   value={localBenchmarks.forterNonEgregiousReturnsReduction}
                   onChange={(v) => updateField("forterNonEgregiousReturnsReduction", v)}

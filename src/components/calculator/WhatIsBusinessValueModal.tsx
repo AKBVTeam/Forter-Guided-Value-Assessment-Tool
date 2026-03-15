@@ -162,13 +162,13 @@ export function WhatIsBusinessValueModal({
                   <div>
                     <h3 className="font-semibold text-foreground">Definition</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                      <strong>Business value</strong> is the measurable benefit that a solution delivers to an organization, whether through increased revenue, reduced costs, risk mitigation, or improved customer experience. In the context of Forter, it’s the tangible impact of addressing fraud, abuse, and payment friction.
+                      <strong>Business value</strong> is the measurable benefit that a solution delivers to an organization, whether through increased revenue, reduced costs, risk mitigation, or improved customer experience. It’s the tangible impact of addressing fraud, abuse, and payment friction.
                     </p>
                   </div>
                 </div>
                 <div className="rounded-lg border bg-muted/30 p-4">
                   <p className="text-sm text-foreground">
-                    This Guided Value Assessment (GVA) helps you and your customer align on <em>what</em> value means for their business, <em>where</em> it comes from (use cases and drivers), and <em>how much</em> of it Forter can help capture, in a format that’s easy to defend in internal discussions.
+                    This Guided Value Assessment (GVA) helps you and your customer align on <em>what</em> value means for their business, <em>where</em> it comes from (use cases and drivers), and <em>how much</em> of it the solution can help capture, in a format that’s easy to defend in internal discussions.
                   </p>
                 </div>
               </div>
@@ -262,14 +262,14 @@ export function WhatIsBusinessValueModal({
                   <div>
                     <h3 className="font-semibold text-foreground">The GVA methodology</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                      The Guided Value Assessment follows a simple flow: <strong>discover</strong> use cases and challenges, <strong>quantify</strong> value with customer inputs and Forter assumptions, and <strong>report</strong> with summaries and ROI that stakeholders can use.
+                      The Guided Value Assessment follows a simple flow: <strong>discover</strong> use cases and challenges, <strong>quantify</strong> value with customer inputs and solution assumptions, and <strong>report</strong> with summaries and ROI that stakeholders can use.
                     </p>
                   </div>
                 </div>
                 <ol className="space-y-3 list-none pl-0">
                   {[
-                    { step: 1, title: "Discovery & alignment", body: "Select use cases and strategic objectives; align on which challenges Forter will address." },
-                    { step: 2, title: "Qualify & quantify", body: "Enter customer metrics and Forter KPIs; the tool calculates benefit drivers and EBITDA impact." },
+                    { step: 1, title: "Discovery & alignment", body: "Select use cases and strategic objectives; align on which challenges the solution will address." },
+                    { step: 2, title: "Qualify & quantify", body: "Enter customer metrics and solution KPIs; the tool calculates benefit drivers and EBITDA impact." },
                     { step: 3, title: "Value summary & ROI", body: "Review value by driver, add investment assumptions, and see ROI and payback." },
                     { step: 4, title: "Defendable reports", body: "Generate PowerPoint or Word reports to share and defend the business case." },
                   ].map(({ step, title, body }, i) => (
@@ -303,7 +303,7 @@ export function WhatIsBusinessValueModal({
                   <div>
                     <h3 className="font-semibold text-foreground">How to use this tool</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Start with <strong>Profile</strong> and <strong>Use Cases</strong> to set the scope. Then fill in <strong>Customer Inputs</strong> and <strong>Forter KPI</strong> assumptions (selected Forter KPIs are defaulted to Forter benchmarks automatically). The <strong>Value Summary</strong> and <strong>ROI</strong> tabs bring everything together. You can revisit this overview anytime via the link below the “Analysis last updated” line.
+                      Start with <strong>Profile</strong> and <strong>Use Cases</strong> to set the scope. Then fill in <strong>Customer Inputs</strong> and <strong>Solution KPI</strong> assumptions (selected solution KPIs are defaulted to industry benchmarks automatically). The <strong>Value Summary</strong> and <strong>ROI</strong> tabs bring everything together. You can revisit this overview anytime via the link below the “Analysis last updated” line.
                     </p>
                   </div>
                 </div>

@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { CalculatorData } from "@/pages/Index";
-import forterLogo from "@/assets/forter-logo.png";
 import { ValueSummaryOptionA } from "./ValueSummaryOptionA";
 import { ForterKPIs } from "./ForterKPIConfig";
 import { SegmentInputs, SegmentKPIs } from "@/lib/segments";
@@ -85,7 +84,7 @@ export const ResultsDashboard = ({
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-8">
-            <img src={forterLogo} alt="Forter" className="h-12 object-contain" />
+            <span className="text-lg font-semibold text-foreground">AI Fraud Prevention Assessment</span>
             {customerLogoUrl && (
               <img src={customerLogoUrl} alt="Customer" className="h-12 object-contain" />
             )}

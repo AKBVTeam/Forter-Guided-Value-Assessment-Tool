@@ -856,7 +856,7 @@ export function ROITab({
 
             {showInvestmentRows && (
               <>
-                {/* Forter SaaS cost - collapsible with breakdown */}
+                {/* Solution SaaS cost - collapsible with breakdown */}
                 <TableRow 
                   className="cursor-pointer hover:bg-muted/20 transition-colors"
                   onClick={() => setSaasExpanded(!saasExpanded)}
@@ -864,7 +864,7 @@ export function ROITab({
                   <TableCell className="text-slate-700">
                     <span className="flex items-center gap-1">
                       {saasExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      Forter SaaS cost
+                      Solution SaaS cost
                     </span>
                   </TableCell>
                   {adjustedYearProjections.map(y => (

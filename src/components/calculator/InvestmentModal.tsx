@@ -566,7 +566,7 @@ export function InvestmentModal({
             
             <Card className="p-4 space-y-4">
               <div className="space-y-2">
-                <Label>Forter Investment Cost ({currencySymbol})</Label>
+                <Label>Solution Investment Cost ({currencySymbol})</Label>
                 <NumericInput
                   value={localInputs.manualInvestmentCost}
                   onChange={(v) => updateLocalInputs(prev => ({ ...prev, manualInvestmentCost: v }))}
@@ -957,7 +957,7 @@ export function InvestmentModal({
                             formatWithCommas
                           />
                           <p className="text-xs text-muted-foreground">
-                            Tied to Total recoveries ($) Forter outcome in &apos;Increase chargeback recoveries&apos; benefit
+                            Tied to Total recoveries ($) projected outcome in &apos;Increase chargeback recoveries&apos; benefit
                           </p>
                         </div>
                         <div className="space-y-2">
@@ -980,7 +980,7 @@ export function InvestmentModal({
                             formatWithCommas
                           />
                           <p className="text-xs text-muted-foreground">
-                            Default: (Current annual CB disputes ÷ current dispute rate) × Forter KPI dispute rate
+                            Default: (Current annual CB disputes ÷ current dispute rate) × solution KPI dispute rate
                           </p>
                         </div>
                         <div className="space-y-2">

@@ -25,9 +25,9 @@ import {
 } from '@/lib/calculations';
 import { getGmvToNetSalesDeductionPct } from '@/lib/gmvToNetSalesDeductionByCountry';
 
-// Forter brand design system (hex without #)
+// Brand design system (hex without #)
 const NAVY = '0D1B3E';       // slide titles, table headers, dark backgrounds
-const BLUE = '2563EB';      // accents, section labels, Forter improvement col header
+const BLUE = '2563EB';      // accents, section labels, improvement col header
 const GREEN = '16A34A';     // positive values, uplift figures
 const RED = 'DC2626';       // negative values, cost figures
 const GRAY = '6B7280';      // body text, subtitles, footers
@@ -151,8 +151,8 @@ async function writePptxToBlob(pptx: any): Promise<Blob> {
   return fixPptxContentTypes(blob);
 }
 
-// Forter white logo (base64 PNG) for title slide and footer
-const FORTER_LOGO_B64 = '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';
+// White logo (base64 PNG) for title slide and footer
+const FORTER_LOGO_B64 = '';  // Logo removed for white-label version
 
 // Report generation options
 export interface ReportOptions {
@@ -1200,11 +1200,11 @@ export async function generateCalculatorSlide(
 
   const applyContentSlide = (slide: any) => {
     slide.background = { color: LIGHT_BG };
-    slide.addText(`${customerName} x Forter Business Value Assessment`, {
+    slide.addText(`${customerName} Business Value Assessment`, {
       x: 0.5, y: 0.18, w: 12, h: 0.2,
       fontSize: 7.5, bold: true, color: BLUE, fontFace: FONT_HEAD, charSpacing: 1.5,
     });
-    slide.addText('© Forter, Inc. All rights Reserved  |  Confidential', {
+    slide.addText('Confidential', {
       x: 7.0, y: 7.15, w: 6.0, h: 0.2,
       fontSize: 7.5, color: GRAY, align: 'right', fontFace: FONT_BODY,
     });
@@ -1226,7 +1226,7 @@ export async function generateCalculatorSlide(
     slide.addText(fullTitle, { x: 0.5, y: 0.38, w: 12.33, h: 0.5, fontSize: 22, bold: true, color: NAVY, fontFace: FONT_HEAD });
     slide.addText('The Challenge', { x: 0.5, y: 1.0, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: NAVY, fontFace: FONT_HEAD });
     slide.addText(challengeDescription, { x: 0.5, y: 1.28, w: 12.33, h: 0.9, fontSize: 10, color: GRAY, fontFace: FONT_BODY, valign: 'top' });
-    slide.addText('The Forter Solution', { x: 0.5, y: 2.3, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: BLUE, fontFace: FONT_HEAD });
+    slide.addText('The Solution', { x: 0.5, y: 2.3, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: BLUE, fontFace: FONT_HEAD });
     slide.addText(benefitDescription, { x: 0.5, y: 2.58, w: 12.33, h: 0.8, fontSize: 10, color: GRAY, fontFace: FONT_BODY, valign: 'top' });
     if (benefitPoints && benefitPoints.length > 0) {
       slide.addText('Key Benefits', { x: 0.5, y: 3.5, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: NAVY, fontFace: FONT_HEAD });
@@ -1248,8 +1248,8 @@ export async function generateCalculatorSlide(
     { text: 'Formula', options: { bold: true, fill: { color: '374151' }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
     { text: 'Description', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
     { text: 'Customer Inputs', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
-    { text: 'Forter Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
-    { text: 'Forter Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Projected Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
   ];
 
   const createCalculatorSlide = (
@@ -1450,7 +1450,7 @@ export function getExecutiveSummaryPayload(
 
 /**
  * Generate Executive Summary DOCX
- * Follows the Forter template format with focus on strategic alignment when objectives are selected
+ * Follows the template format with focus on strategic alignment when objectives are selected
  */
 export async function generateExecutiveSummaryDocx(
   formData: CalculatorData,
@@ -1628,7 +1628,7 @@ export async function generateExecutiveSummaryDocx(
     new Paragraph({
       children: [
         new TextRun({
-          text: 'Forter was found to meet and exceed all requirements for this solution.',
+          text: 'The solution was found to meet and exceed all requirements.',
           size: 20,
           italics: true,
           color: FORTER_GREEN,
@@ -2081,15 +2081,15 @@ export async function generateValueDeckPptx(
   const problems = getSelectedChallengeProblems(challenges);
   const solutions = getSolutionApproaches(challenges);
 
-  pptx.author = 'Forter Value Calculator';
+  pptx.author = 'AI Fraud Prevention Assessment';
   pptx.title = `${analysisName} Value Assessment`;
   pptx.subject = 'Value Assessment';
-  pptx.company = 'Forter';
+  pptx.company = 'AI Fraud Prevention';
 
   const FONT_HEAD = 'Poppins';
   const FONT_BODY = 'Proxima Nova';
 
-  const applyContentSlide = (slide: any, pageNum: number, sectionLabel: string = `${customerName} x Forter Business Value Assessment`) => {
+  const applyContentSlide = (slide: any, pageNum: number, sectionLabel: string = `${customerName} Business Value Assessment`) => {
     slide.background = { color: LIGHT_BG };
     if (sectionLabel) {
       slide.addText(sectionLabel, {
@@ -2101,7 +2101,7 @@ export async function generateValueDeckPptx(
       x: 0.28, y: 7.15, w: 1.0, h: 0.2,
       fontSize: 7.5, color: GRAY, fontFace: FONT_BODY,
     });
-    slide.addText('© Forter, Inc. All rights Reserved  |  Confidential', {
+    slide.addText('Confidential', {
       x: 7.0, y: 7.15, w: 6.0, h: 0.2,
       fontSize: 7.5, color: GRAY, align: 'right', fontFace: FONT_BODY,
     });
@@ -2177,7 +2177,7 @@ export async function generateValueDeckPptx(
     [{ text: '2 — Executive Summary', options: { fontFace: FONT_BODY } }, { text: 'Challenges, approach, value metrics', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
     [{ text: '3 — Value Summary', options: { fontFace: FONT_BODY } }, { text: 'Active value category cards + KPI pills', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
     [{ text: '4 — Value Drivers', options: { fontFace: FONT_BODY } }, { text: 'Ranked breakdown of value contributors', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
-    [{ text: '5 — Target Outcomes', options: { fontFace: FONT_BODY } }, { text: 'Current vs Forter KPI table', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
+    [{ text: '5 — Target Outcomes', options: { fontFace: FONT_BODY } }, { text: 'Current vs Solution KPI table', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
     ...(slide6Row.length ? [slide6Row] : []),
     [{ text: `${options.hasInvestment ? '7' : '6'} -- Next Steps [edit]`, options: { fontFace: FONT_BODY, bold: true } }, { text: 'Action items and stakeholder names', options: { fontFace: FONT_BODY } }, { text: 'MUST BE EDITED MANUALLY', options: { fontFace: FONT_BODY, color: RED, bold: true } }],
     [{ text: 'Value Proposition Insights', options: { fontFace: FONT_BODY } }, { text: 'Visual analysis for each value driver', options: { fontFace: FONT_BODY } }, { text: 'Auto-populated', options: { fontFace: FONT_BODY, color: GREEN } }],
@@ -2228,7 +2228,7 @@ export async function generateValueDeckPptx(
     x: s1x, y: s1y, w: 7.5, h: 1.2,
     fontSize: 52, bold: true, color: WHITE, fontFace: FONT_HEAD,
   });
-  slide1.addText(`${customerName} x Forter Business Value Assessment`, {
+  slide1.addText(`${customerName} Business Value Assessment`, {
     x: s1x, y: s1y + 1.2, w: 7.5, h: 0.7,
     fontSize: 28, bold: true, color: WHITE, fontFace: FONT_HEAD,
   });
@@ -2414,7 +2414,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
   applyContentSlide(slideKPIs, 5);
   addSlideTitle(slideKPIs, 'Target Outcomes');
   const kpiTableRows: Array<Array<{ text: string; options?: any }>> = [
-    [hdr('Key Metric', 'left'), hdr('Current', 'center'), hdr('With Forter', 'center'), hdr('Improvement', 'center')],
+    [hdr('Key Metric', 'left'), hdr('Current', 'center'), hdr('Projected', 'center'), hdr('Improvement', 'center')],
   ];
   performanceHighlights.forEach(m => {
     const impColor = m.improvement?.startsWith('-') ? RED : GREEN;
@@ -2468,7 +2468,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
       slideROI.addText(metric.value, { x: xPos + 0.15, y: yPos + 0.5, w: 5.7, h: 0.7, fontSize: 24, bold: true, color: metric.greenBorder ? GREEN : BLUE, fontFace: FONT_HEAD });
     });
     const roiTableRows: Array<Array<{ text: string; options?: any }>> = [
-      [hdr('Year', 'left'), hdr('Gross EBITDA', 'right'), hdr('Forter Cost', 'right'), hdr('Net EBITDA', 'right')],
+      [hdr('Year', 'left'), hdr('Gross EBITDA', 'right'), hdr('Solution Cost', 'right'), hdr('Net EBITDA', 'right')],
     ];
     roiResults.yearProjections.forEach(y => {
       roiTableRows.push([
@@ -2665,8 +2665,8 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
       { text: 'Formula', options: { bold: true, fill: { color: '374151' }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
       { text: 'Description', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
       { text: 'Customer Inputs', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
-      { text: 'Forter Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
-      { text: 'Forter Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+      { text: 'Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+      { text: 'Projected Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
     ];
 
     const getCategoryBadgeStyle = (calculatorId: string): { label: string; bgColor: string; textColor: string } | null => {
@@ -2707,7 +2707,7 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
           slideCalc.addText(slideTitle, { x: 0.5, y: 0.38, w: 12.33, h: 0.5, fontSize: 22, bold: true, color: NAVY, fontFace: FONT_HEAD });
           slideCalc.addText('The Challenge', { x: 0.5, y: 1.0, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: NAVY, fontFace: FONT_HEAD });
           slideCalc.addText(challengeDescription, { x: 0.5, y: 1.28, w: 12.33, h: 0.9, fontSize: 10, color: GRAY, fontFace: FONT_BODY, valign: 'top' });
-          slideCalc.addText('The Forter Solution', { x: 0.5, y: 2.3, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: BLUE, fontFace: FONT_HEAD });
+          slideCalc.addText('The Solution', { x: 0.5, y: 2.3, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: BLUE, fontFace: FONT_HEAD });
           slideCalc.addText(benefitDescription, { x: 0.5, y: 2.58, w: 12.33, h: 0.8, fontSize: 10, color: GRAY, fontFace: FONT_BODY, valign: 'top' });
           if (benefitContent?.benefitPoints?.length) {
             slideCalc.addText('Key Benefits', { x: 0.5, y: 3.5, w: 12.33, h: 0.25, fontSize: 12, bold: true, color: NAVY, fontFace: FONT_HEAD });
@@ -2813,14 +2813,14 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     x: 0.5, y: 4.2, w: 12.3, h: 0.4,
     fontSize: 14, color: 'A5C8FF', align: 'center', fontFace: FONT_BODY,
   });
-  slideClosing.addText('© Forter, Inc. All rights Reserved  |  Confidential', {
+  slideClosing.addText('Confidential', {
     x: 3.0, y: 6.8, w: 7.33, h: 0.3,
     fontSize: 8, color: GRAY, align: 'center', fontFace: FONT_BODY,
   });
 
   const dateStr = formatDateMMMDDYYYY();
   const sanitizedName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `Forter_x_${sanitizedName}_Value_Assessment (${dateStr}).pptx`;
+  const filename = `${sanitizedName}_Value_Assessment (${dateStr}).pptx`;
   const blob = await writePptxToBlob(pptx);
   triggerBlobDownload(ensureMime(blob, PPTX_MIME), filename);
 }
@@ -2845,7 +2845,7 @@ export async function generateCalculatorSubsetPptx(
 
   const applyContentSlide = (slide: any, pageNum: number) => {
     slide.background = { color: LIGHT_BG };
-    slide.addText(`${customerName} x Forter`, {
+    slide.addText(`${customerName} Value Assessment`, {
       x: 0.5, y: 0.18, w: 12, h: 0.2,
       fontSize: 7.5, bold: true, color: BLUE, fontFace: FONT_HEAD, charSpacing: 1.5,
     });
@@ -2853,13 +2853,13 @@ export async function generateCalculatorSubsetPptx(
       x: 0.28, y: 7.15, w: 1.0, h: 0.2,
       fontSize: 7.5, color: GRAY, fontFace: FONT_BODY,
     });
-    slide.addText('© Forter, Inc. All rights Reserved  |  Confidential', {
+    slide.addText('Confidential', {
       x: 7.0, y: 7.15, w: 6.0, h: 0.2,
       fontSize: 7.5, color: GRAY, align: 'right', fontFace: FONT_BODY,
     });
   };
 
-  pptx.author = 'Forter Value Calculator';
+  pptx.author = 'AI Fraud Prevention Assessment';
   pptx.title = `${customerName} Calculator`;
 
   // Title slide
@@ -2940,8 +2940,8 @@ export async function generateCalculatorSubsetPptx(
     { text: 'Formula', options: { bold: true, fill: { color: '374151' }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
     { text: 'Description', options: { bold: true, fill: { color: NAVY }, color: WHITE, fontFace: FONT_HEAD, fontSize: 10 } },
     { text: 'Customer Inputs', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
-    { text: 'Forter Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
-    { text: 'Forter Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Improvement', options: { bold: true, fill: { color: BLUE }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
+    { text: 'Projected Outcome', options: { bold: true, fill: { color: NAVY }, color: WHITE, align: 'right', fontFace: FONT_HEAD, fontSize: 10 } },
   ];
 
   const getCategoryBadgeStyle = (calculatorId: string): { label: string; bgColor: string; textColor: string } | null => {
@@ -3059,7 +3059,7 @@ export async function generateCalculatorSubsetPptx(
   const dateStr = formatDateMMMDDYYYY();
   const sanitizedCustomer = customerName.replace(/[^a-zA-Z0-9]/g, '_');
   const sanitizedCalc = calcTitle.replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `Forter_x_${sanitizedCustomer}_${sanitizedCalc} (${dateStr}).pptx`;
+  const filename = `${sanitizedCustomer}_${sanitizedCalc} (${dateStr}).pptx`;
   const blob = await writePptxToBlob(pptx);
   triggerBlobDownload(ensureMime(blob, PPTX_MIME), filename);
 }
