@@ -5,8 +5,6 @@
  * Uses brand design system (1:1 with PowerPoint/DOCX formatting).
  */
 
-import { getCaseStudySlideNumbersInOrder } from "@/lib/caseStudyMapping";
-
 // Brand design system (hex without #) — align with reportGeneration.ts
 const NAVY = "0D1B3E";
 const BLUE = "2563EB";
@@ -690,12 +688,6 @@ export async function buildGoogleSlides(
   payload: Record<string, unknown>
 ): Promise<void> {
   const p = payload as Partial<SlidesPayload>;
-  // Resolve case study source from payload or env (so .env is used even if payload missed it)
-  const envCaseStudyId =
-    typeof import.meta !== "undefined" && (import.meta as { env?: { VITE_CASE_STUDY_SOURCE_PRESENTATION_ID?: string } }).env?.VITE_CASE_STUDY_SOURCE_PRESENTATION_ID;
-  const caseStudySourcePresentationId =
-    (typeof p.caseStudySourcePresentationId === "string" && p.caseStudySourcePresentationId.trim()) || (typeof envCaseStudyId === "string" && envCaseStudyId.trim()) || undefined;
-  if (caseStudySourcePresentationId) (p as Record<string, unknown>).caseStudySourcePresentationId = caseStudySourcePresentationId;
 
   const getPres = await fetch(
     `https://slides.googleapis.com/v1/presentations/${presentationId}`,
@@ -712,11 +704,6 @@ export async function buildGoogleSlides(
 
   const isSubset = !p.executiveSlide && Array.isArray(p.appendixSlides) && p.appendixSlides.length > 0;
   const isCustomPathwayEarly = !!(p as { isCustomPathway?: boolean }).isCustomPathway;
-  const caseStudySlideNums =
-    Array.isArray(p.caseStudySlideNumbers) && p.caseStudySlideNumbers.length > 0
-      ? p.caseStudySlideNumbers
-      : isSubset ? [] : getCaseStudySlideNumbersInOrder();
-  const caseStudyCount = caseStudySlideNums.length > 0 ? caseStudySlideNums.length + 1 : 0; // +1 for divider slide (full deck only)
   const appendixDividerCount = (p.appendixSlides?.length ?? 0) > 0 ? 1 : 0;
   const driverDataRows = p.valueDriversSlide?.rows ?? [];
   const driverPageCount = Math.max(1, Math.ceil(driverDataRows.length / 11));
@@ -760,13 +747,11 @@ export async function buildGoogleSlides(
           [] as Array<{ title: string; visualImageBase64: string; badge?: string }>
         );
   const valuePropositionSlideCount = isSubset ? 0 : 1 + valuePropositionVisualSlides.length; // 1 section title + N visual slides
-  // Subset (calculator modal): no title, no appendix divider, no case studies divider — only appendix content + case study image slides
-  // Full deck: optionally end with GVA Case Study Deck last slide (when caseStudySourcePresentationId is set)
+  // Subset (calculator modal): no title, no appendix divider — only appendix content
   // Custom pathway: omit Executive Summary and Target Outcomes slides (two fewer slides)
-  const closingGvaSlideCount = !isSubset && caseStudySourcePresentationId ? 1 : 0;
-  const fullDeckSlideCount = 1 + 1 + 1 + 1 + driverPageCount + 1 + (p.roiSlide ? 1 : 0) + 1 + caseStudyCount + appendixDividerCount + totalAppendixContentSlides + closingGvaSlideCount + valuePropositionSlideCount;
+  const fullDeckSlideCount = 1 + 1 + 1 + 1 + driverPageCount + 1 + (p.roiSlide ? 1 : 0) + 1 + appendixDividerCount + totalAppendixContentSlides + valuePropositionSlideCount;
   const slideCount = isSubset
-    ? totalAppendixContentSlides + caseStudySlideNums.length
+    ? totalAppendixContentSlides
     : isCustomPathwayEarly ? fullDeckSlideCount - 2 : fullDeckSlideCount;
   const contentSlideOffsetEarly = isCustomPathwayEarly ? 1 : 0;
   const nextStepsIndexForCreation = 4 - contentSlideOffsetEarly + driverPageCount + (isCustomPathwayEarly ? 1 : 2);
@@ -884,33 +869,7 @@ export async function buildGoogleSlides(
     }
   }
 
-  // Fetch last slide of GVA Case Study Deck to use as title slide background (image).
-  let titleSlideBgUrl: string | undefined;
-  if (s0 && caseStudySourcePresentationId) {
-    try {
-      const srcPresRes = await fetch(
-        `https://slides.googleapis.com/v1/presentations/${caseStudySourcePresentationId}?fields=slides.objectId`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (srcPresRes.ok) {
-        const srcData = (await srcPresRes.json()) as { slides?: Array<{ objectId: string }> };
-        const srcSlides = srcData.slides ?? [];
-        const titleBgSlide = srcSlides.length >= 2 ? srcSlides[srcSlides.length - 2] : srcSlides[srcSlides.length - 1];
-        if (titleBgSlide?.objectId) {
-          const thumbRes = await fetch(
-            `https://slides.googleapis.com/v1/presentations/${caseStudySourcePresentationId}/pages/${titleBgSlide.objectId}/thumbnail?thumbnailProperties.mimeType=PNG&thumbnailProperties.thumbnailSize=LARGE`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          );
-          if (thumbRes.ok) {
-            const thumbData = (await thumbRes.json()) as { contentUrl?: string };
-            if (thumbData.contentUrl) titleSlideBgUrl = thumbData.contentUrl;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[Title slide background] Failed to fetch GVA Case Study last slide thumbnail:", e);
-    }
-  }
+  const titleSlideBgUrl: string | undefined = undefined;
 
   // ----- Slide 0: General Template Guidelines (instruction / how-to use) — skip for subset -----
   const sHowTo = !isSubset ? slides[0]?.objectId : undefined;
@@ -1116,7 +1075,7 @@ export async function buildGoogleSlides(
     }
   }
 
-  // ----- Title slide: GVA Case Study last-slide image as background (if available), else navy. White text on top. -----
+  // ----- Title slide: navy background with white text -----
   if (s0) {
     if (titleSlideBgUrl) {
       requests.push({
@@ -2166,7 +2125,7 @@ export async function buildGoogleSlides(
   }
 
   const valuePropStartIndex = baseAfterDrivers + (isCustomPathway ? 1 : 2);
-  // ----- Value Proposition Insights (full deck only): divider (Case Studies style) + visual slides, before Next Steps -----
+  // ----- Value Proposition Insights (full deck only): divider + visual slides, before Next Steps -----
   if (!isSubset && valuePropositionSlideCount > 0) {
     const sValuePropTitle = slides[valuePropStartIndex]?.objectId;
     if (sValuePropTitle) {
@@ -2393,110 +2352,10 @@ export async function buildGoogleSlides(
   }
   }
 
-  // ----- Case Studies: divider + image slides (subset has no divider, images start at slideIdx) -----
-  if (isSubset) slideIdx = totalAppendixContentSlides;
-  if ((!isSubset && caseStudyCount > 0 && caseStudySlideNums.length > 0) || (isSubset && caseStudySlideNums.length > 0)) {
-    const sCaseDiv = !isSubset ? slides[slideIdx]?.objectId : undefined;
-    if (sCaseDiv) {
-      requests.push({
-        updatePageProperties: {
-          objectId: sCaseDiv,
-          pageProperties: {
-            pageBackgroundFill: {
-              solidFill: { color: { rgbColor: navyRgb }, alpha: 1 },
-            },
-          },
-          fields: "pageBackgroundFill",
-        },
-      });
-      addTextBox(requests, "case_div_title", sCaseDiv, 0.5, 2.4, CONTENT_W, 0.5, "Case Studies", {
-        bold: true, fontSize: 40, colorRgb: whiteRgb, fontFamily: FONT_HEAD,
-      });
-      addTextBox(requests, "case_div_sub", sCaseDiv, 0.5, 3.2, CONTENT_W, 0.3, "Success stories from the GVA Case Study Deck", {
-        fontSize: 14, colorRgb: lightBlueRgb, fontFamily: FONT_BODY,
-      });
-    }
-    const caseStudyOffset = isSubset ? 0 : 1;
-    for (let i = 0; i < caseStudySlideNums.length; i++) {
-      const slideNum = caseStudySlideNums[i];
-      const caseSlide = slides[slideIdx + caseStudyOffset + i]?.objectId;
-      if (!caseSlide) continue;
-
-      let imageInserted = false;
-
-      if (p.caseStudySourcePresentationId) {
-        try {
-          const srcPres = await fetch(
-            `https://slides.googleapis.com/v1/presentations/${p.caseStudySourcePresentationId}?fields=slides.objectId`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          );
-          if (srcPres.ok) {
-            const srcData = (await srcPres.json()) as { slides?: Array<{ objectId: string }> };
-            const srcSlides = srcData.slides ?? [];
-            const pageObjectId = srcSlides[slideNum - 1]?.objectId;
-
-            if (pageObjectId) {
-              const thumbRes = await fetch(
-                `https://slides.googleapis.com/v1/presentations/${p.caseStudySourcePresentationId}/pages/${pageObjectId}/thumbnail?thumbnailProperties.mimeType=PNG&thumbnailProperties.thumbnailSize=LARGE`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-              );
-              if (thumbRes.ok) {
-                const thumbData = (await thumbRes.json()) as { contentUrl?: string };
-                const contentUrl = thumbData.contentUrl;
-                if (contentUrl) {
-                  requests.push({
-                    createImage: {
-                      objectId: `case_img_${i}`,
-                      url: contentUrl,
-                      elementProperties: {
-                        pageObjectId: caseSlide,
-                        size: {
-                          width: { magnitude: 720, unit: "PT" },     // 10" × 72pt (full canvas width)
-                          height: { magnitude: 405.36, unit: "PT" }, // 5.63" × 72pt (full canvas height)
-                        },
-                        transform: {
-                          scaleX: 1,
-                          scaleY: 1,
-                          translateX: 0,
-                          translateY: 0,
-                          unit: "PT",
-                        },
-                      },
-                    },
-                  });
-                  imageInserted = true;
-                }
-              } else if (thumbRes.status === 401) {
-                throw new Error("Google sign-in expired. Please sign out, sign in again with Google, then generate the report.");
-              } else if (thumbRes.status === 403) {
-                console.warn(`[Case studies] No access to slide ${slideNum} in source presentation. Ensure the source deck is shared with "Anyone with the link can view".`);
-              }
-            }
-          } else if (srcPres.status === 401) {
-            throw new Error("Google sign-in expired. Please sign out, sign in again with Google, then generate the report.");
-          }
-        } catch (err: unknown) {
-          if (err instanceof Error && err.message.includes("sign-in")) throw err;
-          console.warn(`[Case studies] Failed to load thumbnail for slide ${slideNum}:`, err);
-        }
-      }
-
-      if (!imageInserted) {
-        addTextBox(
-          requests,
-          `case_placeholder_${i}`,
-          caseSlide,
-          0.5, 1.5, 9.0, 1.2,
-          `Case study slide ${slideNum} — Set VITE_CASE_STUDY_SOURCE_PRESENTATION_ID in .env to your GVA Case Study Deck ID (share with "Anyone with the link can view").`,
-          { fontSize: 11, colorRgb: grayRgb, fontFamily: FONT_BODY }
-        );
-      }
-    }
-  }
-
   // ----- Appendix slides (subset: no divider, content starts at 0) -----
+  if (isSubset) slideIdx = totalAppendixContentSlides;
   const appendixSlides = p.appendixSlides ?? [];
-  const appendixStartIndex = isSubset ? -1 : slideIdx + caseStudyCount;
+  const appendixStartIndex = isSubset ? -1 : slideIdx;
   if (appendixSlides.length > 0 && !isSubset) {
     const sAppDiv = appendixStartIndex >= 0 ? slides[appendixStartIndex]?.objectId : undefined;
     if (sAppDiv) {
@@ -2598,7 +2457,7 @@ export async function buildGoogleSlides(
         continue;
       }
       const pageLabel = pageCount > 1 ? ` (Page ${pageIdx + 1} of ${pageCount})` : "";
-      const pageNum = isSubset ? String(appendixContentStartIndex + appendixContentSlideIndex) : String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
+      const pageNum = isSubset ? String(appendixContentStartIndex + appendixContentSlideIndex) : String(slideIdx + 1 + appendixContentSlideIndex);
       addTextBox(requests, `sapp_sec_${a}_${pageIdx}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
         bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
       });
@@ -2924,7 +2783,7 @@ export async function buildGoogleSlides(
     if (!isSubset && funnelSlideDataAfterCalc) {
       const slide = slides[appendixContentStartIndex + appendixContentSlideIndex];
       if (slide?.objectId) {
-        const pageNum = String(slideIdx + caseStudyCount + 1 + appendixContentSlideIndex);
+        const pageNum = String(slideIdx + 1 + appendixContentSlideIndex);
         addTextBox(requests, `sfunnel_sec_${a}`, slide.objectId, 0.5, 0.15, 12.0, 0.2, truncateForSlide(`${titleSlide.customerName} Business Value Assessment`, 80), {
           bold: true, fontSize: 10, colorRgb: blueRgb, fontFamily: FONT_HEAD,
         });
@@ -2958,57 +2817,6 @@ export async function buildGoogleSlides(
       }
     }
     // Visuals are in "Value Proposition Insights" section (full deck), not in appendix
-  }
-
-  // Full deck: last slide = GVA Case Study Deck last slide (when caseStudySourcePresentationId is set)
-  if (!isSubset && p.caseStudySourcePresentationId && slides.length > 0) {
-    const lastSlideObjectId = slides[slides.length - 1]?.objectId;
-    if (lastSlideObjectId) {
-      try {
-        const srcPresRes = await fetch(
-          `https://slides.googleapis.com/v1/presentations/${p.caseStudySourcePresentationId}?fields=slides.objectId`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        if (srcPresRes.ok) {
-          const srcData = (await srcPresRes.json()) as { slides?: Array<{ objectId: string }> };
-          const srcSlides = srcData.slides ?? [];
-          const gvaLastSlide = srcSlides.length > 0 ? srcSlides[srcSlides.length - 1] : undefined;
-          if (gvaLastSlide?.objectId) {
-            const thumbRes = await fetch(
-              `https://slides.googleapis.com/v1/presentations/${p.caseStudySourcePresentationId}/pages/${gvaLastSlide.objectId}/thumbnail?thumbnailProperties.mimeType=PNG&thumbnailProperties.thumbnailSize=LARGE`,
-              { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
-            if (thumbRes.ok) {
-              const thumbData = (await thumbRes.json()) as { contentUrl?: string };
-              if (thumbData.contentUrl) {
-                requests.push({
-                  createImage: {
-                    objectId: "deck_closing_slide_image",
-                    url: thumbData.contentUrl,
-                    elementProperties: {
-                      pageObjectId: lastSlideObjectId,
-                      size: {
-                        width: { magnitude: 720, unit: "PT" },
-                        height: { magnitude: 405.36, unit: "PT" },
-                      },
-                      transform: {
-                        scaleX: 1,
-                        scaleY: 1,
-                        translateX: 0,
-                        translateY: 0,
-                        unit: "PT",
-                      },
-                    },
-                  },
-                });
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("[Value deck] Failed to add GVA last slide as closing slide:", err);
-      }
-    }
   }
 
   if (requests.length > 0) {

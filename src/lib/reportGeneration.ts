@@ -1338,30 +1338,6 @@ export async function generateCalculatorSlide(
     createCalculatorSlide(slideTitle, slideSubtitle, calculatorRows);
   }
 
-  // Append Success Story slide when this benefit has a case study
-  if (hasCaseStudy(calculatorId)) {
-    const slideNum = getCaseStudySlideNumber(calculatorId);
-    if (slideNum != null) {
-      const imageUrl = `/case-studies/slide${slideNum}.png`;
-      try {
-        const resp = await fetch(imageUrl);
-        if (resp.ok) {
-          const buf = await resp.arrayBuffer();
-          const base64 = arrayBufferToBase64(buf);
-          const slideStory = pptx.addSlide();
-          applyContentSlide(slideStory);
-          slideStory.addText('Success Story', {
-            x: 0.5, y: 0.38, w: 12.33, h: 0.4,
-            fontSize: 18, bold: true, color: NAVY, fontFace: FONT_HEAD,
-          });
-          slideStory.addImage({ data: `data:image/png;base64,${base64}`, x: 0.5, y: 0.9, w: 12.33, h: 6.0 });
-        }
-      } catch {
-        // Skip success story slide if image fails to load
-      }
-    }
-  }
-
   const dateStr = formatDateMMMDDYYYY();
   const sanitizedAnalysisName = analysisName.replace(/[^a-zA-Z0-9]/g, '_');
   const sanitizedTitle = calculatorTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40);
@@ -1834,15 +1810,10 @@ export function getCalculatorSubsetPayload(
     (appendixSlides[0] as { funnelSlide?: FunnelSlideData }).funnelSlide = options.funnelSlide;
   }
 
-  const caseStudySlideNumbers = hasCaseStudy(calculatorId)
-    ? [getCaseStudySlideNumber(calculatorId)!]
-    : [];
-
   return {
     titleSlide: { customerName, headline: '', date: dateStr },
     appendixSlides,
-    caseStudySlideNumbers,
-    ...(options?.caseStudySourcePresentationId && { caseStudySourcePresentationId: options.caseStudySourcePresentationId }),
+    caseStudySlideNumbers: [],
     currency,
   };
 }
@@ -1908,12 +1879,10 @@ export function getValueDeckPayload(
 
   const appendixSlides: ValueDeckPayload['appendixSlides'] = [];
   const isCustomPathway = !!options.isCustomPathway;
-  let caseStudySlideNumbersResult: number[];
 
   if (isCustomPathway) {
     let selectedStandardCalculatorIds = getSelectedStandardCalculatorIds(allDrivers.map((d) => d.label));
     selectedStandardCalculatorIds = applyC1C245ExclusivityToCalculatorSet(selectedStandardCalculatorIds);
-    caseStudySlideNumbersResult = getCaseStudySlideNumbersForCalculators(selectedStandardCalculatorIds);
     const appendixGroupsCustom = BENEFIT_GROUPS.filter((g) => g.calculatorIds.some((id) => selectedStandardCalculatorIds.has(id)));
     for (const group of appendixGroupsCustom) {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
@@ -1950,7 +1919,6 @@ export function getValueDeckPayload(
       }
     }
   } else {
-    caseStudySlideNumbersResult = getSelectedCaseStudySlideNumbers(challengesForReport);
     const activeBenefitGroups = getActiveBenefitGroups(challengesForReport);
     for (const group of activeBenefitGroups) {
       const calculatorTables = getCalculatorRowsForBenefitGroup(group, formData);
@@ -2044,9 +2012,7 @@ export function getValueDeckPayload(
     roiSlide,
     nextStepsSlide: { steps: nextSteps },
     appendixSlides,
-    ...(options.caseStudySourceSlides && { caseStudySourceSlides: options.caseStudySourceSlides }),
-    ...(options.caseStudySourcePresentationId && { caseStudySourcePresentationId: options.caseStudySourcePresentationId }),
-    caseStudySlideNumbers: caseStudySlideNumbersResult,
+    caseStudySlideNumbers: [],
     ...(isCustomPathway && { isCustomPathway: true }),
   };
 }
@@ -2609,44 +2575,10 @@ const cardW = activeCategories.length === 1 ? 5.5 : activeCategories.length === 
     }
   }
 
-  // ===== CASE STUDIES: One slide per selected benefit with a case study (before Appendix) =====
-  const caseStudySlideNumbers = getSelectedCaseStudySlideNumbers(challenges);
-  let caseStudiesPageNum = insightsPageNum;
-  if (caseStudySlideNumbers.length > 0) {
-    const slideCaseStudiesTitle = pptx.addSlide();
-    applyDarkSlide(slideCaseStudiesTitle);
-    slideCaseStudiesTitle.addText('Case Studies', {
-      x: 0.5, y: 2.8, w: 12.3, h: 1.2,
-      fontSize: 52, bold: true, color: WHITE, align: 'center', fontFace: FONT_HEAD,
-    });
-    slideCaseStudiesTitle.addText('Success stories from the GVA Case Study Deck', {
-      x: 0.5, y: 4.0, w: 12.3, h: 0.5,
-      fontSize: 16, color: 'A5C8FF', align: 'center', fontFace: FONT_BODY,
-    });
-    caseStudiesPageNum += 1;
-    for (const slideNum of caseStudySlideNumbers) {
-      const imageUrl = `/case-studies/slide${slideNum}.png`;
-      try {
-        const resp = await fetch(imageUrl);
-        if (!resp.ok) continue;
-        const buf = await resp.arrayBuffer();
-        const base64 = arrayBufferToBase64(buf);
-        const slideCase = pptx.addSlide();
-        applyContentSlide(slideCase, caseStudiesPageNum++);
-        slideCase.addImage({
-          data: `data:image/png;base64,${base64}`,
-          x: 0.5, y: 0.5, w: 12.33, h: 6.2,
-        });
-      } catch {
-        // Skip this slide if image fails to load
-      }
-    }
-  }
-
   // ===== APPENDIX: Calculator Details (with multi-page split, max 18 rows per slide) =====
   const activeBenefitGroups = getActiveBenefitGroups(challenges);
   const MAX_ROWS_PER_SLIDE = 18;
-  let appendixPageNum = caseStudiesPageNum;
+  let appendixPageNum = insightsPageNum;
 
   if (activeBenefitGroups.length > 0) {
     const slideAppendixTitle = pptx.addSlide();
@@ -3034,26 +2966,6 @@ export async function generateCalculatorSubsetPptx(
       }
     }
 
-  }
-
-  // Case study image slides
-  const caseStudySlideNumbers = payload.caseStudySlideNumbers || [];
-  for (const slideNum of caseStudySlideNumbers) {
-    const imageUrl = `/case-studies/slide${slideNum}.png`;
-    try {
-      const resp = await fetch(imageUrl);
-      if (!resp.ok) continue;
-      const buf = await resp.arrayBuffer();
-      const base64 = arrayBufferToBase64(buf);
-      const slideCase = pptx.addSlide();
-      applyContentSlide(slideCase, pageNum++);
-      slideCase.addImage({
-        data: `data:image/png;base64,${base64}`,
-        x: 0.5, y: 0.5, w: 12.33, h: 6.2,
-      });
-    } catch {
-      // Skip on failure
-    }
   }
 
   const dateStr = formatDateMMMDDYYYY();

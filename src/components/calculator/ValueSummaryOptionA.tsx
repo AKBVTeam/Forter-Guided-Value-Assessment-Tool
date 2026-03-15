@@ -35,7 +35,6 @@ import {
   X,
   Zap,
   Loader2,
-  Lock,
   Mail,
   ChevronLeft,
   DollarSign,
@@ -58,7 +57,6 @@ import { EditableCalculatorDisplay } from "./EditableCalculatorDisplay";
 import { CalculatorData, CustomCalculation, type StandaloneCalculator } from "@/pages/Index";
 import { ForterKPIs, defaultForterKPIs, type ForterKPIFocusSection } from "./ForterKPIConfig";
 import { getChallengeBenefitContent } from "@/lib/challengeBenefitContent";
-import { hasCaseStudy, getCaseStudyImagePath } from "@/lib/caseStudyMapping";
 import {
   calculateChallenge1,
   calculateChallenge245,
@@ -6259,7 +6257,6 @@ export const ValueSummaryOptionA = ({
                     const tabs: string[] = ['summary', 'inputs', 'calculator'];
                     if (hasFunnel) tabs.push('funnel');
                     if (hasVisual) tabs.push('visual');
-                    if (hasCaseStudy(srcId)) tabs.push('success-stories');
                     return tabs as const;
                   })();
                   const prevTab = calculatorModalTab;
@@ -6962,12 +6959,8 @@ export const ValueSummaryOptionA = ({
           
           {/* Tabs for Benefit Summary vs Calculator */}
           <Tabs value={calculatorModalTab} onValueChange={(v) => {
-              setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'funnel' | 'visual' | 'success-stories');
+              setCalculatorModalTab(v as 'summary' | 'inputs' | 'calculator' | 'funnel' | 'visual');
               const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
-              if (v === 'success-stories' && calcId) {
-                if (onPersistBenefitTabViewed) onPersistBenefitTabViewed('success-stories', calcId);
-                else setSuccessStoriesViewed(prev => new Set(prev).add(calcId));
-              }
               if (v === 'funnel' && calcId) {
                 if (onPersistBenefitTabViewed) onPersistBenefitTabViewed('funnel', calcId);
                 else setFunnelViewed(prev => new Set(prev).add(calcId));
@@ -6987,8 +6980,6 @@ export const ValueSummaryOptionA = ({
               const showInputsTab = selectedCalculatorId && hasInputsConfig; // Always show if config exists
               const isInputsComplete = sourceIdForModal ? getCalculatorCompletionPercentage(sourceIdForModal, modalFormData) === 100 : false;
               
-              // Calculate number of visible tabs (Benefit Summary, optional Inputs, optional Calculator, Success Story)
-              const showSuccessStoriesTab = hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '');
               const showFunnelTab = showCalculatorTab && selectedCalculatorId === 'c245-revenue' && (funnelToShow?.length ?? 0) > 0;
               const showVisualTab = showCalculatorTab && (() => {
                 const src = (modalContext.sourceIdForModal ?? selectedCalculatorId) ?? '';
@@ -6997,7 +6988,7 @@ export const ValueSummaryOptionA = ({
                 const hasVisualById = ['c1-revenue', 'c1-chargeback', 'c245-chargeback', 'c3-review', 'c7-disputes', 'c7-opex', 'c8-returns', 'c8-inr', 'c9-cs-opex', 'c9-cx-uplift', 'c10-promotions', 'c12-ato-opex', 'c13-clv', 'c14-marketing', 'c14-reactivation', 'c14-kyc'].includes(src);
                 return hasVisualById || isPromotionAbuseByTitle;
               })();
-              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + (showFunnelTab ? 1 : 0) + (showVisualTab ? 1 : 0) + 1;
+              const tabCount = 2 + (showInputsTab ? 1 : 0) + (showCalculatorTab ? 1 : 0) + (showFunnelTab ? 1 : 0) + (showVisualTab ? 1 : 0);
               const gridCols = tabCount === 7 ? 'grid-cols-7' : tabCount === 6 ? 'grid-cols-6' : tabCount === 5 ? 'grid-cols-5' : tabCount === 4 ? 'grid-cols-4' : tabCount === 3 ? 'grid-cols-3' : 'grid-cols-2';
               
               return (
@@ -7033,28 +7024,6 @@ export const ValueSummaryOptionA = ({
                         <CheckCircle2 className="w-4 h-4 shrink-0 text-green-500" />
                       )}
                     </TabsTrigger>
-                  )}
-                  {showSuccessStoriesTab ? (
-                    <TabsTrigger value="success-stories" className="gap-2">
-                      Success Story
-                      {successStoriesViewed.has(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
-                        <CheckCircle2 className="w-4 h-4 shrink-0 text-green-500" />
-                      )}
-                    </TabsTrigger>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex">
-                          <TabsTrigger value="success-stories" className="gap-2" disabled>
-                            <Lock className="w-4 h-4 shrink-0" />
-                            Success Story
-                          </TabsTrigger>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>No case study available for this benefit</p>
-                      </TooltipContent>
-                    </Tooltip>
                   )}
                 </TabsList>
               );
@@ -8013,32 +7982,6 @@ export const ValueSummaryOptionA = ({
               </div>
             </TabsContent>
 
-            {/* Success Story Tab – case study slide image when available */}
-            <TabsContent value="success-stories" className="mt-4">
-              <div data-benefit-pdf="success-stories" className="min-h-0">
-                {(() => {
-                  const calcId = modalContext.sourceIdForModal ?? selectedCalculatorId ?? '';
-                  const imagePath = getCaseStudyImagePath(calcId);
-                  if (!imagePath) {
-                    return (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <p>No success story available for this benefit.</p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="flex justify-center">
-                      <img
-                        src={imagePath}
-                        alt="Success story case study"
-                        className="max-w-full h-auto rounded-lg border object-contain"
-                      />
-                    </div>
-                  );
-                })()}
-              </div>
-            </TabsContent>
-
             {/* Footer: Back bottom-left, Go-forward bottom-right */}
             {(() => {
               const hasInputsConfig = modalContext.sourceIdForModal ? !!CALCULATOR_REQUIRED_INPUTS[modalContext.sourceIdForModal] : false;
@@ -8085,16 +8028,6 @@ export const ValueSummaryOptionA = ({
                     {(calculatorModalTab === 'calculator' && (selectedCalculatorId === 'c1-revenue' || selectedCalculatorId === 'c1-chargeback' || selectedCalculatorId === 'c245-chargeback' || selectedCalculatorId === 'c3-review' || selectedCalculatorId === 'c7-disputes' || selectedCalculatorId === 'c7-opex' || selectedCalculatorId === 'c8-returns' || selectedCalculatorId === 'c8-inr' || selectedCalculatorId === 'c9-cs-opex' || selectedCalculatorId === 'c9-cx-uplift' || selectedCalculatorId === 'c10-promotions' || selectedCalculatorId === 'c12-ato-opex' || selectedCalculatorId === 'c13-clv' || selectedCalculatorId === 'c14-marketing' || selectedCalculatorId === 'c14-reactivation' || selectedCalculatorId === 'c14-kyc')) && (
                       <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('visual')}>
                         Go to Visual <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {calculatorModalTab === 'funnel' && hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
-                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('success-stories')}>
-                        Go to Success Story <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {calculatorModalTab === 'visual' && hasCaseStudy(modalContext.sourceIdForModal ?? selectedCalculatorId ?? '') && (
-                      <Button size="sm" className="gap-2" onClick={() => setCalculatorModalTab('success-stories')}>
-                        Go to Success Story <ArrowRight className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
