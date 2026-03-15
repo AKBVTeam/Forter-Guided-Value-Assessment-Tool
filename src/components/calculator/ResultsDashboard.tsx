@@ -111,7 +111,7 @@ export const ResultsDashboard = ({
             {localData.customerName ? `${localData.customerName} - ` : ""}Value Assessment Results
           </h1>
           <p className="text-xl text-muted-foreground">
-            Potential uplift with Forter's fraud management solution
+            Potential uplift with the fraud management solution
           </p>
         </div>
 

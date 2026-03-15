@@ -21,7 +21,7 @@ interface ReportPreviewProps {
   companyLogo?: string | null;
 }
 
-// Forter brand colors (aligned with reportGeneration value deck)
+// Brand colors (aligned with reportGeneration value deck)
 const FORTER_BLUE = '#2563EB';
 const FORTER_NAVY = '#0D1B3E';
 const FORTER_LIGHT_BG = '#F5F7FA';
@@ -163,13 +163,13 @@ export function ReportPreview({
                 <li key={idx}><span style={{ color: FORTER_BLUE, fontWeight: 700 }}>{idx + 1}. </span>{s}</li>
               ))}
             </ol>
-            <p className="text-[9px] italic" style={{ color: FORTER_GREEN }}>Forter was found to meet and exceed all requirements for this solution.</p>
+            <p className="text-[9px] italic" style={{ color: FORTER_GREEN }}>The solution was found to meet and exceed all requirements.</p>
             <p className="text-[9px] font-bold uppercase tracking-wide pt-1.5 pb-0.5 border-b" style={{ color: FORTER_NAVY, borderColor: FORTER_NAVY }}>Target Outcomes</p>
             <div className="rounded border overflow-hidden" style={{ borderColor: BORDER_GRAY }}>
               <div className="grid grid-cols-3 text-[8px] font-bold text-white px-2 py-1" style={{ backgroundColor: FORTER_NAVY }}>
                 <span>Key Metric</span>
                 <span className="text-center">Current</span>
-                <span className="text-center">Target with Forter</span>
+                <span className="text-center">Target with Solution</span>
               </div>
               <div className="grid grid-cols-3 text-[8px] px-2 py-0.5 bg-white" style={{ color: '#374151' }}>
                 <span>—</span>
@@ -181,7 +181,7 @@ export function ReportPreview({
             <p className="text-[9px]" style={{ color: '#374151' }}>Annual EBITDA Contribution: <span className="font-bold" style={{ color: FORTER_GREEN }}>{formatCurrency(safeValueTotals.ebitdaContribution, currency)}</span></p>
           </div>
           <div className="border-t pt-2 mt-2" style={{ borderColor: BORDER_GRAY }}>
-            <span className="text-[8px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span className="text-[8px]" style={{ color: FORTER_GRAY }}>Confidential</span>
           </div>
         </div>
       </Card>
@@ -214,7 +214,7 @@ export function ReportPreview({
       name: 'Summary',
       content: (
         <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
-          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} Business Value Assessment</p>
           <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Executive Summary</h3>
           <p className="text-[9px] shrink-0" style={{ color: FORTER_GRAY }}>{headline}</p>
           <div className="grid grid-cols-2 gap-2 mt-1.5 flex-1 min-h-0">
@@ -264,7 +264,7 @@ export function ReportPreview({
           </div>
           <div className="border-t pt-1 mt-1 flex justify-between items-center shrink-0" style={{ borderColor: BORDER_GRAY }}>
             <span className="text-[7px]" style={{ color: FORTER_GRAY }}>2</span>
-            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>Confidential</span>
           </div>
         </div>
       ),
@@ -274,7 +274,7 @@ export function ReportPreview({
       name: 'Value',
       content: (
         <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
-          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} Business Value Assessment</p>
           <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Value Summary</h3>
           <div className={`grid gap-1.5 mt-1.5 flex-1 min-h-0 ${activeCategories.length === 1 ? 'grid-cols-1' : activeCategories.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
             {activeCategories.map((cat, i) => (
@@ -302,7 +302,7 @@ export function ReportPreview({
           <p className="text-[7px] font-bold mt-1 shrink-0" style={{ color: FORTER_NAVY }}>KEY PERFORMANCE IMPROVEMENTS</p>
           <div className="border-t pt-1 mt-0.5 flex justify-between shrink-0" style={{ borderColor: BORDER_GRAY }}>
             <span className="text-[7px]" style={{ color: FORTER_GRAY }}>3</span>
-            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>Confidential</span>
           </div>
         </div>
       ),
@@ -312,7 +312,7 @@ export function ReportPreview({
       name: 'Drivers',
       content: (
         <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
-          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} Business Value Assessment</p>
           <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Value Drivers</h3>
           <div className="mt-1.5 flex-1 min-h-0 overflow-auto space-y-0.5">
             {topDrivers.slice(0, 6).map((driver, idx) => (
@@ -328,7 +328,7 @@ export function ReportPreview({
           </div>
           <div className="border-t pt-1 mt-1 flex justify-between shrink-0" style={{ borderColor: BORDER_GRAY }}>
             <span className="text-[7px]" style={{ color: FORTER_GRAY }}>4</span>
-            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>Confidential</span>
           </div>
         </div>
       ),
@@ -338,13 +338,13 @@ export function ReportPreview({
       name: 'KPIs',
       content: (
         <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
-          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} Business Value Assessment</p>
           <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Target Outcomes</h3>
           <div className="mt-1.5 flex-1 min-h-0 overflow-auto bg-white rounded border p-1.5" style={{ borderColor: BORDER_GRAY }}>
             <div className="grid grid-cols-4 text-[7px] font-semibold pb-0.5 border-b" style={{ color: FORTER_NAVY }}>
               <span>Metric</span>
               <span className="text-center">Current</span>
-              <span className="text-center">With Forter</span>
+              <span className="text-center">With Solution</span>
               <span className="text-center">Improvement</span>
             </div>
             {safeFormData.amerPreAuthApprovalRate != null && (
@@ -374,7 +374,7 @@ export function ReportPreview({
           </div>
           <div className="border-t pt-1 mt-1 flex justify-between shrink-0" style={{ borderColor: BORDER_GRAY }}>
             <span className="text-[7px]" style={{ color: FORTER_GRAY }}>5</span>
-            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>Confidential</span>
           </div>
         </div>
       ),
@@ -388,7 +388,7 @@ export function ReportPreview({
       name: 'ROI',
       content: (
         <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
-          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} Business Value Assessment</p>
           <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>ROI Summary</h3>
           <div className="grid grid-cols-3 gap-1.5 mt-1.5">
             <div className="bg-white rounded p-1.5 text-center border" style={{ borderColor: BORDER_GRAY }}>
@@ -422,7 +422,7 @@ export function ReportPreview({
           </div>
           <div className="border-t pt-1 mt-1 flex justify-between shrink-0" style={{ borderColor: BORDER_GRAY }}>
             <span className="text-[7px]" style={{ color: FORTER_GRAY }}>{roiPageNum}</span>
-            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>Confidential</span>
           </div>
         </div>
       ),
@@ -435,7 +435,7 @@ export function ReportPreview({
     name: 'Next',
     content: (
       <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
-        <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+        <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} Business Value Assessment</p>
         <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Next Steps</h3>
         <div className="mt-1.5 space-y-1.5 flex-1 min-h-0 overflow-auto">
           {(hasInvestment ? [
@@ -457,7 +457,7 @@ export function ReportPreview({
         </div>
         <div className="border-t pt-1 mt-1 flex justify-between shrink-0" style={{ borderColor: BORDER_GRAY }}>
           <span className="text-[7px]" style={{ color: FORTER_GRAY }}>{nextPageNum}</span>
-          <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+          <span className="text-[7px]" style={{ color: FORTER_GRAY }}>Confidential</span>
         </div>
       </div>
     ),
@@ -483,7 +483,7 @@ export function ReportPreview({
           </div>
           <div className="flex justify-between px-2 pt-1 text-[7px] shrink-0" style={{ color: 'rgba(255,255,255,0.8)' }}>
             <span>{caseStudiesPageNum}</span>
-            <span>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span>Confidential</span>
           </div>
         </div>
       ),
@@ -495,7 +495,7 @@ export function ReportPreview({
       name: 'Stories',
       content: (
         <div className="h-full p-2.5 rounded-lg flex flex-col" style={{ backgroundColor: FORTER_LIGHT_BG }}>
-          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} x Forter Business Value Assessment</p>
+          <p className="text-[7px] font-bold tracking-wide shrink-0" style={{ color: FORTER_BLUE }}>{customerName} Business Value Assessment</p>
           <h3 className="text-xs font-bold mt-0.5 shrink-0" style={{ color: FORTER_NAVY }}>Case Studies — Success Stories</h3>
           <div className={`grid gap-1 mt-1.5 flex-1 min-h-0 ${previewCount <= 2 ? 'grid-cols-2' : previewCount <= 4 ? 'grid-cols-2' : 'grid-cols-3'}`}>
             {caseStudySlideNumbers.slice(0, previewCount).map((slideNum) => (
@@ -516,7 +516,7 @@ export function ReportPreview({
           )}
           <div className="border-t pt-1 mt-1 flex justify-between shrink-0" style={{ borderColor: BORDER_GRAY }}>
             <span className="text-[7px]" style={{ color: FORTER_GRAY }}>{caseStudiesPageNum + 1}</span>
-            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span className="text-[7px]" style={{ color: FORTER_GRAY }}>Confidential</span>
           </div>
         </div>
       ),
@@ -543,7 +543,7 @@ export function ReportPreview({
           </div>
           <div className="flex justify-between px-2 pt-1 text-[7px] shrink-0" style={{ color: 'rgba(255,255,255,0.8)' }}>
             <span>{appendixPageNum}</span>
-            <span>© Forter, Inc. All rights Reserved  |  Confidential</span>
+            <span>Confidential</span>
           </div>
         </div>
       ),
@@ -600,7 +600,7 @@ export function ReportPreview({
       
       {/* Slide counter */}
       <div className="text-center py-1 text-[10px] text-muted-foreground bg-muted/30">
-        Slide {currentSlide + 1} of {slides.length} • Forter branded
+        Slide {currentSlide + 1} of {slides.length} • Preview
       </div>
     </Card>
   );

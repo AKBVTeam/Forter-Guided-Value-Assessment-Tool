@@ -389,10 +389,7 @@ function GenerateReportModalWithGoogle({
   const isSubsetMode = !!calculatorSubset;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => {
-      if (!v && (generating || !!downloadingOffice)) return;
-      onOpenChange(v);
-    }}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={isSubsetMode ? "sm:max-w-[500px]" : "sm:max-w-[560px]"}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -630,10 +627,7 @@ function GenerateReportModalNotConfigured({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => {
-      if (!v && !!downloadingOffice) return;
-      onOpenChange(v);
-    }}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

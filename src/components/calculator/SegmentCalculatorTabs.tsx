@@ -878,7 +878,7 @@ export const SegmentCalculatorTabs = ({
           </div>
           <div className="p-4">
             <p className="text-sm text-muted-foreground mb-4">
-              This view shows the aggregated results across all segments. Percentage rows display volume-weighted averages, currency/count rows display sums. Individual segments may have different KPI targets - see the Forter KPIs tab for weighted-average targets.
+              This view shows the aggregated results across all segments. Percentage rows display volume-weighted averages, currency/count rows display sums. Individual segments may have different KPI targets - see the Solution KPIs tab for weighted-average targets.
             </p>
             {aggregateRows.length > 0 ? (
               <EditableCalculatorDisplay

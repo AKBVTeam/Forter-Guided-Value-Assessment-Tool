@@ -1733,7 +1733,7 @@ export function CLVChurnVisual({ rows, showInMillions, currencyCode }: { rows: C
         <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
           <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-800">
-            <strong>Churn risk:</strong> each successful ATO has a {churnLikelihood}% probability of permanently losing that customer and their {fmtCur(clvPerCustomer)} lifetime value. Forter&apos;s {catchRate}% catch rate reduces at-risk customers from <strong>{customersAtRiskCurrent.toLocaleString()}</strong> to <strong>{customersAtRiskForter.toLocaleString()}</strong>.
+            <strong>Churn risk:</strong> each successful ATO has a {churnLikelihood}% probability of permanently losing that customer and their {fmtCur(clvPerCustomer)} lifetime value. The solution&apos;s {catchRate}% catch rate reduces at-risk customers from <strong>{customersAtRiskCurrent.toLocaleString()}</strong> to <strong>{customersAtRiskForter.toLocaleString()}</strong>.
           </p>
         </div>
 
@@ -7494,7 +7494,7 @@ export const ValueSummaryOptionA = ({
                                       <p className="text-muted-foreground text-sm">
                                         {hasRecoveredAovMultiplier
                                           ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from solution benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
-                                          : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
+                                          : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in the solution benchmarks to value recoverable transactions at a higher average order value.</>
                                         }
                                       </p>
                                     </TooltipContent>
@@ -7685,7 +7685,7 @@ export const ValueSummaryOptionA = ({
                                       <p className="text-muted-foreground text-sm">
                                         {hasRecoveredAovMultiplier
                                           ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from solution benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
-                                          : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
+                                          : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in the solution benchmarks to value recoverable transactions at a higher average order value.</>
                                         }
                                       </p>
                                     </TooltipContent>
@@ -7715,7 +7715,7 @@ export const ValueSummaryOptionA = ({
                                         <p className="text-muted-foreground text-sm">
                                           {hasRecoveredAovMultiplier
                                             ? <>Recovered average order value = completed average order value × recovered average order value multiplier (from solution benchmarks). Recoverable transactions are valued at this higher average order value to reflect the typically larger basket size of recovered orders.</>
-                                            : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in Forter benchmarks to value recoverable transactions at a higher average order value.</>
+                                            : <>When no multiplier is set, recovered average order value equals completed average order value. Configure the recovered average order value multiplier in the solution benchmarks to value recoverable transactions at a higher average order value.</>
                                           }
                                         </p>
                                       </TooltipContent>

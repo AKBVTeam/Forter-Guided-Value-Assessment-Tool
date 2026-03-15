@@ -28,7 +28,7 @@ export const ChatbotInterface = ({ onComplete, onBulkUpdate, initialData }: Chat
       role: "assistant",
       content: hasInitialData 
         ? "I can see you've already entered some data. Would you like to continue editing your inputs, or start fresh? Just let me know what you'd like to change!"
-        : "Hello! I'll help you calculate the potential GMV uplift with Forter's fraud management solution. Let's start with your AMER region data. What is your annual GMV attempts in USD (the total value of all transaction attempts)?",
+        : "Hello! I'll help you calculate the potential GMV uplift with the fraud management solution. Let's start with your AMER region data. What is your annual GMV attempts in USD (the total value of all transaction attempts)?",
     },
   ]);
   const [input, setInput] = useState("");

@@ -1342,7 +1342,7 @@ export const ValueSummaryWithCalculators = ({
                   {/* Approval Rate - only when improvement > 0 */}
                   {showApprovalRate && (
                     <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-sm text-muted-foreground">Approval Rate with Forter</span>
+                      <span className="text-sm text-muted-foreground">Approval Rate with Solution</span>
                       <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
                         {challenge245Results 
                           ? forterKPIs.preAuthApprovalImprovement 
@@ -1494,7 +1494,7 @@ export const ValueSummaryWithCalculators = ({
           {/* Waterfall Chart */}
           {waterfallData.length > 0 && (
             <Card className="p-4">
-              <p className="text-sm font-semibold mb-3">Forter Annual EBITDA Attribution</p>
+              <p className="text-sm font-semibold mb-3">Annual EBITDA Attribution</p>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart

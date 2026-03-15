@@ -70,10 +70,9 @@ interface ManualInputFormProps {
   /** Persist investment inputs to parent so re-opening an analysis restores investment cost */
   onInvestmentPersist?: (inputs: InvestmentInputs) => void;
   /** Open the GVA overview modal with the Buyer Personas tab active */
-  onOpenBuyerPersonas?: () => void;
 }
 
-export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange, onInvestmentPersist, onOpenBuyerPersonas }: ManualInputFormProps) => {
+export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initialData, customerLogoUrl, onLogoUpload, entryMode = "manual", externalActiveTab, onCompletionChange, onInvestmentPersist }: ManualInputFormProps) => {
   const [formData, setFormData] = useState<CalculatorData>(() => {
     // For custom mode with no existing analysis, start with zeroed customer inputs
     const isNewCustomAssessment = entryMode === "custom" && !initialData?._analysisId;
@@ -619,7 +618,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       const unlockedTabs = ['inputs', 'summary'];
       setRecentlyUnlockedTabs(unlockedTabs);
       toast.success("Tabs unlocked!", {
-        description: "You can now access Customer Inputs and Value Summary. Use \"Refine Forter KPI benchmarks\" when needed. View Value Summary to unlock ROI.",
+        description: "You can now access Customer Inputs and Value Summary. Use \"Refine Solution Assumptions\" when needed. View Value Summary to unlock ROI.",
         duration: 4000,
         icon: <Unlock className="h-4 w-4" />,
       });
@@ -659,7 +658,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
     profile: "Profile",
     challenges: "Use Cases",
     inputs: "Customer Inputs",
-    forter: "Forter KPI",
+    forter: "Solution KPI",
     summary: "Value Summary",
     roi: "ROI",
   };
@@ -1493,7 +1492,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
   }, [entryMode]);
 
   // Ensure activeTab always matches a visible tab (prevents blank screen when Tabs value doesn't match any trigger)
-  // In guided mode, Forter KPI is in a modal (Refine Forter KPI benchmarks), not a tab
+  // In guided mode, Forter KPI is in a modal (Refine Solution Assumptions), not a tab
   const guidedTabs = ["profile", "challenges", "inputs", "summary", "roi"];
   const customTabs = ["profile", "summary", "roi"];
   const validTabs = showGuidedTabs ? guidedTabs : customTabs;
@@ -1568,7 +1567,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                 activeTab === 'profile' ? 'Profile' :
                 activeTab === 'challenges' ? 'Use Cases' :
                 activeTab === 'inputs' ? 'Customer Inputs' :
-                activeTab === 'forter' ? 'Forter KPI' :
+                activeTab === 'forter' ? 'Solution KPI' :
                 activeTab === 'summary' ? 'Value Summary' :
                 activeTab === 'roi' ? 'ROI' : 'Tab'
               }
@@ -1930,7 +1929,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
             {/* Buyer Personas (multi-select) */}
             <div className="space-y-3 pt-6 border-t mt-6 md:col-span-2">
               <p className="text-sm font-medium text-muted-foreground">Buyer Personas (multi-select)</p>
-              <p className="text-xs text-muted-foreground">Select the buyer persona for this opportunity. Download a PDF to showcase the primary interests of this Persona.</p>
+              <p className="text-xs text-muted-foreground">Select the buyer persona for this opportunity.</p>
               <div className="grid grid-cols-6 gap-3">
                 {BUYER_PERSONA_PDFS.map(({ label, filename, icon: Icon, jobToBeDone }) => {
                   const selected = (formData.selectedBuyerPersonas ?? []).includes(filename);
@@ -1942,36 +1941,19 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   return (
                     <Tooltip key={filename}>
                       <TooltipTrigger asChild>
-                        <div
+                        <button
+                          type="button"
+                          onClick={togglePersona}
                           className={cn(
-                            "rounded-lg border p-4 min-h-[140px] transition-colors flex flex-col",
+                            "rounded-lg border p-4 min-h-[140px] transition-colors flex flex-col items-center justify-center gap-2 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2",
                             selected
                               ? "border-primary bg-primary/5"
                               : "border-border hover:border-muted-foreground/40 hover:bg-muted/30"
                           )}
                         >
-                          <div className="flex justify-end items-start shrink-0 min-h-[24px]">
-                            <a
-                              href={`/buyer-personas/${encodeURIComponent(filename)}`}
-                              download={filename}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-muted-foreground hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 rounded p-0.5"
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label={`Download ${label} persona PDF`}
-                            >
-                              <Download className="h-4 w-4 shrink-0" aria-hidden />
-                            </a>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={togglePersona}
-                            className="flex-1 flex flex-col items-center justify-center gap-2 min-w-0 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 rounded"
-                          >
-                            <Icon className="h-8 w-8 text-primary shrink-0" aria-hidden />
-                            <span className="font-medium text-sm text-center leading-tight">{label}</span>
-                          </button>
-                        </div>
+                          <Icon className="h-8 w-8 text-primary shrink-0" aria-hidden />
+                          <span className="font-medium text-sm text-center leading-tight">{label}</span>
+                        </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[220px]">
                         <p className="text-xs">{jobToBeDone}</p>
@@ -1997,17 +1979,6 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
               <p className="text-sm text-muted-foreground">
                 Select strategic objectives and use cases that match your prospect&apos;s priorities.
               </p>
-              {onOpenBuyerPersonas && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onOpenBuyerPersonas}
-                  className="gap-2 shrink-0"
-                >
-                  <Users className="h-4 w-4" />
-                  Buyer Personas
-                </Button>
-              )}
             </div>
             {showUseCaseLanding ? (
               <>
@@ -2311,7 +2282,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                     </TooltipTrigger>
                     <TooltipContent side="left" className="max-w-xs">
                       <p className="text-sm">
-                        <strong>Applies to payment/fraud challenges only.</strong> When enabled, create segments (e.g., regions, categories) with their own inputs and Forter KPI targets. Global values become read-only aggregations.
+                        <strong>Applies to payment/fraud challenges only.</strong> When enabled, create segments (e.g., regions, categories) with their own inputs and Solution KPI targets. Global values become read-only aggregations.
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -2429,7 +2400,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   onClick={() => setForterKPIModalOpen(true)}
                 >
                   <Gauge className="h-4 w-4" />
-                  Refine Forter KPI benchmarks
+                  Refine Solution Assumptions
                 </Button>
               </div>
             )}
@@ -2459,7 +2430,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
                   onClick={() => setForterKPIModalOpen(true)}
                 >
                   <Gauge className="h-4 w-4" />
-                  Refine Forter KPI benchmarks
+                  Refine Solution Assumptions
                 </Button>
               )}
             </div>
@@ -2602,7 +2573,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
         )}
       </Card>
       
-      {/* Refine Forter KPI benchmarks modal (guided mode) */}
+      {/* Refine Solution Assumptions modal (guided mode) */}
       <Dialog
         open={forterKPIModalOpen}
         onOpenChange={(open) => {
@@ -2612,9 +2583,9 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
       >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col">
           <DialogHeader>
-            <DialogTitle>Refine Forter KPI benchmarks</DialogTitle>
+            <DialogTitle>Refine Solution Assumptions</DialogTitle>
             <DialogDescription>
-              Configure Forter performance assumptions and targets used in the value model. Updates are optional; figures are benchmarked to Forter and 3rd party data (Country, Industry, AoV, etc.).
+              Configure solution performance assumptions and targets used in the value model. Updates are optional; figures are benchmarked to solution and 3rd party data (Country, Industry, AoV, etc.).
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0 space-y-4 py-2">
@@ -2779,7 +2750,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
             <AlertDialogTitle>Switch to Guided Value Pathway?</AlertDialogTitle>
             <AlertDialogDescription>
               Switching to the Guided pathway will show additional tabs for Use Cases, Customer Inputs, and Value Summary. 
-              You can refine Forter KPI benchmarks from Customer Inputs or Value Summary when needed.
+              You can refine Solution Assumptions from Customer Inputs or Value Summary when needed.
               <br /><br />
               <strong className="text-foreground">All existing data will be preserved.</strong> All custom calculations and any previously entered values will remain intact.
             </AlertDialogDescription>
@@ -2799,7 +2770,7 @@ export const ManualInputForm = ({ onComplete, onFieldChange, onBulkUpdate, initi
           <AlertDialogHeader>
             <AlertDialogTitle>Switch to Custom Value Pathway?</AlertDialogTitle>
             <AlertDialogDescription>
-              Switching to the Custom pathway will hide the Use Cases, Customer Inputs, and Forter KPIs tabs. 
+              Switching to the Custom pathway will hide the Use Cases, Customer Inputs, and Solution KPIs tabs. 
               You'll work directly with the Value Summary to add custom calculations and standard benefit calculators.
               <br /><br />
               <strong className="text-foreground">Your existing data will be preserved.</strong> All selected use cases, customer inputs, and calculated values will remain intact.

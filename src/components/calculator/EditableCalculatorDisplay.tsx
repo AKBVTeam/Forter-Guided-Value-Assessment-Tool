@@ -63,7 +63,7 @@ const FIELD_LABELS: Record<string, string> = {
   avgKYCCostPerAccount: "Average KYC cost per account ($)",
   pctAccountsGoingThroughKYC: "% accounts going through KYC",
   // Forter KPIs
-  fraudApprovalRate: "Forter fraud approval rate %",
+  fraudApprovalRate: "Solution fraud approval rate %",
   threeDSReduction: "3DS reduction %",
   atoCatchRate: "ATO catch rate %",
   signupAbuseBlockRate: "Sign-up abuse block rate %",
@@ -300,9 +300,9 @@ export const EditableCalculatorDisplay = ({
               <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm w-[130px]">
                 Customer inputs
               </th>
-              <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm bg-blue-50 dark:bg-blue-950/30 w-[140px]">Forter improvement</th>
+              <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm bg-blue-50 dark:bg-blue-950/30 w-[140px]">Solution improvement</th>
               <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground text-sm w-[120px]">
-                Forter outcome
+                Solution outcome
               </th>
             </tr>
           </thead>

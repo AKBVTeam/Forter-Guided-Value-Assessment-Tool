@@ -279,7 +279,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
     { formula: 'd', label: 'Fraud approval rate (%)', customerInput: fmtPct(approvalRate), forterImprovement: formatPctImprovementRel(approvalRate, forterApprovalRate), forterOutcome: fmtPct(forterApprovalRate), editableCustomerField: 'amerPreAuthApprovalRate', rawCustomerValue: approvalRate, editableForterField: 'approvalRateImprovement', rawForterValue: forterApprovalRate, valueType: 'percent' },
     { formula: 'e = a*d', label: 'Approved transactions (#)', customerInput: fmt(Math.round(customerApprovedTx)), forterImprovement: fmt(Math.round(approvedTxImprovement)), forterOutcome: fmt(Math.round(forterApprovedTx)), isCalculation: true },
     { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: aovMultiplier !== 1 ? `+${fmtCur(weightedForterAOV_c1 - effectiveCompletedAOV)}` : '', forterOutcome: fmtCur(weightedForterAOV_c1), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, readOnlyForterOutcome: true, valueType: 'currency' },
-    ...(aovMultiplier !== 1 ? [{ formula: '', label: `  ↳ Recovered transactions at ${aovMultiplier}× AOV (Forter KPI assumption)`, customerInput: '', forterImprovement: '', forterOutcome: '' } as CalculatorRow] : []),
+    ...(aovMultiplier !== 1 ? [{ formula: '', label: `  ↳ Recovered transactions at ${aovMultiplier}× AOV (Solution KPI assumption)`, customerInput: '', forterImprovement: '', forterOutcome: '' } as CalculatorRow] : []),
     // Always show the non-deduplicated value first
     { formula: 'f = c\'*e', label: 'Value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: fmtCur(approvedValueImprovement), forterOutcome: fmtCur(forterApprovedValue), valueDriver: deduplicationEnabled ? undefined : 'revenue', isCalculation: true },
     // When deduplication is enabled, show the deduplicated row (this becomes the value driver). Deduplication GMV reduction is subtracted from Forter value of approved.
@@ -300,18 +300,18 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
       { formula: 'l', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' as const } as CalculatorRow,
       // Show non-deduplicated profitability first when deduplication is enabled
       ...(deduplicationEnabled ? [
-        { formula: 'm = k*l', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovement), forterOutcome: fmtCur(forterProfitability), isCalculation: true } as CalculatorRow,
+        { formula: 'm = k*l', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovement), forterOutcome: fmtCur(forterProfitability), isCalculation: true } as CalculatorRow,
         { formula: 'm\' = m - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovementDeduplicated), forterOutcome: fmtCur(forterProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ] : [
-        { formula: 'm = k*l', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(displayProfitabilityImprovement), forterOutcome: fmtCur(displayForterProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+        { formula: 'm = k*l', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(displayProfitabilityImprovement), forterOutcome: fmtCur(displayForterProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ]),
     ] : [
       // For retailers: show profitability directly (Net sales × Gross margin)
       ...(deduplicationEnabled ? [
-        { formula: 'k = i*j', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovement), forterOutcome: fmtCur(forterProfitability), isCalculation: true } as CalculatorRow,
+        { formula: 'k = i*j', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovement), forterOutcome: fmtCur(forterProfitability), isCalculation: true } as CalculatorRow,
         { formula: 'k\' = k - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(profitabilityImprovementDeduplicated), forterOutcome: fmtCur(forterProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ] : [
-        { formula: 'k = i*j', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(displayProfitabilityImprovement), forterOutcome: fmtCur(displayForterProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+        { formula: 'k = i*j', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(customerProfitability), forterImprovement: fmtCur(displayProfitabilityImprovement), forterOutcome: fmtCur(displayForterProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ]),
     ]),
   ];
@@ -329,7 +329,7 @@ export function calculateChallenge1(inputs: Challenge1Inputs): Challenge1Results
   const calculator2Rows: CalculatorRow[] = [
     { formula: 'a', label: 'Value of approved transactions ($)', customerInput: fmtCur(customerApprovedValue), forterImprovement: '', forterOutcome: fmtCur(displayForterApprovedValue), isCalculation: true },
     { formula: 'b', label: 'Gross Fraud Chargeback Rate (%)', customerInput: fmtPct2(fraudChargebackRate), forterImprovement: formatPctImprovementRel(fraudChargebackRate, forterCBDecimal * 100, 2), forterOutcome: includesFraudCBCoverage ? '0.00%*' : fmtPct2(forterCBDecimal * 100), editableCustomerField: 'fraudCBRate', rawCustomerValue: fraudChargebackRate, editableForterField: 'chargebackReduction', rawForterValue: forterCBDecimal * 100, valueType: 'percent' },
-    { formula: 'c = a*b', label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', customerInput: fmtCur2(-customerChargebacks), forterImprovement: fmtCur2(chargebackSavings), forterOutcome: includesFraudCBCoverage ? '$0.00*' : fmtCur2(-forterChargebacks), valueDriver: 'cost', isCalculation: true, footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined },
+    { formula: 'c = a*b', label: includesFraudCBCoverage ? 'Fraud chargebacks*' : 'Fraud chargebacks', customerInput: fmtCur2(-customerChargebacks), forterImprovement: fmtCur2(chargebackSavings), forterOutcome: includesFraudCBCoverage ? '$0.00*' : fmtCur2(-forterChargebacks), valueDriver: 'cost', isCalculation: true, footnote: includesFraudCBCoverage ? '*Solution assumes chargeback liability under Fraud Coverage' : undefined },
   ];
 
   // Build deduplication breakdown for info popover (f = AOV, f' = Recovered Order AOV, g = e×f')
@@ -622,7 +622,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
     { formula: 'o', label: 'Post-Auth Approval Rate (%)', customerInput: fmtPct(postAuthApprovalRate), forterImprovement: formatPctImprovementRel(postAuthApprovalRate, fortPostAuth * 100), forterOutcome: fmtPct(fortPostAuth * 100), editableCustomerField: 'amerPostAuthApprovalRate', rawCustomerValue: postAuthApprovalRate, editableForterField: 'postAuthApprovalImprovement', rawForterValue: fortPostAuth * 100, valueType: 'percent' },
     { formula: 'p = (l-n)*o', label: 'Approved transactions (#)', customerInput: fmt(Math.round(custFinalApproved)), forterImprovement: fmt(Math.round(fortFinalApproved - custFinalApproved)), forterOutcome: fmt(Math.round(fortFinalApproved)), isCalculation: true },
     { formula: 'c\'', label: 'Completed AOV (for value of approved transactions)', customerInput: fmtCur(effectiveCompletedAOV), forterImprovement: aovMultiplier !== 1 ? `+${fmtCur(weightedForterAOV_c245 - effectiveCompletedAOV)}` : '', forterOutcome: fmtCur(weightedForterAOV_c245), editableCustomerField: 'completedAOV', rawCustomerValue: effectiveCompletedAOV, readOnlyForterOutcome: true, valueType: 'currency' },
-    ...(aovMultiplier !== 1 ? [{ formula: '', label: `  ↳ Recovered transactions at ${aovMultiplier}× AOV (Forter KPI assumption)`, customerInput: '', forterImprovement: '', forterOutcome: '' } as CalculatorRow] : []),
+    ...(aovMultiplier !== 1 ? [{ formula: '', label: `  ↳ Recovered transactions at ${aovMultiplier}× AOV (Solution KPI assumption)`, customerInput: '', forterImprovement: '', forterOutcome: '' } as CalculatorRow] : []),
     // Always show the non-deduplicated value first
     { formula: 'q = c\'*p', label: 'Value of approved transactions ($)', customerInput: fmtCur(custFinalValue), forterImprovement: fmtCur(revenueUplift), forterOutcome: fmtCur(fortFinalValue), valueDriver: deduplicationEnabled ? undefined : 'revenue', isCalculation: true },
     // When deduplication is enabled, show the deduplicated row: q' = q − g (value of approved − GMV reduction)
@@ -644,18 +644,18 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
       { formula: 'w', label: 'Gross margin (%)', customerInput: fmtPct(grossMarginPercent), forterImprovement: '', forterOutcome: fmtPct(grossMarginPercent), editableCustomerField: 'amerGrossMarginPercent', rawCustomerValue: grossMarginPercent, valueType: 'percent' as const } as CalculatorRow,
       // Show both rows when deduplication is enabled
       ...(deduplicationEnabled ? [
-        { formula: 'x = v*w', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUplift), forterOutcome: fmtCur(fortProfitability), isCalculation: true } as CalculatorRow,
+        { formula: 'x = v*w', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUplift), forterOutcome: fmtCur(fortProfitability), isCalculation: true } as CalculatorRow,
         { formula: 'x\' = x - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUpliftDeduplicated), forterOutcome: fmtCur(fortProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ] : [
-        { formula: 'x = v*w', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(displayProfitUplift), forterOutcome: fmtCur(displayFortProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+        { formula: 'x = v*w', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(displayProfitUplift), forterOutcome: fmtCur(displayFortProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ]),
     ] : [
       // For retailers: show profitability directly (Net sales × Gross margin)
       ...(deduplicationEnabled ? [
-        { formula: 'v = t*u', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUplift), forterOutcome: fmtCur(fortProfitability), isCalculation: true } as CalculatorRow,
+        { formula: 'v = t*u', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUplift), forterOutcome: fmtCur(fortProfitability), isCalculation: true } as CalculatorRow,
         { formula: 'v\' = v - dedup', label: 'Deduplicated EBITDA contribution ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(profitUpliftDeduplicated), forterOutcome: fmtCur(fortProfitabilityDeduplicated), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ] : [
-        { formula: 'v = t*u', label: 'Gross EBITDA contribution (before Forter costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(displayProfitUplift), forterOutcome: fmtCur(displayFortProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
+        { formula: 'v = t*u', label: 'Gross EBITDA contribution (before solution costs) ($)', customerInput: fmtCur(custProfitability), forterImprovement: fmtCur(displayProfitUplift), forterOutcome: fmtCur(displayFortProfitability), valueDriver: 'profit' as const, isCalculation: true } as CalculatorRow,
       ]),
     ]),
   ];
@@ -677,7 +677,7 @@ export function calculateChallenge245(inputs: Challenge245Inputs): Challenge245R
       forterOutcome: includesFraudCBCoverage ? '$0.00*' : fmtCur2(-fortChargebacks), 
       valueDriver: 'cost', 
       isCalculation: true,
-      footnote: includesFraudCBCoverage ? '*Forter assumes chargeback liability under Fraud Coverage' : undefined,
+      footnote: includesFraudCBCoverage ? '*Solution assumes chargeback liability under Fraud Coverage' : undefined,
     },
   ];
 
@@ -940,7 +940,7 @@ export function calculateChallenge7(inputs: Challenge7Inputs): Challenge7Results
     { formula: 'd', label: 'Service chargeback win-rate - Value (%)', customerInput: fmtPct(serviceWinRate), forterImprovement: formatPctImprovementRel(serviceWinRate, Math.max(0, serviceWinRate + forterServiceWinChange)), forterOutcome: fmtPct(Math.max(0, serviceWinRate + forterServiceWinChange)), editableCustomerField: 'serviceWinRate', rawCustomerValue: serviceWinRate, editableForterField: 'serviceWinRateChange', rawForterValue: Math.max(0, serviceWinRate + forterServiceWinChange), valueType: 'percent' },
     { formula: 'e = c*d', label: 'Service chargebacks won ($)', customerInput: fmtCur(custServWon), forterImprovement: fmtCur(fortServWon - custServWon), forterOutcome: fmtCur(fortServWon), valueDriver: 'cost', isCalculation: true },
     { formula: 'f = e/a', label: 'Recovery rate', customerInput: fmtPct(estServiceChargebacks > 0 ? (custServWon / estServiceChargebacks) * 100 : 0), forterImprovement: '', forterOutcome: fmtPct(estServiceChargebacks > 0 ? (fortServWon / estServiceChargebacks) * 100 : 0), isCalculation: true },
-    { formula: '', label: '', customerInput: '', forterImprovement: '', forterOutcome: '', footnote: '*Fraud chargebacks excluded as Forter Fraud Coverage is enabled (liability handled separately)' },
+    { formula: '', label: '', customerInput: '', forterImprovement: '', forterOutcome: '', footnote: '*Fraud chargebacks excluded as Fraud Coverage is enabled (liability handled separately)' },
   ] : [
     // Full fraud + service chargebacks when coverage is NOT enabled
     { formula: '', label: 'Fraud chargebacks', customerInput: '', forterImprovement: '', forterOutcome: '' },

@@ -277,7 +277,6 @@ const Index = () => {
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(true);
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [showWhatIsBusinessValueModal, setShowWhatIsBusinessValueModal] = useState(false);
-  const [gvaModalInitialTab, setGvaModalInitialTab] = useState<string | undefined>(undefined);
   const initialDataRef = useRef<CalculatorData>({ forterKPIs: defaultForterKPIs });
   // Changelog baseline: only updated on load / start new / save as so edits are detected reliably
   const [changelogBaseline, setChangelogBaseline] = useState<CalculatorData>(() => ({ forterKPIs: defaultForterKPIs }));
@@ -588,13 +587,13 @@ const Index = () => {
                           type="button"
                           onClick={() => setShowWhatIsBusinessValueModal(true)}
                           className="size-8 rounded-full flex items-center justify-center text-sm font-semibold bg-amber-100 hover:bg-amber-200/90 text-amber-700 hover:text-amber-800 border border-amber-200/80 cursor-pointer transition-colors shrink-0"
-                          aria-label="Forter Guided Value Assessment Overview"
+                          aria-label="Guided Value Assessment Overview"
                         >
                           ?
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Forter Guided Value Assessment Overview</p>
+                        <p>Guided Value Assessment Overview</p>
                       </TooltipContent>
                     </Tooltip>
                   </div>
@@ -665,7 +664,7 @@ const Index = () => {
                     </p>
                     <ul className="space-y-2 text-sm text-muted-foreground">
                       <li>• Identify use cases, enter metrics, see value</li>
-                      <li>• Forter benchmarks and KPIs included</li>
+                      <li>• Solution benchmarks and KPIs included</li>
                       <li>• One path from discovery to ROI</li>
                     </ul>
                   </Card>
@@ -831,13 +830,13 @@ const Index = () => {
                         type="button"
                         onClick={() => setShowWhatIsBusinessValueModal(true)}
                         className="size-8 rounded-full flex items-center justify-center text-sm font-semibold bg-amber-100 hover:bg-amber-200/90 text-amber-700 hover:text-amber-800 border border-amber-200/80 cursor-pointer transition-colors shrink-0"
-                        aria-label="Forter Guided Value Assessment Overview"
+                        aria-label="Guided Value Assessment Overview"
                       >
                         ?
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Forter Guided Value Assessment Overview</p>
+                      <p>Guided Value Assessment Overview</p>
                     </TooltipContent>
                   </Tooltip>
                   <div className="w-px h-6 bg-border mx-1" />
@@ -873,22 +872,14 @@ const Index = () => {
               externalActiveTab={activeTab}
               onCompletionChange={setTabCompletion}
               onInvestmentPersist={(inputs) => setCalculatorData(prev => ({ ...prev, investmentInputs: inputs }))}
-              onOpenBuyerPersonas={() => {
-                setGvaModalInitialTab("personas");
-                setShowWhatIsBusinessValueModal(true);
-              }}
             />
           </div>
         </div>
 
         <WhatIsBusinessValueModal
           open={showWhatIsBusinessValueModal}
-          onOpenChange={(open) => {
-            setShowWhatIsBusinessValueModal(open);
-            if (!open) setGvaModalInitialTab(undefined);
-          }}
+          onOpenChange={setShowWhatIsBusinessValueModal}
           markAsSeenOnClose
-          initialTab={gvaModalInitialTab}
         />
         
         {/* Chat side panel - consistent 380px width */}

@@ -75,8 +75,8 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'amerGrossMarginPercent', label: 'Gross Margin (%)', description: 'Gross profit margin applied to approved transaction value', type: 'percentage' },
     ],
     forterKPIs: [
-      { id: 'approvalRateImprovement', label: 'Target Fraud approval rate (%)', description: 'Expected approval rate with Forter', type: 'percentage', defaultValue: 99 },
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud chargeback rate with Forter (for chargeback calc)', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
+      { id: 'approvalRateImprovement', label: 'Target Fraud approval rate (%)', description: 'Expected approval rate with solution', type: 'percentage', defaultValue: 99 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud chargeback rate with solution (for chargeback calc)', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'chargeback': {
@@ -89,7 +89,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'fraudCBAOV', label: 'Fraud Chargeback AOV ($)', description: 'Average order value for fraud chargebacks', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with solution', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c1-chargeback': {
@@ -102,7 +102,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'fraudCBAOV', label: 'Fraud Chargeback AOV ($)', description: 'Average order value for fraud chargebacks', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with solution', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c245-revenue': {
@@ -121,10 +121,10 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'amerGrossMarginPercent', label: 'Gross Margin (%)', description: 'Gross profit margin applied to approved value', type: 'percentage' },
     ],
     forterKPIs: [
-      { id: 'preAuthApprovalImprovement', label: 'Target Pre-Auth Fraud Approval Rate (%)', description: 'Expected approval rate with Forter', type: 'percentage', defaultValue: 99 },
-      { id: 'postAuthApprovalImprovement', label: 'Target Post-Auth Fraud Approval Rate (%)', description: 'Expected post-auth approval rate with Forter', type: 'percentage', defaultValue: 100 },
-      { id: 'threeDSReduction', label: 'Target 3DS Rate (%)', description: 'Expected 3DS challenge rate with Forter', type: 'percentage', defaultValue: 10 },
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
+      { id: 'preAuthApprovalImprovement', label: 'Target Pre-Auth Fraud Approval Rate (%)', description: 'Expected approval rate with solution', type: 'percentage', defaultValue: 99 },
+      { id: 'postAuthApprovalImprovement', label: 'Target Post-Auth Fraud Approval Rate (%)', description: 'Expected post-auth approval rate with solution', type: 'percentage', defaultValue: 100 },
+      { id: 'threeDSReduction', label: 'Target 3DS Rate (%)', description: 'Expected 3DS challenge rate with solution', type: 'percentage', defaultValue: 10 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with solution', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c245-chargeback': {
@@ -139,9 +139,9 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'fraudCBAOV', label: 'Fraud Chargeback AOV ($)', description: 'Average order value for fraud chargebacks', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'preAuthApprovalImprovement', label: 'Target Pre-Auth Fraud Approval Rate (%)', description: 'Expected approval rate with Forter', type: 'percentage', defaultValue: 99 },
-      { id: 'postAuthApprovalImprovement', label: 'Target Post-Auth Fraud Approval Rate (%)', description: 'Expected post-auth approval rate with Forter', type: 'percentage', defaultValue: 100 },
-      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with Forter', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
+      { id: 'preAuthApprovalImprovement', label: 'Target Pre-Auth Fraud Approval Rate (%)', description: 'Expected approval rate with solution', type: 'percentage', defaultValue: 99 },
+      { id: 'postAuthApprovalImprovement', label: 'Target Post-Auth Fraud Approval Rate (%)', description: 'Expected post-auth approval rate with solution', type: 'percentage', defaultValue: 100 },
+      { id: 'chargebackReduction', label: 'Target Fraud CB Rate (%)', description: 'Expected fraud CB rate with solution', type: 'percentage', defaultValue: 0.25, min: 0, max: 10 },
     ],
   },
   'c3-review': {
@@ -154,8 +154,8 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'hourlyReviewerCost', label: 'Hourly Cost per Reviewer ($)', description: 'Fully loaded cost per hour for reviewers', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'manualReviewReduction', label: 'Target Manual Review Rate (%)', description: 'Expected manual review rate with Forter', type: 'percentage', defaultValue: 0 },
-      { id: 'reviewTimeReduction', label: 'Target Review Time (mins)', description: 'Expected time per review with Forter', type: 'number', defaultValue: 7 },
+      { id: 'manualReviewReduction', label: 'Target Manual Review Rate (%)', description: 'Expected manual review rate with solution', type: 'percentage', defaultValue: 0 },
+      { id: 'reviewTimeReduction', label: 'Target Review Time (mins)', description: 'Expected time per review with solution', type: 'number', defaultValue: 7 },
     ],
   },
   'c7-disputes': {
@@ -173,11 +173,11 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'costPerHourAnalyst', label: 'Cost per Hour of Analyst ($)', description: 'Fully loaded cost per hour for dispute analysts', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'fraudDisputeRateImprovement', label: 'Target Fraud Dispute Rate (%)', description: 'Expected fraud dispute rate with Forter', type: 'percentage', defaultValue: 90 },
-      { id: 'fraudWinRateChange', label: 'Target Fraud Win Rate (%)', description: 'Expected fraud dispute win rate with Forter', type: 'percentage', defaultValue: 30 },
-      { id: 'serviceDisputeRateImprovement', label: 'Target Service Dispute Rate (%)', description: 'Expected service dispute rate with Forter', type: 'percentage', defaultValue: 90 },
-      { id: 'serviceWinRateChange', label: 'Target Service Win Rate (%)', description: 'Expected service dispute win rate with Forter', type: 'percentage', defaultValue: 40 },
-      { id: 'disputeTimeReduction', label: 'Target Dispute Review Time (mins)', description: 'Expected time to review a dispute with Forter', type: 'number', defaultValue: 5 },
+      { id: 'fraudDisputeRateImprovement', label: 'Target Fraud Dispute Rate (%)', description: 'Expected fraud dispute rate with solution', type: 'percentage', defaultValue: 90 },
+      { id: 'fraudWinRateChange', label: 'Target Fraud Win Rate (%)', description: 'Expected fraud dispute win rate with solution', type: 'percentage', defaultValue: 30 },
+      { id: 'serviceDisputeRateImprovement', label: 'Target Service Dispute Rate (%)', description: 'Expected service dispute rate with solution', type: 'percentage', defaultValue: 90 },
+      { id: 'serviceWinRateChange', label: 'Target Service Win Rate (%)', description: 'Expected service dispute win rate with solution', type: 'percentage', defaultValue: 40 },
+      { id: 'disputeTimeReduction', label: 'Target Dispute Review Time (mins)', description: 'Expected time to review a dispute with solution', type: 'number', defaultValue: 5 },
     ],
   },
   'c7-opex': {
@@ -189,7 +189,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'costPerHourAnalyst', label: 'Cost per Hour of Analyst ($)', description: 'Fully loaded cost per hour for dispute analysts', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'disputeTimeReduction', label: 'Target Dispute Review Time (mins)', description: 'Expected time to review a dispute with Forter', type: 'number', defaultValue: 5 },
+      { id: 'disputeTimeReduction', label: 'Target Dispute Review Time (mins)', description: 'Expected time to review a dispute with solution', type: 'number', defaultValue: 5 },
     ],
   },
   'c8-returns': {
@@ -208,7 +208,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'amerGrossMarginPercent', label: 'Gross Margin (%)', description: 'Gross profit margin (for unit cost of abuse)', type: 'percentage' },
     ],
     forterKPIs: [
-      { id: 'forterCatchRate', label: 'Abuse Catch Rate (%)', description: 'Expected catch rate for returns abuse with Forter', type: 'percentage', defaultValue: 90 },
+      { id: 'forterCatchRate', label: 'Abuse Catch Rate (%)', description: 'Expected catch rate for returns abuse with solution', type: 'percentage', defaultValue: 90 },
       { id: 'abuseAovMultiplier', label: 'Abuse AoV Multiplier (x)', description: 'Multiplier for abuse order value vs average', type: 'number', defaultValue: 1.5 },
     ],
     abuseBenchmarkInputs: [
@@ -216,8 +216,8 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { field: 'nonEgregiousReturnsAbusePct', label: 'Non-egregious returns abuse population (%)', description: '% of returns that are non-egregious abuse', type: 'percentage', defaultValue: 8 },
       { field: 'egregiousInventoryLossPct', label: 'Egregious inventory loss (%)', description: 'Inventory loss % for egregious abuse', type: 'percentage', defaultValue: 100 },
       { field: 'nonEgregiousInventoryLossPct', label: 'Non-egregious inventory loss (%)', description: 'Inventory loss % for non-egregious abuse', type: 'percentage', defaultValue: 50 },
-      { field: 'forterEgregiousReturnsReduction', label: 'Forter egregious returns reduction (%)', description: 'Expected reduction in egregious returns abuse', type: 'percentage', defaultValue: 90 },
-      { field: 'forterNonEgregiousReturnsReduction', label: 'Forter non-egregious returns reduction (%)', description: 'Expected reduction in non-egregious returns abuse', type: 'percentage', defaultValue: 90 },
+      { field: 'forterEgregiousReturnsReduction', label: 'Solution egregious returns reduction (%)', description: 'Expected reduction in egregious returns abuse', type: 'percentage', defaultValue: 90 },
+      { field: 'forterNonEgregiousReturnsReduction', label: 'Solution non-egregious returns reduction (%)', description: 'Expected reduction in non-egregious returns abuse', type: 'percentage', defaultValue: 90 },
     ],
   },
   'c8-inr': {
@@ -235,12 +235,12 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'amerGrossMarginPercent', label: 'Gross Margin (%)', description: 'Gross profit margin (for unit cost of abuse)', type: 'percentage' },
     ],
     forterKPIs: [
-      { id: 'forterCatchRate', label: 'Abuse Catch Rate (%)', description: 'Expected catch rate for abuse with Forter', type: 'percentage', defaultValue: 90 },
+      { id: 'forterCatchRate', label: 'Abuse Catch Rate (%)', description: 'Expected catch rate for abuse with solution', type: 'percentage', defaultValue: 90 },
       { id: 'abuseAovMultiplier', label: 'Abuse AoV Multiplier (x)', description: 'Multiplier for abuse order value vs average', type: 'number', defaultValue: 1.5 },
     ],
     abuseBenchmarkInputs: [
       { field: 'egregiousINRAbusePct', label: 'INR abuse population (%)', description: '% of INR claims that are abuse', type: 'percentage', defaultValue: 15 },
-      { field: 'forterEgregiousINRReduction', label: 'Forter INR abuse reduction (%)', description: 'Expected reduction in INR abuse with Forter', type: 'percentage', defaultValue: 90 },
+      { field: 'forterEgregiousINRReduction', label: 'Solution INR abuse reduction (%)', description: 'Expected reduction in INR abuse with solution', type: 'percentage', defaultValue: 90 },
     ],
   },
   'c9-cx-uplift': {
@@ -279,7 +279,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'amerGrossMarginPercent', label: 'Gross Margin (%)', description: 'Gross profit margin for profitability calculation', type: 'percentage' },
     ],
     forterKPIs: [
-      { id: 'forterCatchRate', label: 'Promotion Abuse Catch Rate (%)', description: 'Expected catch rate for promotion abuse with Forter', type: 'percentage', defaultValue: 90 },
+      { id: 'forterCatchRate', label: 'Promotion Abuse Catch Rate (%)', description: 'Expected catch rate for promotion abuse with solution', type: 'percentage', defaultValue: 90 },
       { id: 'abuseAovMultiplier', label: 'Abuse AoV Multiplier (x)', description: 'Multiplier for abuse order value vs average', type: 'number', defaultValue: 1.5 },
     ],
     abuseBenchmarkInputs: [
@@ -296,7 +296,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     ],
     forterKPIs: [
       { id: 'pctFraudulentLogins', label: '% of Fraudulent Logins', description: 'Percentage of logins that are fraudulent', type: 'percentage', defaultValue: 1 },
-      { id: 'atoCatchRate', label: 'ATO Catch Rate (%)', description: 'Expected ATO catch rate with Forter', type: 'percentage', defaultValue: 90 },
+      { id: 'atoCatchRate', label: 'ATO Catch Rate (%)', description: 'Expected ATO catch rate with solution', type: 'percentage', defaultValue: 90 },
     ],
   },
   'c13-clv': {
@@ -305,13 +305,13 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     requiredInputs: [
       { id: 'monthlyLogins', label: 'Monthly Number of Logins (#)', description: 'Total number of login attempts per month', type: 'number' },
       { id: 'customerLTV', label: 'Customer Lifetime Value (CLV) - GMV ($)', description: 'Average lifetime value of a customer', type: 'currency' },
-      { id: 'currentAtoCatchRate', label: 'ATO catch rate today (%)', description: 'Your current ATO catch rate before Forter (customer inputs column)', type: 'percentage', defaultValue: 0 },
+      { id: 'currentAtoCatchRate', label: 'ATO catch rate today (%)', description: 'Your current ATO catch rate (customer inputs column)', type: 'percentage', defaultValue: 0 },
       { id: 'pctChurnFromATO', label: '% of Users that Churn from ATO (%)', description: 'Percentage of ATO victims who churn', type: 'percentage' },
     ],
     forterKPIs: [
       { id: 'pctFraudulentLogins', label: '% of Fraudulent Logins', description: 'Percentage of logins that are fraudulent', type: 'percentage', defaultValue: 1 },
       { id: 'churnLikelihoodFromATO', label: 'Churn Likelihood from ATO (%)', description: 'Likelihood that ATO victim will churn', type: 'percentage', defaultValue: 50 },
-      { id: 'atoCatchRate', label: 'ATO Catch Rate (%)', description: 'Expected ATO catch rate with Forter', type: 'percentage', defaultValue: 90 },
+      { id: 'atoCatchRate', label: 'ATO Catch Rate (%)', description: 'Expected ATO catch rate with solution', type: 'percentage', defaultValue: 90 },
     ],
   },
   'c14-marketing': {
@@ -323,7 +323,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
     ],
     forterKPIs: [
       { id: 'pctFraudulentSignups', label: '% of Fraudulent Signups', description: 'Percentage of signups that are fraudulent', type: 'percentage', defaultValue: 10 },
-      { id: 'forterFraudulentSignupReduction', label: 'Fraud Signup Reduction (%)', description: 'Expected reduction in fraudulent signups with Forter', type: 'percentage', defaultValue: 95 },
+      { id: 'forterFraudulentSignupReduction', label: 'Fraud Signup Reduction (%)', description: 'Expected reduction in fraudulent signups with solution', type: 'percentage', defaultValue: 95 },
     ],
   },
   'c14-kyc': {
@@ -335,7 +335,7 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'pctAccountsGoingThroughKYC', label: '% of Accounts Going Through KYC (%)', description: 'Percentage of accounts currently requiring KYC', type: 'percentage' },
     ],
     forterKPIs: [
-      { id: 'forterKYCReduction', label: 'Target KYC Reduction (%)', description: 'Expected reduction in KYC requirements with Forter', type: 'percentage', defaultValue: 80 },
+      { id: 'forterKYCReduction', label: 'Target KYC Reduction (%)', description: 'Expected reduction in KYC requirements with solution', type: 'percentage', defaultValue: 80 },
     ],
   },
   'c14-reactivation': {
@@ -347,8 +347,8 @@ export const CALCULATOR_REQUIRED_INPUTS: Record<string, CalculatorInputsConfig> 
       { id: 'avgCostPerOutreach', label: 'Avg. Cost per Outreach ($)', description: 'Average cost per outreach (email, SMS)', type: 'currency' },
     ],
     forterKPIs: [
-      { id: 'pctFraudulentSignups', label: 'Percent of Fraudulent Sign-ups (e.g. duplicate) (%)', description: 'Estimated benchmark: % of signups that are fraudulent (Forter assumption)', type: 'percentage', defaultValue: 10 },
-      { id: 'forterFraudulentSignupReduction', label: 'Fraud Signup Reduction (%)', description: 'Expected reduction in fraudulent signups with Forter', type: 'percentage', defaultValue: 95 },
+      { id: 'pctFraudulentSignups', label: 'Percent of Fraudulent Sign-ups (e.g. duplicate) (%)', description: 'Estimated benchmark: % of signups that are fraudulent (solution assumption)', type: 'percentage', defaultValue: 10 },
+      { id: 'forterFraudulentSignupReduction', label: 'Fraud Signup Reduction (%)', description: 'Expected reduction in fraudulent signups with solution', type: 'percentage', defaultValue: 95 },
     ],
   },
 };
@@ -640,7 +640,7 @@ export const CalculatorInputsTab = ({
               Abuse Benchmarks
             </h4>
             <p className="text-xs text-muted-foreground">
-              Egregious / non-egregious abuse population and Forter reduction assumptions used in the calculator.
+              Egregious / non-egregious abuse population and solution reduction assumptions used in the calculator.
             </p>
             {config.abuseBenchmarkInputs.map(bm => renderAbuseBenchmarkField(bm))}
           </div>
@@ -654,10 +654,10 @@ export const CalculatorInputsTab = ({
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
               <Settings2 className="w-4 h-4" />
-              Forter Performance Assumptions
+              Solution Performance Assumptions
             </h4>
             <p className="text-xs text-muted-foreground">
-              These targets determine the expected improvement with Forter. Adjust to match your assumptions.
+              These targets determine the expected improvement with solution. Adjust to match your assumptions.
             </p>
             {config.forterKPIs.map(kpi => renderKPIField(kpi))}
           </div>
